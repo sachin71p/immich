@@ -4,7 +4,7 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 
 | Phase | Title | Depends on | Risk | Status | Commit | Note |
 |---|---|---|---|---|---|---|
-| S0 | Fork baseline, FORK.md, branch | — | low | ⬜ | | |
+| S0 | Fork baseline, FORK.md, branch | — | low | ✅ | 3e0c08539 | base v3.1.0; server+web check/lint/test PASS after plugin-sdk bootstrap |
 | S1 | Schema & migrations | S0 | med | ⬜ | | |
 | S2 | Access control, favorites & album permissions | S1 (parallel-safe with S3) | **high** | ⬜ | | |
 | S3 | Storage keys & relocation engine | S1 (parallel-safe with S2) | **high** | ⬜ | | |
