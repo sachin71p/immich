@@ -1,0 +1,94 @@
+name: PhotosFork
+options:
+  minimumXcodeGenVersion: 2.44.0
+  deploymentTarget:
+    iOS: '26.1'
+    macOS: '26.0'
+packages:
+  PhotosCore:
+    path: PhotosCore
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  PhotosFork-iOS:
+    type: application
+    platform: iOS
+    sources: [Apps/Shared, Apps/iOS/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: ImmichAPI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.ios
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+  PhotosFork-macOS:
+    type: application
+    platform: macOS
+    sources: [Apps/Shared, Apps/macOS/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: ImmichAPI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.macos
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+  PhotosFork-BackgroundUpload:
+    type: app-extension
+    platform: iOS
+    sources: [Apps/iOS/Extensions/BackgroundUpload/Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.background-upload
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.photos.background-resource-upload
+  PhotosFork-PhotoEditing:
+    type: app-extension
+    platform: iOS
+    sources: [Apps/iOS/Extensions/PhotoEditing/Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.photo-editing
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.photo-editing
+  PhotosFork-Share:
+    type: app-extension
+    platform: iOS
+    sources: [Apps/iOS/Extensions/Share/Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.share
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.share-services
+  PhotosFork-Widgets:
+    type: app-extension
+    platform: iOS
+    sources: [Apps/iOS/Extensions/Widgets/Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.widgets
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+  PhotosFork-Agent:
+    type: app-extension
+    platform: macOS
+    sources: [Apps/macOS/Agent/Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.agent
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+schemes:
+  PhotosFork-iOS:
+    build:
+      targets:
+        PhotosFork-iOS: all
+    test:
+      targets: []
+  PhotosFork-macOS:
+    build:
+      targets:
+        PhotosFork-macOS: all
+    test:
+      targets: []

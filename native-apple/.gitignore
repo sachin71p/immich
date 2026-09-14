@@ -1,0 +1,7 @@
+.build/
+DerivedData/
+PhotosFork.xcodeproj/
+*.xcworkspace
+xcuserdata/
+# Copied from ../../open-api by scripts/gen-api.sh before each core build.
+PhotosCore/Sources/ImmichAPI/openapi.yaml

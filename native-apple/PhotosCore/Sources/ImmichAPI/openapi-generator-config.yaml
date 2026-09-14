@@ -1,0 +1,9 @@
+# The verify script replaces openapi.yaml with ../../open-api/immich-openapi-specs.json before build.
+accessModifier: public
+generate:
+  - types
+  - client
+filter:
+  operations:
+    - pingServer
+    - login
