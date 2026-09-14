@@ -673,6 +673,26 @@ describe(AlbumService.name, () => {
         { role: AlbumUserRole.Viewer },
       );
     });
+
+    it('should reject changing the caller’s own role', async () => {
+      const user = UserFactory.create();
+
+      await expect(
+        sut.updateUser(AuthFactory.create(user), 'album-1', user.id, { role: AlbumUserRole.Viewer }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.albumUser.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject setting the owner role', async () => {
+      const user = UserFactory.create();
+
+      await expect(
+        sut.updateUser(AuthFactory.create(UserFactory.create()), 'album-1', user.id, { role: AlbumUserRole.Owner }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.albumUser.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('getAlbumInfo', () => {
@@ -1369,6 +1389,19 @@ describe(AlbumService.name, () => {
       mocks.album.getAssetIds.mockResolvedValue(new Set([asset.id]));
 
       await expect(sut.removeAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] })).resolves.toEqual([
+        { success: true, id: asset.id },
+      ]);
+    });
+
+    it('should allow an album viewer to remove any album asset', async () => {
+      const asset = AssetFactory.create();
+      const viewer = UserFactory.create();
+      const album = AlbumFactory.from().albumUser({ userId: viewer.id, role: AlbumUserRole.Viewer }).build();
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set([asset.id]));
+
+      await expect(sut.removeAssets(AuthFactory.create(viewer), album.id, { ids: [asset.id] })).resolves.toEqual([
         { success: true, id: asset.id },
       ]);
     });

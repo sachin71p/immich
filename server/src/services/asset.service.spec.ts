@@ -186,6 +186,26 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, isFavorite: true });
     });
 
+    it('should allow an album member to update only favorite', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumMemberAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.user1, asset.id, { isFavorite: true });
+
+      expect(mocks.access.asset.checkAlbumMemberAccess).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        new Set([asset.id]),
+      );
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        new Set([asset.id]),
+        undefined,
+      );
+    });
+
     it('should update the exif description', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -382,6 +402,34 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
         visibility: AssetVisibility.Archive,
       });
+    });
+
+    it('should allow an album member to bulk update only favorite', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkAlbumMemberAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], isFavorite: true });
+
+      expect(mocks.access.asset.checkAlbumMemberAccess).toHaveBeenCalledWith(auth.user.id, new Set(['asset-1']));
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { isFavorite: true });
+    });
+
+    it('should reject a mixed update by an album member', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkAlbumMemberAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await expect(
+        sut.updateAll(auth, { ids: ['asset-1'], isFavorite: true, description: 'nope' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject locking a shared asset', async () => {
+      mocks.access.asset.checkSpaceAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getByIds.mockResolvedValue([getForAsset(AssetFactory.create({ spaceId: 'space-1' }))]);
+
+      await expect(
+        sut.updateAll(authStub.admin, { ids: ['asset-1'], visibility: AssetVisibility.Locked }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('should not update Assets table if no relevant fields are provided', async () => {

@@ -117,13 +117,30 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await access.asset.checkAlbumAccess(auth.user.id, setDifference(ids, isOwner));
       const isPartner = await access.asset.checkPartnerAccess(auth.user.id, setDifference(ids, isOwner, isAlbum));
-      return setUnion(isOwner, isAlbum, isPartner);
+      // fork: shared-libraries
+      const isSpace = await access.asset.checkSpaceAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isAlbum, isPartner),
+      );
+      // fork: shared-libraries
+      const isLibrary = await access.asset.checkLibraryMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isAlbum, isPartner, isSpace),
+      );
+      return setUnion(isOwner, isAlbum, isPartner, isSpace, isLibrary);
     }
 
     case Permission.AssetShare: {
       const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, false);
       const isPartner = await access.asset.checkPartnerAccess(auth.user.id, setDifference(ids, isOwner));
-      return setUnion(isOwner, isPartner);
+      // fork: shared-libraries
+      const isSpace = await access.asset.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner, isPartner));
+      // fork: shared-libraries
+      const isLibrary = await access.asset.checkLibraryMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isPartner, isSpace),
+      );
+      return setUnion(isOwner, isPartner, isSpace, isLibrary);
     }
 
     case Permission.AssetFileDownload: {
@@ -134,41 +151,85 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await access.asset.checkAlbumAccess(auth.user.id, setDifference(ids, isOwner));
       const isPartner = await access.asset.checkPartnerAccess(auth.user.id, setDifference(ids, isOwner, isAlbum));
-      return setUnion(isOwner, isAlbum, isPartner);
+      // fork: shared-libraries
+      const isSpace = await access.asset.checkSpaceAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isAlbum, isPartner),
+      );
+      // fork: shared-libraries
+      const isLibrary = await access.asset.checkLibraryMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isAlbum, isPartner, isSpace),
+      );
+      return setUnion(isOwner, isAlbum, isPartner, isSpace, isLibrary);
     }
 
     case Permission.AssetDownload: {
       const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await access.asset.checkAlbumAccess(auth.user.id, setDifference(ids, isOwner));
       const isPartner = await access.asset.checkPartnerAccess(auth.user.id, setDifference(ids, isOwner, isAlbum));
-      return setUnion(isOwner, isAlbum, isPartner);
+      // fork: shared-libraries
+      const isSpace = await access.asset.checkSpaceAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isAlbum, isPartner),
+      );
+      // fork: shared-libraries
+      const isLibrary = await access.asset.checkLibraryMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isAlbum, isPartner, isSpace),
+      );
+      return setUnion(isOwner, isAlbum, isPartner, isSpace, isLibrary);
     }
 
-    case Permission.AssetUpdate: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
-    }
-
-    case Permission.AssetDelete: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
-    }
-
-    case Permission.AssetCopy: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+    case Permission.AssetUpdate:
+    case Permission.AssetDelete:
+    case Permission.AssetCopy:
+    case Permission.AssetEditCreate:
+    case Permission.AssetEditDelete: {
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      // fork: shared-libraries
+      const isSpace = await access.asset.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner));
+      // fork: shared-libraries
+      const isLibrary = await access.asset.checkLibraryMemberAccess(auth.user.id, setDifference(ids, isOwner, isSpace));
+      return setUnion(isOwner, isSpace, isLibrary);
     }
 
     case Permission.AssetEditGet: {
       return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
     }
 
-    case Permission.AssetEditCreate: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+    // fork: shared-libraries
+    case Permission.AssetFavorite: {
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isSpace = await access.asset.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner));
+      const isLibrary = await access.asset.checkLibraryMemberAccess(auth.user.id, setDifference(ids, isOwner, isSpace));
+      const isAlbum = await access.asset.checkAlbumMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isSpace, isLibrary),
+      );
+      return setUnion(isOwner, isSpace, isLibrary, isAlbum);
     }
 
-    case Permission.AssetEditDelete: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+    // fork: shared-libraries
+    case Permission.AssetMove: {
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isSpace = await access.asset.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner));
+      const isLibrary = await access.asset.checkLibraryMemberAccess(auth.user.id, setDifference(ids, isOwner, isSpace));
+      return setUnion(isOwner, isSpace, isLibrary);
     }
 
-    case Permission.AssetFileRead:
+    case Permission.AssetFileRead: {
+      const isOwner = await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      // fork: shared-libraries
+      const isSpace = await access.assetFile.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner));
+      // fork: shared-libraries
+      const isLibrary = await access.assetFile.checkLibraryMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isSpace),
+      );
+      return setUnion(isOwner, isSpace, isLibrary);
+    }
+
     case Permission.AssetFileDelete: {
       return await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
     }
@@ -188,7 +249,8 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isShared = await access.album.checkSharedAlbumAccess(
         auth.user.id,
         setDifference(ids, isOwner),
-        AlbumUserRole.Editor,
+        // fork: shared-libraries
+        AlbumUserRole.Viewer,
       );
       return setUnion(isOwner, isShared);
     }
@@ -232,9 +294,30 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isShared = await access.album.checkSharedAlbumAccess(
         auth.user.id,
         setDifference(ids, isOwner),
-        AlbumUserRole.Editor,
+        // fork: shared-libraries
+        AlbumUserRole.Viewer,
       );
       return setUnion(isOwner, isShared);
+    }
+
+    // fork: shared-libraries
+    case Permission.SharedSpaceRead:
+    case Permission.SharedSpaceUpdate:
+    case Permission.SharedSpaceMemberCreate:
+    case Permission.SharedSpaceMemberUpdate:
+    case Permission.SharedSpaceMemberDelete: {
+      return access.space.checkMemberAccess(auth.user.id, ids);
+    }
+
+    // fork: shared-libraries
+    case Permission.SharedSpaceDelete: {
+      return access.space.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    // fork: shared-libraries
+    case Permission.LibraryMemberCreate:
+    case Permission.LibraryMemberDelete: {
+      return auth.user.isAdmin ? ids : new Set<string>();
     }
 
     case Permission.AssetUpload: {

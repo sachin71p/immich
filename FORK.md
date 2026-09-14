@@ -35,4 +35,6 @@ immediately.
 | `server/src/{repositories/sync.repository,services/sync.service}.ts` | prunes new audit tables | shared schema support | S1 |
 | `server/src/services/asset-media.service.spec.ts` | adapts fixture for asset container fields | shared schema support | S1 |
 | `server/test/{factories/asset.factory,small.factory}.ts` | adapts asset fixtures for container fields | shared schema support | S1 |
+| `server/src/{enum.ts,utils/access.ts,repositories/access.repository.ts}` | grants container-aware asset and shared-space access | shared access control | S2 |
+| `server/src/services/{asset.service.ts,album.service.ts}` | protects shared favorites, roles, and Locked visibility | shared access control | S2 |
 |---|---|---|---|

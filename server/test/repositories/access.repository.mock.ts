@@ -29,12 +29,17 @@ export const newAccessRepositoryMock = (): IAccessRepositoryMock => {
     asset: {
       checkOwnerAccess: vitest.fn().mockResolvedValue(new Set()),
       checkAlbumAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkAlbumMemberAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkSpaceAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkLibraryMemberAccess: vitest.fn().mockResolvedValue(new Set()),
       checkPartnerAccess: vitest.fn().mockResolvedValue(new Set()),
       checkSharedLinkAccess: vitest.fn().mockResolvedValue(new Set()),
     },
 
     assetFile: {
       checkOwnerAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkSpaceAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkLibraryMemberAccess: vitest.fn().mockResolvedValue(new Set()),
     },
 
     album: {
@@ -78,6 +83,15 @@ export const newAccessRepositoryMock = (): IAccessRepositoryMock => {
 
     timeline: {
       checkPartnerAccess: vitest.fn().mockResolvedValue(new Set()),
+    },
+
+    library: {
+      checkMemberAccess: vitest.fn().mockResolvedValue(new Set()),
+    },
+
+    space: {
+      checkMemberAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkOwnerAccess: vitest.fn().mockResolvedValue(new Set()),
     },
 
     tag: {

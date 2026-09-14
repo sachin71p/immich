@@ -98,7 +98,21 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
+    const definedFields = Object.entries(dto).filter(([, value]) => value !== undefined);
+    const permission =
+      definedFields.length === 1 && definedFields[0][0] === 'isFavorite'
+        ? Permission.AssetFavorite
+        : Permission.AssetUpdate;
+    // fork: shared-libraries
+    await this.requireAccess({ auth, permission, ids: [id] });
+
+    if (dto.visibility === AssetVisibility.Locked) {
+      // fork: shared-libraries
+      const target = await this.findOrFail(id);
+      if (target.spaceId || target.libraryId) {
+        throw new BadRequestException('Shared assets cannot be locked');
+      }
+    }
 
     const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
@@ -146,7 +160,21 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
     } = dto;
-    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
+    const definedFields = Object.entries(dto).filter(([key, value]) => key !== 'ids' && value !== undefined);
+    const permission =
+      definedFields.length === 1 && definedFields[0][0] === 'isFavorite'
+        ? Permission.AssetFavorite
+        : Permission.AssetUpdate;
+    // fork: shared-libraries
+    await this.requireAccess({ auth, permission, ids });
+
+    if (visibility === AssetVisibility.Locked) {
+      // fork: shared-libraries
+      const targets = await this.assetRepository.getByIds(ids);
+      if (targets.some((target) => target.spaceId || target.libraryId)) {
+        throw new BadRequestException('Shared assets cannot be locked');
+      }
+    }
 
     const assetDto = omitBy({ isFavorite, visibility, duplicateId }, isUndefined);
     const exifDto = omitBy(

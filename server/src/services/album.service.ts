@@ -265,7 +265,8 @@ export class AlbumService extends BaseService {
     const results = await removeAssets(
       auth,
       { access: this.accessRepository, bulk: this.albumRepository },
-      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.AlbumDelete },
+      // fork: shared-libraries
+      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.AlbumAssetDelete },
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
@@ -340,6 +341,16 @@ export class AlbumService extends BaseService {
   }
 
   async updateUser(auth: AuthDto, id: string, userId: string, dto: UpdateAlbumUserDto): Promise<void> {
+    // fork: shared-libraries
+    if (auth.user.id === userId) {
+      throw new BadRequestException('Cannot change your own album role');
+    }
+
+    // fork: shared-libraries
+    if (dto.role === AlbumUserRole.Owner) {
+      throw new BadRequestException('Cannot set album user role to owner');
+    }
+
     await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
 
     const album = await this.findOrFail(id, userId, { withAssets: false });

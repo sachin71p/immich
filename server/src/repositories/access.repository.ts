@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Kysely, type NotNull, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SharedSpaceRole } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 
@@ -182,9 +182,15 @@ class AssetAccess {
       });
   }
 
+  // fork: shared-libraries
+  async checkAlbumMemberAccess(userId: string, assetIds: Set<string>) {
+    return this.checkAlbumAccess(userId, assetIds);
+  }
+
+  // fork: shared-libraries
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, assetIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkSpaceAccess(userId: string, assetIds: Set<string>) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
@@ -192,11 +198,65 @@ class AssetAccess {
     return this.db
       .selectFrom('asset')
       .select('asset.id')
+      .innerJoin('shared_space_member', (join) =>
+        join.onRef('shared_space_member.spaceId', '=', 'asset.spaceId').on('shared_space_member.userId', '=', userId),
+      )
       .where('asset.id', 'in', [...assetIds])
-      .where('asset.ownerId', '=', userId)
-      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
+  }
+
+  // fork: shared-libraries
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkLibraryMemberAccess(userId: string, assetIds: Set<string>) {
+    if (assetIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .innerJoin('library', 'library.id', 'asset.libraryId')
+      .leftJoin('library_member', (join) =>
+        join.onRef('library_member.libraryId', '=', 'library.id').on('library_member.userId', '=', userId),
+      )
+      .where('asset.id', 'in', [...assetIds])
+      .where((eb) => eb.or([eb('library.ownerId', '=', userId), eb('library_member.userId', '=', userId)]))
+      .execute()
+      .then((assets) => new Set(assets.map((asset) => asset.id)));
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkOwnerAccess(userId: string, assetIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+    if (assetIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return (
+      this.db
+        .selectFrom('asset')
+        .select('asset.id')
+        .where('asset.id', 'in', [...assetIds])
+        .where('asset.ownerId', '=', userId)
+        // fork: shared-libraries
+        .where((eb) =>
+          eb.or([
+            eb('asset.spaceId', 'is', null),
+            eb.exists(
+              eb
+                .selectFrom('shared_space_member')
+                .select('shared_space_member.spaceId')
+                .whereRef('shared_space_member.spaceId', '=', 'asset.spaceId')
+                .where('shared_space_member.userId', '=', userId),
+            ),
+          ]),
+        )
+        .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+        .execute()
+        .then((assets) => new Set(assets.map((asset) => asset.id)))
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -297,6 +357,110 @@ class AssetFileAccess {
       .where('asset_file.id', 'in', [...fileIds])
       .execute()
       .then((files) => new Set(files.map(({ id }) => id)));
+  }
+
+  // fork: shared-libraries
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkSpaceAccess(userId: string, fileIds: Set<string>) {
+    if (fileIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('asset_file')
+      .select('asset_file.id')
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .innerJoin('shared_space_member', (join) =>
+        join.onRef('shared_space_member.spaceId', '=', 'asset.spaceId').on('shared_space_member.userId', '=', userId),
+      )
+      .where('asset_file.id', 'in', [...fileIds])
+      .execute()
+      .then((files) => new Set(files.map((file) => file.id)));
+  }
+
+  // fork: shared-libraries
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkLibraryMemberAccess(userId: string, fileIds: Set<string>) {
+    if (fileIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('asset_file')
+      .select('asset_file.id')
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .innerJoin('library', 'library.id', 'asset.libraryId')
+      .leftJoin('library_member', (join) =>
+        join.onRef('library_member.libraryId', '=', 'library.id').on('library_member.userId', '=', userId),
+      )
+      .where('asset_file.id', 'in', [...fileIds])
+      .where((eb) => eb.or([eb('library.ownerId', '=', userId), eb('library_member.userId', '=', userId)]))
+      .execute()
+      .then((files) => new Set(files.map((file) => file.id)));
+  }
+}
+
+// fork: shared-libraries
+class SharedSpaceAccess {
+  constructor(private db: Kysely<DB>) {}
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkMemberAccess(userId: string, spaceIds: Set<string>) {
+    if (spaceIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('shared_space_member')
+      .select('shared_space_member.spaceId')
+      .where('shared_space_member.spaceId', 'in', [...spaceIds])
+      .where('shared_space_member.userId', '=', userId)
+      .execute()
+      .then((members) => new Set(members.map((member) => member.spaceId)));
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkOwnerAccess(userId: string, spaceIds: Set<string>) {
+    if (spaceIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('shared_space_member')
+      .select('shared_space_member.spaceId')
+      .where('shared_space_member.spaceId', 'in', [...spaceIds])
+      .where('shared_space_member.userId', '=', userId)
+      .where('shared_space_member.role', '=', SharedSpaceRole.Owner)
+      .execute()
+      .then((members) => new Set(members.map((member) => member.spaceId)));
+  }
+}
+
+// fork: shared-libraries
+class LibraryAccess {
+  constructor(private db: Kysely<DB>) {}
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 1 })
+  async checkMemberAccess(userId: string, libraryIds: Set<string>) {
+    if (libraryIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('library')
+      .select('library.id')
+      .leftJoin('library_member', (join) =>
+        join.onRef('library_member.libraryId', '=', 'library.id').on('library_member.userId', '=', userId),
+      )
+      .where('library.id', 'in', [...libraryIds])
+      .where((eb) => eb.or([eb('library.ownerId', '=', userId), eb('library_member.userId', '=', userId)]))
+      .execute()
+      .then((libraries) => new Set(libraries.map((library) => library.id)));
   }
 }
 
@@ -619,6 +783,8 @@ export class AccessRepository {
   album: AlbumAccess;
   asset: AssetAccess;
   assetFile: AssetFileAccess;
+  // fork: shared-libraries
+  library: LibraryAccess;
   authDevice: AuthDeviceAccess;
   duplicate: DuplicateAccess;
   memory: MemoryAccess;
@@ -629,6 +795,8 @@ export class AccessRepository {
   partner: PartnerAccess;
   session: SessionAccess;
   stack: StackAccess;
+  // fork: shared-libraries
+  space: SharedSpaceAccess;
   tag: TagAccess;
   timeline: TimelineAccess;
   workflow: WorkflowAccess;
@@ -638,6 +806,8 @@ export class AccessRepository {
     this.album = new AlbumAccess(db);
     this.asset = new AssetAccess(db);
     this.assetFile = new AssetFileAccess(db);
+    // fork: shared-libraries
+    this.library = new LibraryAccess(db);
     this.authDevice = new AuthDeviceAccess(db);
     this.duplicate = new DuplicateAccess(db);
     this.memory = new MemoryAccess(db);
@@ -648,6 +818,8 @@ export class AccessRepository {
     this.partner = new PartnerAccess(db);
     this.session = new SessionAccess(db);
     this.stack = new StackAccess(db);
+    // fork: shared-libraries
+    this.space = new SharedSpaceAccess(db);
     this.tag = new TagAccess(db);
     this.timeline = new TimelineAccess(db);
     this.workflow = new WorkflowAccess(db);

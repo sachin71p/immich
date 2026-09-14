@@ -138,6 +138,10 @@ export enum Permission {
   AssetUpload = 'asset.upload',
   AssetCopy = 'asset.copy',
   AssetDerive = 'asset.derive',
+  // fork: shared-libraries
+  AssetMove = 'asset.move',
+  // fork: shared-libraries
+  AssetFavorite = 'asset.favorite',
 
   AssetFileRead = 'assetFile.read',
   AssetFileDelete = 'assetFile.delete',
@@ -161,6 +165,26 @@ export enum Permission {
   AlbumUserCreate = 'albumUser.create',
   AlbumUserUpdate = 'albumUser.update',
   AlbumUserDelete = 'albumUser.delete',
+
+  // fork: shared-libraries
+  SharedSpaceCreate = 'sharedSpace.create',
+  // fork: shared-libraries
+  SharedSpaceRead = 'sharedSpace.read',
+  // fork: shared-libraries
+  SharedSpaceUpdate = 'sharedSpace.update',
+  // fork: shared-libraries
+  SharedSpaceDelete = 'sharedSpace.delete',
+  // fork: shared-libraries
+  SharedSpaceMemberCreate = 'sharedSpaceMember.create',
+  // fork: shared-libraries
+  SharedSpaceMemberUpdate = 'sharedSpaceMember.update',
+  // fork: shared-libraries
+  SharedSpaceMemberDelete = 'sharedSpaceMember.delete',
+
+  // fork: shared-libraries
+  LibraryMemberCreate = 'libraryMember.create',
+  // fork: shared-libraries
+  LibraryMemberDelete = 'libraryMember.delete',
 
   AuthChangePassword = 'auth.changePassword',
 
