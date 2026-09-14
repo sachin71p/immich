@@ -44,4 +44,8 @@ export class LibraryTable {
 
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
+
+  // fork: shared-libraries
+  @Column({ type: 'text', nullable: true })
+  uploadPath!: string | null;
 }

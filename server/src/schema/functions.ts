@@ -327,3 +327,101 @@ export const asset_ocr_delete_audit = registerFunction({
       RETURN NULL;
     END`,
 });
+
+// fork: shared-libraries
+export const shared_space_member_delete_audit = registerFunction({
+  name: 'shared_space_member_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO shared_space_audit ("spaceId", "userId")
+      SELECT "spaceId", "userId"
+      FROM OLD;
+
+      IF pg_trigger_depth() = 1 THEN
+        INSERT INTO shared_space_member_audit ("spaceId", "userId")
+        SELECT "spaceId", "userId"
+        FROM OLD;
+      END IF;
+
+      RETURN NULL;
+    END`,
+});
+
+// fork: shared-libraries
+export const shared_space_asset_delete_audit = registerFunction({
+  name: 'shared_space_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO shared_space_asset_audit ("spaceId", "assetId")
+      SELECT "spaceId", "id"
+      FROM OLD
+      WHERE "spaceId" IS NOT NULL;
+      RETURN NULL;
+    END`,
+});
+
+// fork: shared-libraries
+// the OLD/NEW comparison lives in the body (rather than a trigger WHEN clause) because the
+// sql-tools schema-diff introspection cannot read back a WHEN clause that references NEW columns.
+export const shared_space_asset_update_audit = registerFunction({
+  name: 'shared_space_asset_update_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF OLD."spaceId" IS NOT NULL AND OLD."spaceId" IS DISTINCT FROM NEW."spaceId" THEN
+        INSERT INTO shared_space_asset_audit ("spaceId", "assetId")
+        VALUES (OLD."spaceId", OLD."id");
+      END IF;
+      RETURN NULL;
+    END`,
+});
+
+// fork: shared-libraries
+export const library_member_delete_audit = registerFunction({
+  name: 'library_member_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO library_member_audit ("libraryId", "userId")
+      SELECT "libraryId", "userId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+// fork: shared-libraries
+export const library_asset_delete_audit = registerFunction({
+  name: 'library_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO library_asset_audit ("libraryId", "assetId")
+      SELECT "libraryId", "id"
+      FROM OLD
+      WHERE "libraryId" IS NOT NULL;
+      RETURN NULL;
+    END`,
+});
+
+// fork: shared-libraries
+// see shared_space_asset_update_audit for why the comparison is in the body, not a WHEN clause.
+export const library_asset_update_audit = registerFunction({
+  name: 'library_asset_update_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF OLD."libraryId" IS NOT NULL AND OLD."libraryId" IS DISTINCT FROM NEW."libraryId" THEN
+        INSERT INTO library_asset_audit ("libraryId", "assetId")
+        VALUES (OLD."libraryId", OLD."id");
+      END IF;
+      RETURN NULL;
+    END`,
+});

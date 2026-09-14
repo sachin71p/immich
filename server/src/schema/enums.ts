@@ -1,9 +1,23 @@
 import { registerEnum } from '@immich/sql-tools';
-import { AlbumUserRole, AssetStatus, AssetVisibility, ChecksumAlgorithm, SourceType, VideoCodec } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetStatus,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  SharedSpaceRole,
+  SourceType,
+  VideoCodec,
+} from 'src/enum.js';
 
 export const album_user_role_enum = registerEnum({
   name: 'album_user_role_enum',
   values: [AlbumUserRole.Owner, AlbumUserRole.Editor, AlbumUserRole.Viewer],
+});
+
+// fork: shared-libraries
+export const shared_space_role_enum = registerEnum({
+  name: 'shared_space_role',
+  values: [SharedSpaceRole.Owner, SharedSpaceRole.Contributor],
 });
 
 export const assets_status_enum = registerEnum({

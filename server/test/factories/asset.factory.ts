@@ -74,6 +74,8 @@ export class AssetFactory {
       width: null,
       height: null,
       isEdited: false,
+      // fork: shared-libraries
+      spaceId: null,
       ...dto,
     });
   }

@@ -159,6 +159,8 @@ const libraryFactory = (library: Partial<Library> = {}) => ({
   ownerId: newUuid(),
   importPaths: [],
   exclusionPatterns: [],
+  // fork: shared-libraries
+  uploadPath: null,
   ...library,
 });
 

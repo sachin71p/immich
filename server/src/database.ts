@@ -329,6 +329,8 @@ export const columns = {
     'asset.originalFileName',
     'asset.originalPath',
     'asset.ownerId',
+    // fork: shared-libraries
+    'asset.spaceId',
     'asset.stackId',
     'asset.thumbhash',
     'asset.type',

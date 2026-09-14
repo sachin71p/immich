@@ -4,6 +4,7 @@ import {
   asset_face_source_type,
   asset_visibility_enum,
   assets_status_enum,
+  shared_space_role_enum,
 } from 'src/schema/enums.js';
 import {
   album_user_after_insert,
@@ -16,12 +17,18 @@ import {
   f_concat_ws,
   f_unaccent,
   immich_uuid_v7,
+  library_asset_delete_audit,
+  library_asset_update_audit,
+  library_member_delete_audit,
   ll_to_earth_public,
   memory_asset_delete_audit,
   memory_delete_audit,
   partner_delete_audit,
   person_delete_audit,
   person_group_delete_audit,
+  shared_space_asset_delete_audit,
+  shared_space_asset_update_audit,
+  shared_space_member_delete_audit,
   stack_delete_audit,
   updated_at,
   user_delete_audit,
@@ -48,12 +55,20 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+// fork: shared-libraries
+import { AssetRelocationTable } from 'src/schema/tables/asset-relocation.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
+// fork: shared-libraries
+import { LibraryAssetAuditTable } from 'src/schema/tables/library-asset-audit.table.js';
+// fork: shared-libraries
+import { LibraryMemberAuditTable } from 'src/schema/tables/library-member-audit.table.js';
+// fork: shared-libraries
+import { LibraryMemberTable } from 'src/schema/tables/library-member.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
@@ -74,6 +89,16 @@ import { PluginTable } from 'src/schema/tables/plugin.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
+// fork: shared-libraries
+import { SharedSpaceAssetAuditTable } from 'src/schema/tables/shared-space-asset-audit.table.js';
+// fork: shared-libraries
+import { SharedSpaceAuditTable } from 'src/schema/tables/shared-space-audit.table.js';
+// fork: shared-libraries
+import { SharedSpaceMemberAuditTable } from 'src/schema/tables/shared-space-member-audit.table.js';
+// fork: shared-libraries
+import { SharedSpaceMemberTable } from 'src/schema/tables/shared-space-member.table.js';
+// fork: shared-libraries
+import { SharedSpaceTable } from 'src/schema/tables/shared-space.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
@@ -121,12 +146,20 @@ export class ImmichDatabase {
     AssetTable,
     AssetFileTable,
     AssetExifTable,
+    // fork: shared-libraries
+    AssetRelocationTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
     FaceSearchTable,
     GeodataPlacesTable,
     IntegrityReportTable,
     LibraryTable,
+    // fork: shared-libraries
+    LibraryMemberTable,
+    // fork: shared-libraries
+    LibraryMemberAuditTable,
+    // fork: shared-libraries
+    LibraryAssetAuditTable,
     MemoryTable,
     MemoryAuditTable,
     MemoryAssetTable,
@@ -144,6 +177,16 @@ export class ImmichDatabase {
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
+    // fork: shared-libraries
+    SharedSpaceTable,
+    // fork: shared-libraries
+    SharedSpaceMemberTable,
+    // fork: shared-libraries
+    SharedSpaceAuditTable,
+    // fork: shared-libraries
+    SharedSpaceMemberAuditTable,
+    // fork: shared-libraries
+    SharedSpaceAssetAuditTable,
     SmartSearchTable,
     StackTable,
     StackAuditTable,
@@ -187,9 +230,23 @@ export class ImmichDatabase {
     asset_face_audit,
     asset_ocr_delete_audit,
     album_user_delete,
+    // fork: shared-libraries
+    shared_space_member_delete_audit,
+    shared_space_asset_delete_audit,
+    shared_space_asset_update_audit,
+    library_member_delete_audit,
+    library_asset_delete_audit,
+    library_asset_update_audit,
   ];
 
-  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum];
+  enum = [
+    album_user_role_enum,
+    assets_status_enum,
+    asset_face_source_type,
+    asset_visibility_enum,
+    // fork: shared-libraries
+    shared_space_role_enum,
+  ];
 }
 
 export interface Migrations {
@@ -230,6 +287,9 @@ export interface DB {
   asset_keyframe: AssetKeyframeTable;
   ocr_search: OcrSearchTable;
 
+  // fork: shared-libraries
+  asset_relocation: AssetRelocationTable;
+
   face_search: FaceSearchTable;
 
   geodata_places: GeodataPlacesTable;
@@ -237,6 +297,11 @@ export interface DB {
   integrity_report: IntegrityReportTable;
 
   library: LibraryTable;
+
+  // fork: shared-libraries
+  library_member: LibraryMemberTable;
+  library_member_audit: LibraryMemberAuditTable;
+  library_asset_audit: LibraryAssetAuditTable;
 
   memory: MemoryTable;
   memory_audit: MemoryAuditTable;
@@ -267,6 +332,13 @@ export interface DB {
 
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
+
+  // fork: shared-libraries
+  shared_space: SharedSpaceTable;
+  shared_space_member: SharedSpaceMemberTable;
+  shared_space_audit: SharedSpaceAuditTable;
+  shared_space_member_audit: SharedSpaceMemberAuditTable;
+  shared_space_asset_audit: SharedSpaceAssetAuditTable;
 
   smart_search: SmartSearchTable;
 

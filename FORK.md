@@ -27,4 +27,12 @@ immediately.
 ## Patch list
 
 | upstream file | change | reason | phase |
+| `server/src/{database,enum}.ts` | registers shared-library database schema and enums | shared schema support | S1 |
+| `server/src/dtos/asset-response.dto.ts` | exposes shared container fields in asset responses | shared schema support | S1 |
+| `server/src/schema/{index,enums,functions}.ts` | registers shared-library schema and audit hooks | shared schema support | S1 |
+| `server/src/schema/tables/{asset,library}.table.ts` | adds container fields and invariants | shared schema support | S1 |
+| `server/src/schema/migrations/ORDER` | registers shared-library migration | shared schema support | S1 |
+| `server/src/{repositories/sync.repository,services/sync.service}.ts` | prunes new audit tables | shared schema support | S1 |
+| `server/src/services/asset-media.service.spec.ts` | adapts fixture for asset container fields | shared schema support | S1 |
+| `server/test/{factories/asset.factory,small.factory}.ts` | adapts asset fixtures for container fields | shared schema support | S1 |
 |---|---|---|---|

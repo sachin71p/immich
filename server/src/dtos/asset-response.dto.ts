@@ -146,6 +146,8 @@ export type MapAsset = {
   originalPath: string;
   owner?: ShallowDehydrateObject<User> | null;
   ownerId: string;
+  // fork: shared-libraries
+  spaceId: string | null;
   stack?: (ShallowDehydrateObject<Stack> & { assets: Stack['assets'] }) | null;
   stackId: string | null;
   tags?: ShallowDehydrateObject<Tag>[];

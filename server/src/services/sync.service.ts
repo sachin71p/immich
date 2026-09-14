@@ -250,6 +250,12 @@ export class SyncService extends BaseService {
     await this.syncRepository.user.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.userMetadata.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.assetOcr.cleanupAuditTable(pruneThreshold);
+    // fork: shared-libraries
+    await this.syncRepository.sharedSpace.cleanupAuditTable(pruneThreshold);
+    await this.syncRepository.sharedSpaceMember.cleanupAuditTable(pruneThreshold);
+    await this.syncRepository.sharedSpaceAsset.cleanupAuditTable(pruneThreshold);
+    await this.syncRepository.libraryMember.cleanupAuditTable(pruneThreshold);
+    await this.syncRepository.libraryAsset.cleanupAuditTable(pruneThreshold);
   }
 
   private needsFullSync(checkpointMap: CheckpointMap) {

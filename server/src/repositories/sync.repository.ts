@@ -69,6 +69,12 @@ export class SyncRepository {
   stack: StackSync;
   user: UserSync;
   userMetadata: UserMetadataSync;
+  // fork: shared-libraries
+  sharedSpace: SharedSpaceSync;
+  sharedSpaceMember: SharedSpaceMemberSync;
+  sharedSpaceAsset: SharedSpaceAssetSync;
+  libraryMember: LibraryMemberSync;
+  libraryAsset: LibraryAssetSync;
 
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.album = new AlbumSync(this.db);
@@ -94,6 +100,12 @@ export class SyncRepository {
     this.stack = new StackSync(this.db);
     this.user = new UserSync(this.db);
     this.userMetadata = new UserMetadataSync(this.db);
+    // fork: shared-libraries
+    this.sharedSpace = new SharedSpaceSync(this.db);
+    this.sharedSpaceMember = new SharedSpaceMemberSync(this.db);
+    this.sharedSpaceAsset = new SharedSpaceAssetSync(this.db);
+    this.libraryMember = new LibraryMemberSync(this.db);
+    this.libraryAsset = new LibraryAssetSync(this.db);
   }
 }
 
@@ -828,5 +840,42 @@ class AssetOcrSync extends BaseSync {
       .innerJoin('asset', 'asset.id', 'asset_ocr.assetId')
       .where('asset.ownerId', '=', userId)
       .stream();
+  }
+}
+
+// fork: shared-libraries
+// full sync entity support (getUpserts/getDeletes) lands in a later phase; these classes exist only
+// so the new audit tables can be pruned by the existing AuditTableCleanup job.
+class SharedSpaceSync extends BaseSync {
+  cleanupAuditTable(daysAgo: number) {
+    return this.auditCleanup('shared_space_audit', daysAgo);
+  }
+}
+
+// fork: shared-libraries
+class SharedSpaceMemberSync extends BaseSync {
+  cleanupAuditTable(daysAgo: number) {
+    return this.auditCleanup('shared_space_member_audit', daysAgo);
+  }
+}
+
+// fork: shared-libraries
+class SharedSpaceAssetSync extends BaseSync {
+  cleanupAuditTable(daysAgo: number) {
+    return this.auditCleanup('shared_space_asset_audit', daysAgo);
+  }
+}
+
+// fork: shared-libraries
+class LibraryMemberSync extends BaseSync {
+  cleanupAuditTable(daysAgo: number) {
+    return this.auditCleanup('library_member_audit', daysAgo);
+  }
+}
+
+// fork: shared-libraries
+class LibraryAssetSync extends BaseSync {
+  cleanupAuditTable(daysAgo: number) {
+    return this.auditCleanup('library_asset_audit', daysAgo);
   }
 }

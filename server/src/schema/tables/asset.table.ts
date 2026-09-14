@@ -1,5 +1,7 @@
 import {
   AfterDeleteTrigger,
+  AfterUpdateTrigger,
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -14,8 +16,15 @@ import {
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
 import { asset_checksum_algorithm_enum, asset_visibility_enum, assets_status_enum } from 'src/schema/enums.js';
-import { asset_delete_audit } from 'src/schema/functions.js';
+import {
+  asset_delete_audit,
+  library_asset_delete_audit,
+  library_asset_update_audit,
+  shared_space_asset_delete_audit,
+  shared_space_asset_update_audit,
+} from 'src/schema/functions.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { SharedSpaceTable } from 'src/schema/tables/shared-space.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
@@ -27,6 +36,31 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   function: asset_delete_audit,
   referencingOldTableAs: 'old',
   when: 'pg_trigger_depth() = 0',
+})
+// fork: shared-libraries
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: shared_space_asset_delete_audit,
+  referencingOldTableAs: 'old',
+})
+// fork: shared-libraries
+// no WHEN clause here: sql-tools can't read back a trigger WHEN clause that references NEW
+// columns, so the OLD/NEW comparison lives in the function body instead (see functions.ts).
+@AfterUpdateTrigger({
+  scope: 'row',
+  function: shared_space_asset_update_audit,
+})
+// fork: shared-libraries
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: library_asset_delete_audit,
+  referencingOldTableAs: 'old',
+})
+// fork: shared-libraries
+// see the shared_space_asset_update_audit trigger above for why there's no WHEN clause.
+@AfterUpdateTrigger({
+  scope: 'row',
+  function: library_asset_update_audit,
 })
 // Checksums must be unique per user and library
 @Index({
@@ -60,6 +94,12 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   columns: ['id'],
   where: `visibility = 'timeline' AND "deletedAt" IS NULL`,
 })
+// fork: shared-libraries
+@Index({ columns: ['spaceId'] })
+// fork: shared-libraries
+@Index({ columns: ['spaceId', 'localDateTime'] })
+// fork: shared-libraries
+@Check({ name: 'asset_space_library_exclusive', expression: `"spaceId" IS NULL OR "libraryId" IS NULL` })
 // For all assets, each originalpath must be unique per user and library
 export class AssetTable {
   @PrimaryGeneratedColumn()
@@ -145,4 +185,8 @@ export class AssetTable {
 
   @Column({ type: 'boolean', default: false })
   isEdited!: Generated<boolean>;
+
+  // fork: shared-libraries
+  @ForeignKeyColumn(() => SharedSpaceTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  spaceId!: string | null;
 }

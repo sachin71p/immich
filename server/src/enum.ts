@@ -72,6 +72,12 @@ export enum AlbumUserRole {
 
 export const AlbumUserRoleSchema = z.enum(AlbumUserRole).describe('Album user role').meta({ id: 'AlbumUserRole' });
 
+// fork: shared-libraries
+export enum SharedSpaceRole {
+  Owner = 'owner',
+  Contributor = 'contributor',
+}
+
 export enum AssetOrder {
   Asc = 'asc',
   Desc = 'desc',
