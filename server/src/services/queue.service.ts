@@ -262,7 +262,8 @@ export class QueueService extends BaseService {
 
   async handleNightlyJobs() {
     const config = await this.getConfig({ withCache: false });
-    const jobs: JobItem[] = [];
+    // fork: shared-libraries - retries pending crash-safe file moves nightly.
+    const jobs: JobItem[] = [{ name: JobName.AssetRelocateQueueAll }];
 
     if (config.nightlyTasks.databaseCleanup) {
       jobs.push(

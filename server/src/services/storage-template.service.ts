@@ -75,6 +75,7 @@ interface RenderMetadata {
 
 @Injectable()
 export class StorageTemplateService extends BaseService {
+  private static instance: StorageTemplateService | undefined;
   private _template: {
     compiled: HandlebarsTemplateDelegate<any>;
     raw: string;
@@ -91,11 +92,18 @@ export class StorageTemplateService extends BaseService {
 
   @OnEvent({ name: 'ConfigInit' })
   onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    StorageTemplateService.instance = this;
     const template = newConfig.storageTemplate.template;
     if (!this._template || template !== this.template.raw) {
       this.logger.debug(`Compiling new storage template: ${template}`);
       this._template = this.compile(template);
     }
+  }
+
+  // fork: shared-libraries - the relocator is deliberately decoupled from this service's DI graph.
+  static getInstance() {
+    if (!StorageTemplateService.instance) throw new Error('Storage template service is not initialized');
+    return StorageTemplateService.instance;
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
@@ -152,7 +160,7 @@ export class StorageTemplateService extends BaseService {
     }
 
     const user = await this.userRepository.get(asset.ownerId, {});
-    const storageLabel = user?.storageLabel || null;
+    const storageLabel = asset.spaceStorageLabel || user?.storageLabel || null;
     const filename = asset.originalFileName || asset.id;
     await this.moveAsset(asset, { storageLabel, filename });
 
@@ -187,7 +195,7 @@ export class StorageTemplateService extends BaseService {
 
     for await (const asset of assets) {
       const user = users.find((user) => user.id === asset.ownerId);
-      const storageLabel = user?.storageLabel || null;
+      const storageLabel = asset.spaceStorageLabel || user?.storageLabel || null;
       const filename = asset.originalFileName || asset.id;
       await this.moveAsset(asset, { storageLabel, filename });
 
@@ -216,6 +224,17 @@ export class StorageTemplateService extends BaseService {
   async handleMoveHistoryCleanup({ assetId }: ArgOf<'AssetDelete'>) {
     this.logger.debug(`Cleaning up move history for asset ${assetId}`);
     await this.moveRepository.cleanMoveHistorySingle(assetId);
+  }
+
+  // fork: shared-libraries - relocation calls the per-asset template mover.
+  async moveAssetToTemplatePath(assetId: string): Promise<void> {
+    const asset = await this.assetJobRepository.getForStorageTemplateJob(assetId, { includeHidden: true });
+    if (!asset) return;
+    const user = await this.userRepository.get(asset.ownerId, {});
+    await this.moveAsset(asset, {
+      storageLabel: asset.spaceStorageLabel || user?.storageLabel || null,
+      filename: asset.originalFileName || asset.id,
+    });
   }
 
   async moveAsset(asset: StorageAsset, metadata: MoveAssetMetadata, stillPhoto?: StorageAsset) {
@@ -273,7 +292,10 @@ export class StorageTemplateService extends BaseService {
       let extension = getFilenameExtension(source).split('.').pop() as string;
       const sanitized = sanitize(path.basename(filenameWithoutExtension, `.${extension}`));
       extension = extension?.toLowerCase();
-      const rootPath = StorageCore.getLibraryFolder({ id: asset.ownerId, storageLabel });
+      // fork: shared-libraries - spaces have a stable, separate template root.
+      const rootPath = asset.spaceId
+        ? StorageCore.getLibraryFolder({ id: `shared/${asset.spaceStorageLabel}`, storageLabel: null })
+        : StorageCore.getLibraryFolder({ id: asset.ownerId, storageLabel });
 
       switch (extension) {
         case 'jpeg':

@@ -37,4 +37,7 @@ immediately.
 | `server/test/{factories/asset.factory,small.factory}.ts` | adapts asset fixtures for container fields | shared schema support | S1 |
 | `server/src/{enum.ts,utils/access.ts,repositories/access.repository.ts}` | grants container-aware asset and shared-space access | shared access control | S2 |
 | `server/src/services/{asset.service.ts,album.service.ts}` | protects shared favorites, roles, and Locked visibility | shared access control | S2 |
+| `server/src/cores/storage.core.ts` | namespaces generated files by shared-space storage key | shared storage relocation | S3 |
+| `server/src/services/asset-relocation.service.ts` | resumes and performs crash-safe asset file relocations | shared storage relocation | S3 |
+| `server/src/{repositories/asset.repository.ts,services/library.service.ts}` | guards external scans/watchers while moves are pending | shared storage relocation | S3 |
 |---|---|---|---|

@@ -357,6 +357,9 @@ export type JobItem =
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
+  // fork: shared-libraries
+  | { name: JobName.AssetRelocateQueueAll; data?: IBaseJob }
+  | { name: JobName.AssetRelocate; data: IEntityJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }
@@ -505,6 +508,8 @@ export type SyncAck = {
 export type StorageAsset = {
   id: string;
   ownerId: string;
+  spaceId?: string | null;
+  spaceStorageLabel?: string | null;
   livePhotoVideoId: string | null;
   type: AssetType;
   isExternal: boolean;

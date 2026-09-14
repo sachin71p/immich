@@ -942,6 +942,9 @@ export enum JobName {
 
   StorageTemplateMigration = 'StorageTemplateMigration',
   StorageTemplateMigrationSingle = 'StorageTemplateMigrationSingle',
+  // fork: shared-libraries
+  AssetRelocateQueueAll = 'AssetRelocateQueueAll',
+  AssetRelocate = 'AssetRelocate',
 
   TagCleanup = 'TagCleanup',
 

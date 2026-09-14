@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { StorageAsset } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
@@ -382,9 +383,11 @@ export class AssetJobRepository {
     return this.db
       .selectFrom('asset')
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .leftJoin('shared_space', 'asset.spaceId', 'shared_space.id')
       .select([
         'asset.id',
         'asset.ownerId',
+        'asset.spaceId',
         'asset.type',
         'asset.checksum',
         'asset.originalPath',
@@ -399,6 +402,7 @@ export class AssetJobRepository {
         'asset_exif.model',
         'asset_exif.lensModel',
       ])
+      .select('shared_space.storageLabel as spaceStorageLabel')
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .where('asset.deletedAt', 'is', null);
   }
@@ -408,12 +412,14 @@ export class AssetJobRepository {
     return this.storageTemplateAssetQuery()
       .where('asset.id', '=', id)
       .$if(!options?.includeHidden, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Hidden))
-      .executeTakeFirst();
+      .executeTakeFirst() as Promise<StorageAsset | undefined>;
   }
 
   @GenerateSql({ params: [], stream: true })
   streamForStorageTemplateJob() {
-    return this.storageTemplateAssetQuery().where('asset.visibility', '!=', AssetVisibility.Hidden).stream();
+    return this.storageTemplateAssetQuery()
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .stream() as AsyncIterable<StorageAsset>;
   }
 
   @GenerateSql({ params: [DummyValue.DATE], stream: true })

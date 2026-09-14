@@ -1090,22 +1090,35 @@ export class AssetRepository {
     const paths = importPaths.map((importPath) => `${importPath}%`);
     const exclusions = exclusionPatterns.map((pattern) => globToPostgresRegex(pattern));
 
-    return this.db
-      .updateTable('asset')
-      .set({
-        isOffline: true,
-        deletedAt: new Date(),
-      })
-      .where('isOffline', '=', false)
-      .where('isExternal', '=', true)
-      .where('libraryId', '=', asUuid(libraryId))
-      .where((eb) =>
-        eb.or([
-          eb.not(eb.or(paths.map((path) => eb('originalPath', 'like', path)))),
-          eb.or(exclusions.map((pattern) => eb('originalPath', '~', pattern))),
-        ]),
-      )
-      .executeTakeFirstOrThrow();
+    return (
+      this.db
+        .updateTable('asset')
+        .set({
+          isOffline: true,
+          deletedAt: new Date(),
+        })
+        .where('isOffline', '=', false)
+        .where('isExternal', '=', true)
+        .where('libraryId', '=', asUuid(libraryId))
+        // fork: shared-libraries - the relocator temporarily owns these files.
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              this.db
+                .selectFrom('asset_relocation')
+                .select('assetId')
+                .where(sql<boolean>`"asset_relocation"."assetId" = "asset"."id"`),
+            ),
+          ),
+        )
+        .where((eb) =>
+          eb.or([
+            eb.not(eb.or(paths.map((path) => eb('originalPath', 'like', path)))),
+            eb.or(exclusions.map((pattern) => eb('originalPath', '~', pattern))),
+          ]),
+        )
+        .executeTakeFirstOrThrow()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })
@@ -1114,20 +1127,115 @@ export class AssetRepository {
       .selectFrom(unnest(paths).as('path'))
       .select('path')
       .where((eb) =>
-        eb.not(
-          eb.exists(
-            this.db
-              .selectFrom('asset')
-              .select('originalPath')
-              .whereRef('asset.originalPath', '=', eb.ref('path'))
-              .where('libraryId', '=', asUuid(libraryId))
-              .where('isExternal', '=', true),
+        eb.and([
+          eb.not(
+            eb.exists(
+              this.db
+                .selectFrom('asset')
+                .select('originalPath')
+                .whereRef('asset.originalPath', '=', eb.ref('path'))
+                .where('libraryId', '=', asUuid(libraryId))
+                .where('isExternal', '=', true),
+            ),
           ),
-        ),
+          eb.not(
+            eb.exists(
+              this.db.selectFrom('move_history').select('id').whereRef('move_history.newPath', '=', eb.ref('path')),
+            ),
+          ),
+          eb.not(
+            eb.exists(
+              this.db
+                .selectFrom('asset')
+                .innerJoin('asset_relocation', 'asset_relocation.assetId', 'asset.id')
+                .select('asset.id')
+                .whereRef('asset.originalPath', '=', eb.ref('path')),
+            ),
+          ),
+        ]),
       )
       .execute();
 
     return result.map((row) => row.path as string);
+  }
+
+  // fork: shared-libraries - protects watcher unlink events during a crash-safe move.
+  async isRelocationPath(libraryId: string, path: string): Promise<boolean> {
+    const result = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_relocation', 'asset_relocation.assetId', 'asset.id')
+      .leftJoin('move_history', 'move_history.oldPath', 'asset.originalPath')
+      .select('asset.id')
+      .where('asset.libraryId', '=', asUuid(libraryId))
+      .where((eb) => eb.or([eb('move_history.oldPath', '=', path), eb('asset.originalPath', '=', path)]))
+      .where((eb) => eb.or([eb('move_history.oldPath', '=', path), eb('asset_relocation.assetId', 'is not', null)]))
+      .executeTakeFirst();
+    return !!result;
+  }
+
+  // fork: shared-libraries - the relocation worker needs a stable snapshot of all movable files.
+  async getForRelocation(id: string) {
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .leftJoin('shared_space', 'shared_space.id', 'asset.spaceId')
+      .leftJoin('library', 'library.id', 'asset.libraryId')
+      .leftJoin('user', 'user.id', 'asset.ownerId')
+      .select([
+        'asset.id',
+        'asset.ownerId',
+        'asset.spaceId',
+        'asset.libraryId',
+        'asset.originalPath',
+        'asset.originalFileName',
+        'asset.livePhotoVideoId',
+        'asset.checksum',
+        'asset.isExternal',
+        'asset_exif.fileSizeInByte',
+        'shared_space.storageLabel as spaceStorageLabel',
+        'library.uploadPath',
+        'library.importPaths',
+        'user.storageLabel as ownerStorageLabel',
+      ])
+      .select((eb) => withFiles(eb))
+      .where('asset.id', '=', asUuid(id))
+      .executeTakeFirst();
+  }
+
+  async getPendingRelocationIds(): Promise<string[]> {
+    const rows = await this.db.selectFrom('asset_relocation').select('assetId').execute();
+    return rows.map((row) => row.assetId);
+  }
+
+  async createRelocations(assetIds: string[], requestedById: string | null, trx?: Kysely<DB>) {
+    if (assetIds.length === 0) return;
+    const db = trx ?? this.db;
+    await db
+      .insertInto('asset_relocation')
+      .values(
+        assetIds.map((assetId) => ({
+          assetId: asUuid(assetId),
+          requestedById: requestedById ? asUuid(requestedById) : null,
+        })),
+      )
+      .onConflict((oc) =>
+        oc
+          .column('assetId')
+          .doUpdateSet({ requestedById: requestedById ? asUuid(requestedById) : null, requestedAt: new Date() }),
+      )
+      .execute();
+  }
+
+  async completeRelocation(assetId: string) {
+    await this.db.deleteFrom('asset_relocation').where('assetId', '=', asUuid(assetId)).execute();
+  }
+
+  async failRelocation(assetId: string, lastError: string) {
+    await this.db
+      .updateTable('asset_relocation')
+      .set((eb) => ({ attempts: eb('attempts', '+', 1), lastError }))
+      .where('assetId', '=', asUuid(assetId))
+      .execute();
   }
 
   async getLibraryAssetCount(libraryId: string): Promise<number> {

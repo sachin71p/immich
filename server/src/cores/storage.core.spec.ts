@@ -6,6 +6,19 @@ vitest.mock('src/constants', () => ({
 }));
 
 describe('StorageCore', () => {
+  describe('shared-library storage keys', () => {
+    beforeAll(() => StorageCore.setMediaLocation('/photos'));
+
+    it('keeps personal paths unchanged and namespaces shared-space derivatives', () => {
+      const personal = { id: 'abcdef', ownerId: 'owner-id' };
+      const space = { ...personal, spaceId: 'space-id' };
+      expect(StorageCore.getStorageKey(personal)).toBe('owner-id');
+      expect(StorageCore.getStorageKey(space)).toBe('shared/space-id');
+      expect(StorageCore.getEncodedVideoPath(personal)).toBe('/photos/encoded-video/owner-id/ab/cd/abcdef.mp4');
+      expect(StorageCore.getEncodedVideoPath(space)).toBe('/photos/encoded-video/shared/space-id/ab/cd/abcdef.mp4');
+    });
+  });
+
   describe('isImmichPath', () => {
     beforeAll(() => {
       StorageCore.setMediaLocation('/photos');

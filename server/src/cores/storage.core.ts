@@ -35,7 +35,7 @@ export interface MoveRequest {
   };
 }
 
-export type ThumbnailPathEntity = { id: string; ownerId: string };
+export type ThumbnailPathEntity = { id: string; ownerId: string; spaceId?: string | null };
 
 export type PersonThumbnailPathEntity = { personGroupId: string; ownerId: string };
 
@@ -113,6 +113,15 @@ export class StorageCore {
     return join(StorageCore.getBaseFolder(StorageFolder.Library), user.storageLabel || user.id);
   }
 
+  /**
+   * The key used for generated asset files.  Keep personal keys byte-for-byte
+   * compatible with upstream; shared spaces intentionally live in their own
+   * namespace.
+   */
+  static getStorageKey(asset: { ownerId: string; spaceId?: string | null }) {
+    return asset.spaceId ? `shared/${asset.spaceId}` : asset.ownerId;
+  }
+
   static getBaseFolder(folder: StorageFolder) {
     return join(StorageCore.getMediaLocation(), folder);
   }
@@ -124,13 +133,13 @@ export class StorageCore {
   static getImagePath(asset: ThumbnailPathEntity, { fileType, format, isEdited }: ImagePathOptions) {
     return StorageCore.getNestedPath(
       StorageFolder.Thumbnails,
-      asset.ownerId,
+      StorageCore.getStorageKey(asset),
       `${asset.id}_${fileType}${isEdited ? '_edited' : ''}.${format}`,
     );
   }
 
   static getEncodedVideoPath(asset: ThumbnailPathEntity) {
-    return StorageCore.getNestedPath(StorageFolder.EncodedVideo, asset.ownerId, `${asset.id}.mp4`);
+    return StorageCore.getNestedPath(StorageFolder.EncodedVideo, StorageCore.getStorageKey(asset), `${asset.id}.mp4`);
   }
 
   static getHlsSessionFolder({ ownerId, sessionId }: HlsSessionFolder) {
@@ -142,7 +151,7 @@ export class StorageCore {
   }
 
   static getAndroidMotionPath(asset: ThumbnailPathEntity, uuid: string) {
-    return StorageCore.getNestedPath(StorageFolder.EncodedVideo, asset.ownerId, `${uuid}-MP.mp4`);
+    return StorageCore.getNestedPath(StorageFolder.EncodedVideo, StorageCore.getStorageKey(asset), `${uuid}-MP.mp4`);
   }
 
   static isAndroidMotionPath(originalPath: string) {

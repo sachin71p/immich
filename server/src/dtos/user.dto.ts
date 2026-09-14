@@ -8,6 +8,12 @@ import { UserAvatarColor, UserAvatarColorSchema, UserMetadataKey, UserStatusSche
 import { asDateTimeString } from 'src/utils/date.js';
 import { isoDatetimeToDate, sanitizeFilename, stringToBool, toEmail } from 'src/validation.js';
 
+// fork: shared-libraries - this name is reserved for shared-space media.
+const StorageLabelSchema = z
+  .string()
+  .pipe(sanitizeFilename)
+  .refine((label) => label.toLowerCase() !== 'shared', 'Storage label "shared" is reserved');
+
 export const UserUpdateMeSchema = z
   .object({
     email: toEmail.optional().describe('User email'),
@@ -82,7 +88,7 @@ export const UserAdminCreateSchema = z
     name: z.string().describe('User name'),
     avatarColor: UserAvatarColorSchema.nullish(),
     pinCode: z.string().regex(pinCodeRegex).nullable().optional().describe('PIN code').meta({ example: '123456' }),
-    storageLabel: z.string().pipe(sanitizeFilename).nullish().describe('Storage label'),
+    storageLabel: StorageLabelSchema.nullish().describe('Storage label'),
     quotaSizeInBytes: z.int().min(0).nullish().describe('Storage quota in bytes'),
     shouldChangePassword: z.boolean().optional().describe('Require password change on next login'),
     notify: z.boolean().optional().describe('Send notification email'),
@@ -99,7 +105,7 @@ const UserAdminUpdateSchema = z
     pinCode: z.string().regex(pinCodeRegex).nullable().optional().describe('PIN code').meta({ example: '123456' }),
     name: z.string().optional().describe('User name'),
     avatarColor: UserAvatarColorSchema.nullish(),
-    storageLabel: z.string().pipe(sanitizeFilename).nullish().describe('Storage label'),
+    storageLabel: StorageLabelSchema.nullish().describe('Storage label'),
     shouldChangePassword: z.boolean().optional().describe('Require password change on next login'),
     quotaSizeInBytes: z.int().min(0).nullish().describe('Storage quota in bytes'),
     isAdmin: z.boolean().optional().describe('Grant admin privileges'),

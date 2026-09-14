@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
-import { R_OK } from 'node:constants';
+import { R_OK, W_OK } from 'node:constants';
 import { Stats } from 'node:fs';
 import path, { isAbsolute, parse } from 'node:path';
 import picomatch from 'picomatch';
@@ -331,6 +331,22 @@ export class LibraryService extends BaseService {
 
     validation.isValid = true;
     return validation;
+  }
+
+  // fork: shared-libraries - destination validation used by the library upload-path API.
+  async validateUploadPath(uploadPath: string, importPaths: string[]): Promise<string | undefined> {
+    if (!isAbsolute(uploadPath)) return 'Path must be absolute';
+    if (importPaths.every((importPath) => !uploadPath.startsWith(`${path.resolve(importPath)}${path.sep}`))) {
+      return 'Path must be inside an import path';
+    }
+    if (StorageCore.isImmichPath(uploadPath)) return 'Cannot use media upload folder';
+    try {
+      const stat = await this.storageRepository.stat(uploadPath);
+      if (!stat.isDirectory()) return 'Not a directory';
+    } catch (error: any) {
+      return error.code === 'ENOENT' ? 'Path does not exist (ENOENT)' : String(error);
+    }
+    return (await this.storageRepository.checkFileExists(uploadPath, W_OK)) ? undefined : 'Lacking write permission';
   }
 
   async validate(id: string, dto: ValidateLibraryDto): Promise<ValidateLibraryResponseDto> {
@@ -685,6 +701,8 @@ export class LibraryService extends BaseService {
     // This is only for handling file unlink events via the file watcher
     this.logger.verbose(`Deleting asset(s) ${job.paths} from library ${job.libraryId}`);
     for (const assetPath of job.paths) {
+      // fork: shared-libraries - a watcher must not delete an asset being moved.
+      if (await this.assetRepository.isRelocationPath(job.libraryId, assetPath)) continue;
       const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(job.libraryId, assetPath);
       if (asset) {
         await this.assetRepository.remove(asset);
