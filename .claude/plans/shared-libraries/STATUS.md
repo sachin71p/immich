@@ -15,9 +15,9 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 | S6 | Sync stream for spaces & shared libraries | S5 | **high** | ✅ | 41822db64 | check/lint pass; focused sync tests pass; full suite blocked by sandbox socket policy; medium needs container runtime |
 | S7 | Full metadata endpoint & extended search filters | S5 | med | ✅ | 231211358 | check/lint and 241 configured focused tests pass; bare plan Vitest command lacks alias config; full/medium suites constrained by sandbox/container |
 | S8a | Web: spaces management, settings, admin library members | S6, S7 | med | ✅ | 0d317e4ee | check:typescript/lint clean (fixed 5 lint errors + 2 tailwind warnings); check:svelte and vitest blocked by host toolchain (pre-existing TS 6.0.3 crash, localStorage-in-vitest gap), not phase defects |
-| S8b | Web: timeline switcher, move action, favorites/album UI, upload target | S8a | med | ⬜ | | |
-| S8c | Web: full metadata panel, search filters | S8a (parallel-safe with S8b) | low | ⬜ | | |
-| S9 | (optional) Space-scoped People | S6 | high | ⬜ | | |
+| S8b | Web: timeline switcher, move action, favorites/album UI, upload target | S8a | med | 🟨 | c688cca6e | verifier PARTIAL: ts/lint + 356 tests PASS (KNOWN crashes only); coverage harness broken (T0), Docker NOT RUN |
+| S8c | Web: full metadata panel, search filters | S8a (parallel-safe with S8b) | low | 🟨 | 1c552f852 | verifier PARTIAL: ts/lint + 356 tests PASS (KNOWN crashes only); coverage harness broken (T0), Docker NOT RUN |
+| S9 | (optional) Space-scoped People | S6 | high | 🟨 | 1e5d39f46 | code checks PASS (tsc/eslint, 333 tests); coverage FAIL is T0 harness gap (fix queued), Docker NOT RUN |
 | S10 | Hardening: upgrade gate, FORK.md, upstream-merge rehearsal | S8b, S8c, T1 | med | ⬜ | | |
 | A0 | Apple: workspace, shared core package skeleton, codegen | S0 | low | ✅ | 9d686e0b8 | host now has a full Xcode toolchain; `swift build && swift test` verified clean (1 fixed `Operations.Login`→`Operations.login` naming bug, applied in A1) |
 | A1 | Apple core: auth, sync engine, local DB | A0, S6 | high | ✅ | 2756651c4 | `swift build && swift test` clean on independently reverified from-scratch build: 29/29 pass; AP-02 vs rules-cases.json deferred to T0 |
