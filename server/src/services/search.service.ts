@@ -27,10 +27,10 @@ import { AssetSearchScope } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
+import { ContainerScope, ContainerScopeService } from 'src/utils/container-scope.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
-import { ContainerScope, ContainerScopeService } from 'src/utils/container-scope.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -115,7 +115,7 @@ export class SearchService extends BaseService {
         checksum,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
         userIds,
-        ...(scope ? { scope } : {}),
+        ...(scope && { scope }),
         viewingUserId: auth.user.id,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
@@ -139,7 +139,7 @@ export class SearchService extends BaseService {
       ...dto,
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
-      ...(scope ? { scope } : {}),
+      ...(scope && { scope }),
       viewingUserId: auth.user.id,
     });
   }
@@ -159,7 +159,7 @@ export class SearchService extends BaseService {
       ...dto,
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
-      ...(scope ? { scope } : {}),
+      ...(scope && { scope }),
       viewingUserId: auth.user.id,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -176,7 +176,7 @@ export class SearchService extends BaseService {
       ...dto,
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
-      ...(scope ? { scope } : {}),
+      ...(scope && { scope }),
       viewingUserId: auth.user.id,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -206,7 +206,7 @@ export class SearchService extends BaseService {
       {
         ...dto,
         userIds: await userIds,
-        ...(scope ? { scope } : {}),
+        ...(scope && { scope }),
         viewingUserId: auth.user.id,
         embedding,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
@@ -266,6 +266,11 @@ export class SearchService extends BaseService {
         return scope
           ? this.searchRepository.getCameraLensModels(userIds, dto, scope)
           : this.searchRepository.getCameraLensModels(userIds, dto);
+      }
+      case SearchSuggestionType.FILE_EXTENSION: {
+        return scope
+          ? this.searchRepository.getFileExtensions(userIds, scope)
+          : this.searchRepository.getFileExtensions(userIds);
       }
       default: {
         return Promise.resolve([]);
@@ -367,7 +372,7 @@ export class SearchService extends BaseService {
         userIds,
         lockedOwnerId: auth.user.id,
         viewingUserId: auth.user.id,
-        ...(containerScope ? { containerScope } : {}),
+        ...(containerScope && { containerScope }),
       },
     };
   }

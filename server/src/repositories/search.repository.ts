@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Kysely, type OrderByDirection, type Selectable, type ShallowDehydrateObject, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
@@ -10,6 +11,7 @@ import { AssetStatus, AssetType, AssetVisibility, VectorIndex } from 'src/enum.j
 import { probes } from 'src/repositories/database.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { withContainerScope } from 'src/utils/container-scope.js';
 import {
   anyUuid,
   searchAssetBuilder,
@@ -22,8 +24,6 @@ import {
   withSearchOrder,
 } from 'src/utils/database.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
-import type { ContainerScope } from 'src/utils/container-scope.js';
-import { withContainerScope } from 'src/utils/container-scope.js';
 
 export interface SearchAssetIdOptions {
   checksum?: Buffer;
@@ -92,6 +92,23 @@ export interface SearchExifOptions {
   state?: string | null;
   description?: string | null;
   rating?: number | null;
+  isoMin?: number;
+  isoMax?: number;
+  fNumberMin?: number;
+  fNumberMax?: number;
+  focalLengthMin?: number;
+  focalLengthMax?: number;
+  fileSizeMin?: number;
+  fileSizeMax?: number;
+  widthMin?: number;
+  heightMin?: number;
+  fileExtensions?: string[];
+  mimeTypes?: string[];
+  projectionType?: string;
+  hasLocation?: boolean;
+  orientation?: string;
+  fpsMin?: number;
+  fpsMax?: number;
 }
 
 export interface SearchEmbeddingOptions {
@@ -554,6 +571,22 @@ export class SearchRepository {
       .execute();
 
     return res.map((row) => row.lensModel!);
+  }
+
+  // fork: shared-libraries
+  async getFileExtensions(userIds: string[], scope?: ContainerScope): Promise<string[]> {
+    const extension = sql<string>`lower(regexp_replace(asset."originalFileName", '^.*\\.', ''))`;
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(extension.as('extension'))
+      .distinct()
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', anyUuid(userIds)))
+      .where('visibility', '=', AssetVisibility.Timeline)
+      .where('deletedAt', 'is', null)
+      .where('originalFileName', 'like', '%.%')
+      .execute();
+    return rows.map((row) => row.extension);
   }
 
   // TODO(v4): drop the V3 suffix once the legacy methods are removed

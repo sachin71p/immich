@@ -130,6 +130,16 @@ export class MetadataRepository {
     }) as Promise<ImmichTags>;
   }
 
+  // fork: shared-libraries - -G1 preserves exiftool's family-1 group in each key.
+  async readFullTags(path: string): Promise<Record<string, unknown>> {
+    try {
+      return (await this.exiftool.readRaw(path, { readArgs: ['-G1'] })) as Record<string, unknown>;
+    } catch (error) {
+      this.logger.warn(`Error reading full exif data (${path}): ${error}`);
+      return {};
+    }
+  }
+
   extractBinaryTag(path: string, tagName: string): Promise<Buffer> {
     return this.exiftool.extractBinaryTagToBuffer(tagName, path);
   }

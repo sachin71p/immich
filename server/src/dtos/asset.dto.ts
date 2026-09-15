@@ -174,6 +174,13 @@ const AssetMetadataResponseSchema = z
   })
   .meta({ id: 'AssetMetadataResponseDto' });
 
+// fork: shared-libraries
+const AssetFullExifResponseSchema = z
+  .object({
+    groups: z.record(z.string(), z.record(z.string(), z.unknown())).describe('Full exiftool output by family-1 group'),
+  })
+  .meta({ id: 'AssetFullExifResponseDto' });
+
 const AssetMetadataBulkResponseSchema = AssetMetadataResponseSchema.extend({
   assetId: z.uuidv4().describe('Asset ID'),
 }).meta({ id: 'AssetMetadataBulkResponseDto' });
@@ -218,6 +225,7 @@ export class AssetMetadataUpsertDto extends createZodDto(AssetMetadataUpsertSche
 export class AssetMetadataBulkUpsertDto extends createZodDto(AssetMetadataBulkUpsertSchema) {}
 export class AssetMetadataBulkDeleteDto extends createZodDto(AssetMetadataBulkDeleteSchema) {}
 export class AssetMetadataResponseDto extends createZodDto(AssetMetadataResponseSchema) {}
+export class AssetFullExifResponseDto extends createZodDto(AssetFullExifResponseSchema) {}
 export class AssetMetadataBulkResponseDto extends createZodDto(AssetMetadataBulkResponseSchema) {}
 export class AssetCopyDto extends createZodDto(AssetCopySchema) {}
 export class AssetDownloadOriginalDto extends createZodDto(AssetDownloadOriginalSchema) {}

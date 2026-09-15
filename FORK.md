@@ -53,3 +53,6 @@ immediately.
 | `server/src/database.ts` | adds `uploadPath` to `Library` type | bugfix (type gap from S1) | S4 |
 | `server/src/{services,sync.repository}.ts` | shared-space/library sync streams, membership backfill, audit removals | sync I5, favorites §4 | S6 |
 | `server/src/{enum,dtos/sync,database}.ts` | additive sync types and `spaceId` asset DTO field | sync I5 | S6 |
+| `server/src/controllers/asset.controller.ts` | full EXIF endpoint | R12 | S7 |
+| `server/src/repositories/metadata.repository.ts` | group-aware full exiftool reader | R12 | S7 |
+| `server/src/{dtos/search.dto.ts,utils/database.ts,repositories/search.repository.ts,services/search.service.ts}` | scoped rich metadata filters and extension suggestions | R13 | S7 |

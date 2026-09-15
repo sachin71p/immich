@@ -7,6 +7,7 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetFullExifResponseDto,
   AssetJobsDto,
   AssetMetadataBulkDeleteDto,
   AssetMetadataBulkResponseDto,
@@ -187,6 +188,14 @@ export class AssetController {
   })
   getAssetMetadata(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetMetadataResponseDto[]> {
     return this.service.getMetadata(auth, id);
+  }
+
+  // fork: shared-libraries
+  @Get(':id/exif/full')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({ summary: 'Get full asset EXIF metadata', history: new HistoryBuilder().added('v3') })
+  getAssetFullExif(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetFullExifResponseDto> {
+    return this.service.getFullExif(auth, id);
   }
 
   @Get(':id/ocr')

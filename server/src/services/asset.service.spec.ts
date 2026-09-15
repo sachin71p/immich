@@ -378,6 +378,55 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('getFullExif', () => {
+    it('should allow the owner and merge sidecar tags while stripping binary values', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar, path: '/data/upload/asset.xmp' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.metadata.readFullTags.mockResolvedValueOnce({
+        'EXIF:ISO': 200,
+        'MakerNotes:PreviewImage': { bytes: 42, rawValue: 'binary' },
+      });
+      mocks.metadata.readFullTags.mockResolvedValueOnce({ 'XMP:Label': 'edited in sidecar' });
+
+      await expect(sut.getFullExif(authStub.admin, asset.id)).resolves.toEqual({
+        groups: {
+          EXIF: { ISO: 200 },
+          MakerNotes: { PreviewImage: { binary: true, bytes: 42 } },
+          XMP: { Label: 'edited in sidecar' },
+        },
+      });
+      expect(mocks.metadata.readFullTags).toHaveBeenNthCalledWith(1, asset.originalPath);
+      expect(mocks.metadata.readFullTags).toHaveBeenNthCalledWith(2, '/data/upload/asset.xmp');
+    });
+
+    it('should allow a shared-space member', async () => {
+      const asset = AssetFactory.create({ ownerId: newUuid(), spaceId: newUuid() });
+      mocks.access.asset.checkSpaceAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.metadata.readFullTags.mockResolvedValue({});
+
+      await expect(sut.getFullExif(authStub.user1, asset.id)).resolves.toEqual({ groups: {} });
+    });
+
+    it('should allow a shared-album member', async () => {
+      const asset = AssetFactory.create({ ownerId: newUuid() });
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.metadata.readFullTags.mockResolvedValue({});
+
+      await expect(sut.getFullExif(authStub.user1, asset.id)).resolves.toEqual({ groups: {} });
+    });
+
+    it('should deny a stranger before reading file metadata', async () => {
+      const asset = AssetFactory.create({ ownerId: newUuid() });
+
+      await expect(sut.getFullExif(authStub.user1, asset.id)).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getById).not.toHaveBeenCalled();
+      expect(mocks.metadata.readFullTags).not.toHaveBeenCalled();
+    });
+  });
+
   describe('update', () => {
     it('should require asset write access for the id', async () => {
       await expect(

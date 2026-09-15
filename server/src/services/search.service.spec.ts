@@ -218,6 +218,70 @@ describe(SearchService.name, () => {
   });
 
   describe('new shape routing', () => {
+    it('should combine rich filters and pass the resolved container scope to legacy metadata search', async () => {
+      const auth = AuthFactory.create();
+      const scope = { personalUserIds: [], spaceIds: [newUuid()], libraryIds: [] };
+      const resolve = (sut as unknown as { containerScopeService: { resolve: ReturnType<typeof vitest.fn> } })
+        .containerScopeService.resolve;
+      resolve.mockResolvedValue(scope);
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, {
+        size: 250,
+        isoMin: 100,
+        isoMax: 800,
+        fNumberMin: 2.8,
+        fNumberMax: 5.6,
+        focalLengthMin: 24,
+        fileSizeMin: 1024,
+        widthMin: 1920,
+        fileExtensions: ['jpg'],
+        hasLocation: true,
+        fpsMin: 24,
+        spaceId: scope.spaceIds[0],
+      });
+
+      expect(mocks.search.searchMetadata).toHaveBeenCalledWith(
+        { page: 1, size: 250 },
+        expect.objectContaining({
+          scope,
+          isoMin: 100,
+          isoMax: 800,
+          fNumberMin: 2.8,
+          fNumberMax: 5.6,
+          focalLengthMin: 24,
+          fileSizeMin: 1024,
+          widthMin: 1920,
+          fileExtensions: ['jpg'],
+          hasLocation: true,
+          fpsMin: 24,
+        }),
+      );
+    });
+
+    it('should combine rich filters and pass the resolved container scope to V3 metadata search', async () => {
+      const auth = AuthFactory.create();
+      const scope = { personalUserIds: [], spaceIds: [newUuid()], libraryIds: [] };
+      const resolve = (sut as unknown as { containerScopeService: { resolve: ReturnType<typeof vitest.fn> } })
+        .containerScopeService.resolve;
+      resolve.mockResolvedValue(scope);
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      const filter = {
+        iso: { gte: 100, lte: 800 },
+        fNumber: { gte: 2.8, lte: 5.6 },
+        fileExtension: { eq: 'jpg' },
+        hasLocation: { eq: true },
+      };
+
+      await sut.searchMetadata(auth, { size: 250, spaceId: scope.spaceIds[0], filter });
+
+      expect(mocks.search.searchMetadataV3).toHaveBeenCalledWith(
+        { take: 250, skip: 0 },
+        expect.objectContaining({ filter: expect.objectContaining(filter) }),
+        expect.objectContaining({ containerScope: scope }),
+      );
+    });
+
     it('should route a filter request to the V3 search and a flat request to the legacy search', async () => {
       const auth = AuthFactory.create();
 

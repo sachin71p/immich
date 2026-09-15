@@ -51,6 +51,27 @@ const BaseSearchSchema = z
     make: z.string().nullable().optional().describe('Filter by camera make').meta(DEPRECATED_FLAT_FIELD),
     model: z.string().nullable().optional().describe('Filter by camera model').meta(DEPRECATED_FLAT_FIELD),
     lensModel: z.string().nullable().optional().describe('Filter by lens model').meta(DEPRECATED_FLAT_FIELD),
+    isoMin: z.number().int().min(0).optional().describe('Minimum ISO value').meta(DEPRECATED_FLAT_FIELD),
+    isoMax: z.number().int().min(0).optional().describe('Maximum ISO value').meta(DEPRECATED_FLAT_FIELD),
+    fNumberMin: z.number().min(0).optional().describe('Minimum f-number').meta(DEPRECATED_FLAT_FIELD),
+    fNumberMax: z.number().min(0).optional().describe('Maximum f-number').meta(DEPRECATED_FLAT_FIELD),
+    focalLengthMin: z.number().min(0).optional().describe('Minimum focal length in mm').meta(DEPRECATED_FLAT_FIELD),
+    focalLengthMax: z.number().min(0).optional().describe('Maximum focal length in mm').meta(DEPRECATED_FLAT_FIELD),
+    fileSizeMin: z.number().int().min(0).optional().describe('Minimum file size in bytes').meta(DEPRECATED_FLAT_FIELD),
+    fileSizeMax: z.number().int().min(0).optional().describe('Maximum file size in bytes').meta(DEPRECATED_FLAT_FIELD),
+    widthMin: z.number().int().min(0).optional().describe('Minimum image width').meta(DEPRECATED_FLAT_FIELD),
+    heightMin: z.number().int().min(0).optional().describe('Minimum image height').meta(DEPRECATED_FLAT_FIELD),
+    fileExtensions: z
+      .array(z.string().min(1))
+      .optional()
+      .describe('File extensions to include')
+      .meta(DEPRECATED_FLAT_FIELD),
+    mimeTypes: z.array(z.string().min(1)).optional().describe('MIME types to include').meta(DEPRECATED_FLAT_FIELD),
+    projectionType: z.string().optional().describe('Projection type').meta(DEPRECATED_FLAT_FIELD),
+    hasLocation: stringToBool.optional().describe('Whether the asset has GPS coordinates').meta(DEPRECATED_FLAT_FIELD),
+    orientation: z.string().optional().describe('EXIF orientation').meta(DEPRECATED_FLAT_FIELD),
+    fpsMin: z.number().min(0).optional().describe('Minimum frames per second').meta(DEPRECATED_FLAT_FIELD),
+    fpsMax: z.number().min(0).optional().describe('Maximum frames per second').meta(DEPRECATED_FLAT_FIELD),
     isNotInAlbum: z.boolean().optional().describe('Filter assets not in any album').meta(DEPRECATED_FLAT_FIELD),
     personIds: z.array(z.uuidv4()).optional().describe('Filter by person IDs').meta(DEPRECATED_FLAT_FIELD),
     tagIds: z.array(z.uuidv4()).nullish().describe('Filter by tag IDs').meta(DEPRECATED_FLAT_FIELD),
@@ -117,6 +138,7 @@ export enum SearchSuggestionType {
   CAMERA_MAKE = 'camera-make',
   CAMERA_MODEL = 'camera-model',
   CAMERA_LENS_MODEL = 'camera-lens-model',
+  FILE_EXTENSION = 'file-extension',
 }
 
 const SearchSuggestionTypeSchema = z
@@ -278,6 +300,17 @@ const searchFilterBranchShape = {
   make: StringFilterNullableSchema,
   model: StringFilterNullableSchema,
   lensModel: StringFilterNullableSchema,
+  iso: NumberFilterSchema,
+  fNumber: NumberFilterSchema,
+  focalLength: NumberFilterSchema,
+  width: NumberFilterSchema,
+  height: NumberFilterSchema,
+  fileExtension: StringFilterSchema,
+  mimeType: StringFilterSchema,
+  projectionType: StringFilterNullableSchema,
+  hasLocation: BoolFilterSchema,
+  orientation: StringFilterNullableSchema,
+  fps: NumberFilterSchema,
   description: StringPatternFilterSchema,
   originalFileName: StringPatternFilterSchema,
   originalPath: StringPatternFilterSchema,

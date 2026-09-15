@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AssetFile } from 'src/database.js';
@@ -10,6 +10,7 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetFullExifResponseDto,
   AssetJobName,
   AssetJobsDto,
   AssetMetadataBulkDeleteDto,
@@ -42,7 +43,6 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
-import { ContainerScopeService } from 'src/utils/container-scope.js';
 import {
   getAssetFiles,
   getDimensions,
@@ -51,6 +51,7 @@ import {
   onBeforeLink,
   onBeforeUnlink,
 } from 'src/utils/asset.util.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { batched, findOrFail } from 'src/utils/misc.js';
@@ -522,6 +523,23 @@ export class AssetService extends BaseService {
     return this.assetRepository.getMetadata(id);
   }
 
+  // fork: shared-libraries
+  async getFullExif(auth: AuthDto, id: string): Promise<AssetFullExifResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+    const asset = await this.assetRepository.getById(id, { files: true });
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
+    }
+    if (asset.isExternal && asset.isOffline) {
+      throw new NotFoundException('Asset is offline');
+    }
+
+    const { sidecarFile } = getAssetFiles(asset.files ?? []);
+    const tags = [await this.metadataRepository.readFullTags(asset.originalPath)];
+    if (sidecarFile) tags.push(await this.metadataRepository.readFullTags(sidecarFile.path));
+    return { groups: groupFullExif(tags) };
+  }
+
   async getOcr(auth: AuthDto, id: string): Promise<AssetOcrResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
     const ocr = await this.ocrRepository.getByAssetId(id);
@@ -747,3 +765,30 @@ export class AssetService extends BaseService {
     await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
   }
 }
+
+// exiftool's -G1 keys are e.g. "EXIF:ISO". Keep an ungrouped fallback for tool output
+// that does not identify a family, while never serializing binary payloads.
+const groupFullExif = (sources: Array<Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+  const groups: Record<string, Record<string, unknown>> = {};
+  for (const source of sources) {
+    for (const [qualifiedName, value] of Object.entries(source)) {
+      const separator = qualifiedName.indexOf(':');
+      const group = separator === -1 ? 'Other' : qualifiedName.slice(0, separator);
+      const name = separator === -1 ? qualifiedName : qualifiedName.slice(separator + 1);
+      (groups[group] ??= {})[name] = stripBinaryExif(value);
+    }
+  }
+  return groups;
+};
+
+const stripBinaryExif = (value: unknown): unknown => {
+  if (Buffer.isBuffer(value)) return { binary: true, bytes: value.byteLength };
+  if (typeof value === 'object' && value !== null && 'bytes' in value && 'rawValue' in value) {
+    return { binary: true, bytes: (value as { bytes: number }).bytes };
+  }
+  if (Array.isArray(value)) return value.map((item) => stripBinaryExif(item));
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stripBinaryExif(item)]));
+  }
+  return value;
+};

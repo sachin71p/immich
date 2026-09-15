@@ -47,8 +47,9 @@ import {
 } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { fromChecksum } from 'src/utils/request.js';
 import { withContainerScope } from 'src/utils/container-scope.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+import { fromChecksum } from 'src/utils/request.js';
 
 export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyConfig => {
   return {
@@ -86,6 +87,8 @@ const uniqueIds = (ids: string[]) => [...new Set(ids)];
 export const asUuid = (id: string | Expression<string>) => sql<string>`${id}::uuid`;
 
 export const anyUuid = (ids: string[]) => sql<string>`any(${`{${ids}}`}::uuid[])`;
+
+const anyText = (values: string[]) => sql<string>`any(array[${sql.join(values)}]::text[])`;
 
 export const unnest = (array: string[]) => sql<Record<string, string>>`unnest(array[${sql.join(array)}]::text[])`;
 
@@ -480,6 +483,73 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
           .where('asset_exif.lensModel', options.lensModel === null ? 'is' : '=', options.lensModel!),
       )
+      .$if(options.isoMin !== undefined || options.isoMax !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .$if(options.isoMin !== undefined, (qb) => qb.where('asset_exif.iso', '>=', options.isoMin!))
+          .$if(options.isoMax !== undefined, (qb) => qb.where('asset_exif.iso', '<=', options.isoMax!)),
+      )
+      .$if(options.fNumberMin !== undefined || options.fNumberMax !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .$if(options.fNumberMin !== undefined, (qb) => qb.where('asset_exif.fNumber', '>=', options.fNumberMin!))
+          .$if(options.fNumberMax !== undefined, (qb) => qb.where('asset_exif.fNumber', '<=', options.fNumberMax!)),
+      )
+      .$if(options.focalLengthMin !== undefined || options.focalLengthMax !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .$if(options.focalLengthMin !== undefined, (qb) =>
+            qb.where('asset_exif.focalLength', '>=', options.focalLengthMin!),
+          )
+          .$if(options.focalLengthMax !== undefined, (qb) =>
+            qb.where('asset_exif.focalLength', '<=', options.focalLengthMax!),
+          ),
+      )
+      .$if(options.fileSizeMin !== undefined || options.fileSizeMax !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .$if(options.fileSizeMin !== undefined, (qb) =>
+            qb.where('asset_exif.fileSizeInByte', '>=', options.fileSizeMin!),
+          )
+          .$if(options.fileSizeMax !== undefined, (qb) =>
+            qb.where('asset_exif.fileSizeInByte', '<=', options.fileSizeMax!),
+          ),
+      )
+      .$if(options.widthMin !== undefined, (qb) => qb.where('asset.width', '>=', options.widthMin!))
+      .$if(options.heightMin !== undefined, (qb) => qb.where('asset.height', '>=', options.heightMin!))
+      .$if(!!options.fileExtensions?.length || !!options.mimeTypes?.length, (qb) =>
+        qb.where(
+          sql`lower(regexp_replace(asset."originalFileName", '^.*\\.', ''))`,
+          '=',
+          anyText([
+            ...(options.fileExtensions ?? []).map((extension) => extension.toLowerCase().replace(/^\./, '')),
+            ...(options.mimeTypes ?? [])
+              .map((mimeType) => mimeTypes.toExtension(mimeType)?.slice(1))
+              .filter((extension): extension is string => !!extension),
+          ]),
+        ),
+      )
+      .$if(options.projectionType !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.projectionType', '=', options.projectionType!),
+      )
+      .$if(options.hasLocation !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.latitude', options.hasLocation ? 'is not' : 'is', null),
+      )
+      .$if(options.orientation !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.orientation', '=', options.orientation!),
+      )
+      .$if(options.fpsMin !== undefined || options.fpsMax !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .$if(options.fpsMin !== undefined, (qb) => qb.where('asset_exif.fps', '>=', options.fpsMin!))
+          .$if(options.fpsMax !== undefined, (qb) => qb.where('asset_exif.fps', '<=', options.fpsMax!)),
+      )
       .$if(options.rating !== undefined, (qb) =>
         qb
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
@@ -726,6 +796,31 @@ function checksumPredicates(eb: AssetExpressionBuilder, filter: StringFilter = {
   });
 }
 
+function fileExtensionPredicates(eb: AssetExpressionBuilder, filter: StringFilter = {}) {
+  const extension = sql<string>`lower(regexp_replace(asset."originalFileName", '^.*\\.', ''))`;
+  const predicates: Expression<SqlBool>[] = [];
+  if (filter.eq !== undefined) predicates.push(sql<SqlBool>`${extension} = ${filter.eq.toLowerCase()}`);
+  if (filter.ne !== undefined) predicates.push(sql<SqlBool>`${extension} != ${filter.ne.toLowerCase()}`);
+  if (filter.in !== undefined)
+    predicates.push(sql<SqlBool>`${extension} = ${anyText(filter.in.map((value) => value.toLowerCase()))}`);
+  if (filter.notIn !== undefined)
+    predicates.push(
+      sql<SqlBool>`${extension} != all(array[${sql.join(filter.notIn.map((value) => value.toLowerCase()))}]::text[])`,
+    );
+  return predicates;
+}
+
+const mimeTypeToExtension = (value: string) => mimeTypes.toExtension(value)?.slice(1);
+
+function mimeTypePredicates(eb: AssetExpressionBuilder, filter: StringFilter = {}) {
+  return fileExtensionPredicates(eb, {
+    eq: filter.eq && mimeTypeToExtension(filter.eq),
+    ne: filter.ne && mimeTypeToExtension(filter.ne),
+    in: filter.in?.map((value) => mimeTypeToExtension(value)).filter((value): value is string => !!value),
+    notIn: filter.notIn?.map((value) => mimeTypeToExtension(value)).filter((value): value is string => !!value),
+  });
+}
+
 const encodedVideoFiles = (eb: AssetExpressionBuilder) =>
   eb
     .selectFrom('asset_file')
@@ -766,6 +861,17 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...comparisonPredicates(eb, 'asset_exif.make', branch.make),
     ...comparisonPredicates(eb, 'asset_exif.model', branch.model),
     ...comparisonPredicates(eb, 'asset_exif.lensModel', branch.lensModel),
+    ...comparisonPredicates(eb, 'asset_exif.iso', branch.iso),
+    ...comparisonPredicates(eb, 'asset_exif.fNumber', branch.fNumber),
+    ...comparisonPredicates(eb, 'asset_exif.focalLength', branch.focalLength),
+    ...comparisonPredicates(eb, 'asset.width', branch.width),
+    ...comparisonPredicates(eb, 'asset.height', branch.height),
+    ...comparisonPredicates(eb, 'asset_exif.projectionType', branch.projectionType),
+    ...comparisonPredicates(eb, 'asset_exif.orientation', branch.orientation),
+    ...comparisonPredicates(eb, 'asset_exif.fps', branch.fps),
+    ...fileExtensionPredicates(eb, branch.fileExtension),
+    ...mimeTypePredicates(eb, branch.mimeType),
+    ...(branch.hasLocation ? [eb('asset_exif.latitude', branch.hasLocation.eq ? 'is not' : 'is', null)] : []),
     ...stringPatternPredicates(eb, 'asset_exif.description', branch.description),
     ...stringPatternPredicates(eb, 'asset.originalFileName', branch.originalFileName),
     ...stringPatternPredicates(eb, 'asset.originalPath', branch.originalPath),
