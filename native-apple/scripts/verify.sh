@@ -3,7 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 mode=${1:-all}
-simulator="${SIMULATOR_NAME:-iPhone 17 Pro Max}"
+simulator="${SIMULATOR_NAME:-iPhone 17}"
 module_cache="$root/.build/clang-module-cache"
 mkdir -p "$module_cache"
 export CLANG_MODULE_CACHE_PATH="$module_cache"
