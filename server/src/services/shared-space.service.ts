@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   SharedSpaceCreateDto,
@@ -36,8 +36,15 @@ export class SharedSpaceService {
     private assetRelocationService: AssetRelocationService,
   ) {}
 
-  private require(auth: AuthDto, permission: Permission, id: string) {
-    return requireAccess(this.accessRepository, { auth, permission, ids: [id] });
+  private async require(auth: AuthDto, permission: Permission, id: string) {
+    // fork: shared-libraries - space surfaces report denial as 403 (S4 contract);
+    // upstream requireAccess uses 400 to hide existence, which stays on upstream endpoints.
+    try {
+      await requireAccess(this.accessRepository, { auth, permission, ids: [id] });
+    } catch (error) {
+      if (error instanceof BadRequestException) throw new ForbiddenException(error.message);
+      throw error;
+    }
   }
 
   private async storageLabel(name: string) {

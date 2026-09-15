@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Mocked, vitest } from 'vitest';
 import { Permission, SharedSpaceRole } from 'src/enum.js';
 import { AssetRelocationService } from 'src/services/asset-relocation.service.js';
@@ -77,7 +77,7 @@ describe(SharedSpaceService.name, () => {
       const auth = AuthFactory.create();
       access.space.checkMemberAccess.mockResolvedValue(new Set());
 
-      await expect(sut.get(auth, space.id)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.get(auth, space.id)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('should return the space for a member', async () => {
@@ -94,7 +94,7 @@ describe(SharedSpaceService.name, () => {
       const auth = AuthFactory.create();
       access.space.checkOwnerAccess.mockResolvedValue(new Set());
 
-      await expect(sut.delete(auth, space.id)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.delete(auth, space.id)).rejects.toBeInstanceOf(ForbiddenException);
       expect(sharedSpaceMock.deleteSpace).not.toHaveBeenCalled();
     });
 
@@ -148,7 +148,7 @@ describe(SharedSpaceService.name, () => {
       access.space.checkOwnerAccess.mockResolvedValue(new Set());
 
       await expect(sut.transferOwner(auth, space.id, { userId: 'contributor-1' })).rejects.toBeInstanceOf(
-        BadRequestException,
+        ForbiddenException,
       );
       expect(sharedSpaceMock.transferOwner).not.toHaveBeenCalled();
     });
