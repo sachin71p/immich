@@ -76,6 +76,10 @@ run_medium() {
 
 run_e2e_api() {
   git -C "$ROOT" submodule update --init e2e/test-assets
+  # fork: shared-libraries - CLI specs shell out to packages/cli/bin/immich, which needs dist built.
+  if [[ ! -f "$ROOT/packages/cli/dist/index.js" ]]; then
+    (cd "$ROOT/packages/cli" && pnpm run build)
+  fi
   stack_up
   # shellcheck disable=SC2164
   (cd "$ROOT/e2e" && VITEST_DISABLE_DOCKER_SETUP=true pnpm test -- src/specs/server/api/fork) \
