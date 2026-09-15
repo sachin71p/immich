@@ -215,13 +215,65 @@ describe(AssetService.name, () => {
       mocks.access.library.checkMemberAccess.mockResolvedValue(new Set(['lib-1']));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getMoveGroup.mockResolvedValue([asset]);
-      mocks.asset.getByChecksum.mockResolvedValue(AssetFactory.create({ id: newUuid() }));
+      mocks.asset.getByChecksumInContainer.mockResolvedValue(AssetFactory.create({ id: newUuid() }));
 
       const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'library', id: 'lib-1' } };
       const result = await sut.move(auth, dto);
 
       expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'duplicate' }] });
+      expect(mocks.asset.getByChecksumInContainer).toHaveBeenCalledWith({
+        checksum: asset.checksum,
+        ownerId: undefined,
+        spaceId: null,
+        libraryId: 'lib-1',
+        excludeIds: [asset.id],
+      });
       expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should reject moving into a space that already holds the same bytes from another owner', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: null, libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+      mocks.asset.getByChecksumInContainer.mockResolvedValue(
+        AssetFactory.create({ id: newUuid(), ownerId: newUuid() }),
+      );
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'duplicate' }] });
+      expect(mocks.asset.getByChecksumInContainer).toHaveBeenCalledWith({
+        checksum: asset.checksum,
+        ownerId: undefined,
+        spaceId: 'space-1',
+        libraryId: null,
+        excludeIds: [asset.id],
+      });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should scope the personal-target duplicate check to the moving user', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'personal' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'moved' }] });
+      expect(mocks.asset.getByChecksumInContainer).toHaveBeenCalledWith({
+        checksum: asset.checksum,
+        ownerId: auth.user.id,
+        spaceId: null,
+        libraryId: null,
+        excludeIds: [asset.id],
+      });
     });
 
     it('should expand the move to the whole live-photo pair', async () => {

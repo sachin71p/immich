@@ -128,6 +128,13 @@ interface AssetGetByChecksumOptions {
   libraryId?: string;
 }
 
+interface AssetGetByChecksumInContainerOptions {
+  checksum: Buffer;
+  ownerId?: string;
+  spaceId?: string | null;
+  libraryId?: string | null;
+}
+
 interface GetByIdsRelations {
   exifInfo?: boolean;
   faces?: { person?: boolean; withDeleted?: boolean; viewingUserId?: string };
@@ -733,6 +740,46 @@ export class AssetRepository {
       .where('ownerId', '=', asUuid(ownerId))
       .where('checksum', '=', checksum)
       .$call((qb) => (libraryId ? qb.where('libraryId', '=', asUuid(libraryId)) : qb.where('libraryId', 'is', null)))
+      .$if(!!excludeIds?.length, (qb) =>
+        qb.where(
+          'asset.id',
+          'not in',
+          excludeIds!.map((id) => asUuid(id)),
+        ),
+      )
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [{ checksum: DummyValue.BUFFER, ownerId: DummyValue.UUID, spaceId: DummyValue.UUID }] })
+  // fork: shared-libraries - container-scoped checksum lookup for the move duplicate
+  // pre-check (R10-06): a move must not land bytes that already exist in the target
+  // container. Personal targets stay owner-scoped (every user has their own personal
+  // library); spaces and external libraries are shared containers, so the owner filter
+  // is omitted there. The move group is excluded so live pairs and stacks never
+  // self-collide and a limit(1) lookup cannot hide the real duplicate behind a group
+  // member.
+  getByChecksumInContainer({
+    checksum,
+    ownerId,
+    spaceId,
+    libraryId,
+    excludeIds,
+  }: AssetGetByChecksumInContainerOptions & { excludeIds?: string[] }) {
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .where('checksum', '=', checksum)
+      .$if(!!ownerId, (qb) => qb.where('ownerId', '=', asUuid(ownerId!)))
+      .$call((qb) =>
+        libraryId
+          ? qb.where('libraryId', '=', asUuid(libraryId))
+          : qb
+              .where('libraryId', 'is', null)
+              .$call((inner) =>
+                spaceId ? inner.where('spaceId', '=', asUuid(spaceId)) : inner.where('spaceId', 'is', null),
+              ),
+      )
       .$if(!!excludeIds?.length, (qb) =>
         qb.where(
           'asset.id',

@@ -134,16 +134,23 @@ export class AssetService extends BaseService {
         results.push({ id, status: 'error', reason: 'target_access' });
         continue;
       }
-      // fork: shared-libraries - checksum uniqueness is (ownerId, checksum) for personal/space
-      // assets and (ownerId, libraryId, checksum) for external-library assets (§6.8). The group
-      // itself is excluded in the query so live pairs and stacks never self-collide and a
-      // limit(1) lookup cannot hide the real duplicate behind a group member.
+      // fork: shared-libraries - a move must not land bytes that already exist in the
+      // target container (R10-06). Personal targets stay owner-scoped (every user has
+      // their own personal library); spaces and external libraries are shared, so the
+      // lookup spans owners there. The group itself is excluded in the query so live
+      // pairs and stacks never self-collide and a limit(1) lookup cannot hide the real
+      // duplicate behind a group member.
+      // NOTE: same-owner same-byte uploads collapse at upload time (the duplicate
+      // upload returns the existing id), so a staged cross-container pair always has
+      // distinct owners - which is why shared targets must span owners here.
+      const sharedTarget = target.spaceId !== null || target.libraryId !== null;
       const duplicate = await Promise.all(
         group.map((item) =>
-          this.assetRepository.getByChecksum({
-            ownerId: item.ownerId,
-            libraryId: target.libraryId ?? undefined,
+          this.assetRepository.getByChecksumInContainer({
             checksum: item.checksum,
+            ownerId: sharedTarget ? undefined : auth.user.id,
+            spaceId: target.spaceId,
+            libraryId: target.libraryId,
             excludeIds: groupIds,
           }),
         ),

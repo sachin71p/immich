@@ -171,7 +171,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         assetIds: [target.id],
         target: { type: Type7.Library, id: world.libraries.nasro.id },
       });
-      expect(result.results).toEqual([{ id: target.id, status: 'error' }]);
+      expect(result.results).toEqual([{ id: target.id, status: 'error', reason: 'target_access' }]);
     }, 300_000);
   },
 );

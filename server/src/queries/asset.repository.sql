@@ -317,6 +317,19 @@ where
 limit
   $4
 
+-- AssetRepository.getByChecksumInContainer
+select
+  "asset".*
+from
+  "asset"
+where
+  "checksum" = $1
+  and "ownerId" = $2::uuid
+  and "libraryId" is null
+  and "spaceId" = $3::uuid
+limit
+  $4
+
 -- AssetRepository.getByChecksums
 select
   "id",

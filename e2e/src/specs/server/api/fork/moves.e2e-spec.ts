@@ -163,7 +163,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         assetIds: [other.id],
         target: { type: Type6.Space, id: world.spaces.carolSolo.id },
       });
-      expect(denied.results).toEqual([{ id: other.id, status: 'error' }]);
+      expect(denied.results).toEqual([{ id: other.id, status: 'error', reason: 'source_access' }]);
     }, 300_000);
 
     it('[R10-06] same-container move is noop; target duplicate errors', async () => {
