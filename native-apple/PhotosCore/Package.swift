@@ -41,7 +41,10 @@ let package = Package(
     .target(name: "Search", dependencies: ["CoreModel", "LocalStore"]),
     .testTarget(
       name: "PhotosCoreTests",
-      dependencies: ["CoreModel", "Rules", "LocalStore", "SyncEngine", "ImmichAPI"],
+      dependencies: [
+        "CoreModel", "Rules", "LocalStore", "SyncEngine", "ImmichAPI", "Media",
+        .product(name: "Nuke", package: "Nuke"),
+      ],
       resources: [.copy("Fixtures")]
     ),
   ]
