@@ -5,8 +5,8 @@ import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
-import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -62,12 +62,19 @@ export class TimelineService extends BaseService {
           withPartners: dto.withPartners,
           filter: { spaceId: dto.spaceId, libraryId: dto.libraryId, personalOnly: dto.personalOnly },
         });
-    return { ...options, userIds, ...(scope ? { scope } : {}) };
+    return { ...options, userIds, ...(scope && { scope }) };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
+    }
+
+    // fork: shared-libraries - upstream defaulted dto.userId to the session user here, which ran the
+    // TimelineRead gate below for own-timeline reads. The default moved to buildTimeBucketOptions (so
+    // scope resolution still applies), but the gate must stay: otherwise shared-link sessions skip it.
+    if (!dto.albumId && !dto.userId) {
+      await this.requireAccess({ auth, permission: Permission.TimelineRead, ids: [auth.user.id] });
     }
 
     if (dto.albumId) {
