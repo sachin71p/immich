@@ -21,7 +21,7 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 | S10 | Hardening: upgrade gate, FORK.md, upstream-merge rehearsal | S8b, S8c, T1 | med | ⬜ | | |
 | A0 | Apple: workspace, shared core package skeleton, codegen | S0 | low | ✅ | 9d686e0b8 | host now has a full Xcode toolchain; `swift build && swift test` verified clean (1 fixed `Operations.Login`→`Operations.login` naming bug, applied in A1) |
 | A1 | Apple core: auth, sync engine, local DB | A0, S6 | high | ✅ | 2756651c4 | `swift build && swift test` clean on independently reverified from-scratch build: 29/29 pass; AP-02 vs rules-cases.json deferred to T0 |
-| A2 | Apple core: image pipeline + cache tiers | A1 | med | ⬜ | | |
+| A2 | Apple core: image pipeline + cache tiers | A1 | med | ✅ | 6618a19c5 | swift build + swift test 55/55 PASS (29 A0/A1 intact); verify.sh sandbox-exec + xcodegen NOT RUN (toolchain gaps) |
 | A3 | iOS app: grid, viewer, libraries, albums, favorites, move | A2 | med | ⬜ | | |
 | A4 | macOS app: sidebar, grid, viewer, libraries, albums, move, import | A2 (parallel-safe with A3) | med | ⬜ | | |
 | A5 | Backup/upload (iOS extension + macOS watcher/import) | A3, A4 | high | ⬜ | | |
