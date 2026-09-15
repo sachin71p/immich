@@ -18,13 +18,13 @@ core() {
 ios() {
   cd "$root"
   xcodegen generate
-  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-iOS -destination "platform=iOS Simulator,name=$simulator" build test
+  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-iOS -destination "platform=iOS Simulator,name=$simulator" -skipPackagePluginValidation build test
 }
 
 mac() {
   cd "$root"
   xcodegen generate
-  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-macOS -destination 'platform=macOS' build test
+  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-macOS -destination 'platform=macOS' -skipPackagePluginValidation build test
 }
 
 case "$mode" in
