@@ -19,6 +19,8 @@ targets:
     sources: [Apps/Shared, Apps/iOS/Sources]
     dependencies:
       - package: PhotosCore
+        product: Upload
+      - package: PhotosCore
         product: ImmichAPI
       - package: PhotosCore
         product: CoreModel
@@ -30,11 +32,18 @@ targets:
         product: SyncEngine
       - package: PhotosCore
         product: Media
+      - package: PhotosCore
+        product: Editing
+      - package: PhotosCore
+        product: Search
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.ios
         CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIBackgroundModes: processing
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers:
+          - com.immich.photosfork.backup-processing
   PhotosFork-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS
@@ -52,6 +61,8 @@ targets:
     sources: [Apps/Shared, Apps/macOS/Sources]
     dependencies:
       - package: PhotosCore
+        product: Upload
+      - package: PhotosCore
         product: ImmichAPI
       - package: PhotosCore
         product: CoreModel
@@ -63,6 +74,10 @@ targets:
         product: SyncEngine
       - package: PhotosCore
         product: Media
+      - package: PhotosCore
+        product: Editing
+      - package: PhotosCore
+        product: Search
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.macos
@@ -80,11 +95,23 @@ targets:
     type: app-extension
     platform: iOS
     sources: [Apps/iOS/Extensions/BackgroundUpload/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: ImmichAPI
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: LocalStore
+      - package: PhotosCore
+        product: SyncEngine
+      - package: PhotosCore
+        product: Upload
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.background-upload
         CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.photos.background-resource-upload
+        INFOPLIST_KEY_NSExtension_NSExtensionPrincipalClass: PhotosForkBackgroundUploadHandler
   PhotosFork-PhotoEditing:
     type: app-extension
     platform: iOS
@@ -116,6 +143,17 @@ targets:
     type: app-extension
     platform: macOS
     sources: [Apps/macOS/Agent/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: ImmichAPI
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: LocalStore
+      - package: PhotosCore
+        product: SyncEngine
+      - package: PhotosCore
+        product: Upload
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.agent

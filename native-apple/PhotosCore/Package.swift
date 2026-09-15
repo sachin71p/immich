@@ -37,12 +37,12 @@ let package = Package(
     .target(name: "SyncEngine", dependencies: ["CoreModel", "Rules", "ImmichAPI", "LocalStore"]),
     .target(name: "Media", dependencies: ["CoreModel", .product(name: "Nuke", package: "Nuke")]),
     .target(name: "Upload", dependencies: ["CoreModel", "ImmichAPI", "LocalStore"]),
-    .target(name: "Editing", dependencies: ["CoreModel"]),
-    .target(name: "Search", dependencies: ["CoreModel", "LocalStore"]),
+    .target(name: "Editing", dependencies: ["CoreModel", "Rules"]),
+    .target(name: "Search", dependencies: ["CoreModel", "Rules", "LocalStore"]),
     .testTarget(
       name: "PhotosCoreTests",
       dependencies: [
-        "CoreModel", "Rules", "LocalStore", "SyncEngine", "ImmichAPI", "Media",
+        "CoreModel", "Rules", "LocalStore", "SyncEngine", "ImmichAPI", "Media", "Search", "Upload", "Editing",
         .product(name: "Nuke", package: "Nuke"),
       ],
       resources: [.copy("Fixtures")]

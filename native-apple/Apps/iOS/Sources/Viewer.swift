@@ -1,9 +1,12 @@
+import AVFoundation
 import AVKit
 import CoreModel
+import Editing
 import LocalStore
 import MapKit
 import Media
 import Rules
+import Search
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -149,6 +152,8 @@ struct ViewerView: View {
   @State private var showInfo = false
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
+  @State private var showEdit = false
+  @State private var editPreview: UIImage?
   @State private var actionError: String?
   @Environment(\.dismiss) private var dismiss
 
@@ -198,6 +203,17 @@ struct ViewerView: View {
             .environmentObject(session)
         }
       }
+      .fullScreenCover(isPresented: $showEdit) {
+        if let asset, let editPreview, let base = session.serverURL {
+          EditView(
+            asset: asset, access: session.access, preview: editPreview,
+            loadOriginalData: { try await downloadOriginal(asset) },
+            loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
+            persistence: RESTEditPersistence(
+              serverURL: base, token: { await session.bearerToken() }),
+            onDone: { _ in Task { await reloadAsset() } })
+        }
+      }
       .alert("Action failed", isPresented: Binding(
         get: { actionError != nil }, set: { if !$0 { actionError = nil } })
       ) {
@@ -238,10 +254,9 @@ struct ViewerView: View {
       }
     }
     Button { showInfo = true } label: { Label("Info", systemImage: "info.circle") }
-    // Edit ships in A8 — shown disabled so the toolbar layout stays final.
-    Button {} label: { Label("Edit", systemImage: "slider.horizontal.3") }
-      .disabled(true)
-      .help("Image editing ships in phase A8")
+    if Permissions.canEdit(asset, in: ctx) {
+      Button { openEdit(asset) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+    }
     if Permissions.canDelete(asset, in: ctx) {
       Button(role: .destructive) {
         mutate {
@@ -340,6 +355,61 @@ struct ViewerView: View {
     }
   }
 
+  private func openEdit(_ asset: Asset) {
+    Task {
+      do {
+        let data = try await downloadOriginal(asset)
+        if let image = UIImage(data: data) {
+          editPreview = image
+        } else {
+          // Video: use the first frame as the editing preview.
+          let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+          try data.write(to: tmp)
+          editPreview = await firstFrame(of: tmp) ?? UIImage()
+          try? FileManager.default.removeItem(at: tmp)
+        }
+        showEdit = true
+      } catch {
+        actionError = error.localizedDescription
+      }
+    }
+  }
+
+  private func downloadOriginal(_ asset: Asset) async throws -> Data {
+    guard let base = session.serverURL, let token = await session.bearerToken() else {
+      throw EditAccessError.notPermitted
+    }
+    var request = URLRequest(
+      url: MediaEndpoint(serverURL: base, assetID: asset.id).originalURL())
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession.shared.data(for: request)
+    return data
+  }
+
+  private func downloadOriginalFile(_ asset: Asset) async throws -> URL {
+    let data = try await downloadOriginal(asset)
+    let tmp = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension((asset.originalFileName as NSString).pathExtension)
+    try data.write(to: tmp)
+    return tmp
+  }
+
+  private func firstFrame(of url: URL) async -> UIImage? {
+    // Synchronous thumbnail extraction on a background task (classic API — no
+    // async-API availability questions on any deployment target).
+    let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+    generator.appliesPreferredTrackTransform = true
+    do {
+      let cg = try generator.copyCGImage(at: .zero, actualTime: nil)
+      return UIImage(cgImage: cg)
+    } catch {
+      return nil
+    }
+  }
+
   private func reloadAsset() async {
     guard let currentId, let store = session.store else { return }
     asset = try? await store.asset(id: currentId)
@@ -406,12 +476,9 @@ struct ViewerInfoPanel: View {
             ForEach(albumNames, id: \.self) { Text($0) }
           }
         }
-        Section("Metadata") {
-          // Placeholder for A7 (R12 full exiftool dump).
-          Text("All metadata browser ships in phase A7.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+        FullExifBrowser(
+          assetId: asset.id, serverURL: session.serverURL,
+          tokenProvider: session.searchTokenProvider())
       }
       .navigationTitle("Info")
       .navigationBarTitleDisplayMode(.inline)

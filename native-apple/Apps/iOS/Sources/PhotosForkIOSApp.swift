@@ -2,7 +2,16 @@ import SwiftUI
 
 @main
 struct PhotosForkIOSApp: App {
-  @StateObject private var session = AppSession()
+  @StateObject private var session: AppSession
+
+  init() {
+    let session = AppSession()
+    _session = StateObject(wrappedValue: session)
+    // A5: BGProcessingTask fallback registration must happen at launch, before first
+    // backgrounding (the extension target covers system photo jobs).
+    BackupScheduler.register(session: session)
+    BackupScheduler.scheduleNext()
+  }
 
   var body: some Scene {
     WindowGroup {
@@ -51,6 +60,9 @@ struct MainTabs: View {
       CollectionsView()
         .tabItem { Label("Collections", systemImage: "square.grid.2x2") }
         .accessibilityIdentifier("tab-collections")
+      SearchView()
+        .tabItem { Label("Search", systemImage: "magnifyingglass") }
+        .accessibilityIdentifier("tab-search")
       NavigationStack {
         SpacesListView()
       }

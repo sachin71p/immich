@@ -1,7 +1,10 @@
 import AppKit
 import CoreModel
+import Editing
 import LocalStore
 import Media
+import Rules
+import Search
 import SwiftUI
 
 /// Asset viewer (brief task 3): in-window and full-screen, arrow-key paging, pinch/scroll zoom
@@ -17,6 +20,7 @@ struct MacViewerView: View {
   @State private var rotation: Double = 0
   @State private var showingInspector = false
   @State private var showingMove = false
+  @State private var showingEdit = false
   @State private var showingAddToAlbum = false
   @State private var error: String?
   @Environment(\.openWindow) private var openWindow
@@ -61,6 +65,9 @@ struct MacViewerView: View {
         Button { trash() } label: { Label("Delete", systemImage: "trash") }
         Button { showingMove = true } label: { Label("Move to…", systemImage: "folder") }
         Button { showingAddToAlbum = true } label: { Label("Add to Album", systemImage: "rectangle.stack.badge.plus") }
+        if let asset, canEdit(asset) {
+          Button { showingEdit = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+        }
         Button { showingInspector.toggle() } label: { Label("Info", systemImage: "info.circle") }
       }
     }
@@ -74,6 +81,19 @@ struct MacViewerView: View {
     }
     .sheet(isPresented: $showingAddToAlbum) {
       MacAddToAlbumSheet(state: state, assetIds: [assetId]) { showingAddToAlbum = false }
+    }
+    .sheet(isPresented: $showingEdit) {
+      if let asset, let preview = editPreview {
+        MacEditView(
+          asset: asset, access: editAccess, preview: preview,
+          loadOriginalData: { try await downloadOriginal(asset) },
+          loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
+          persistence: RESTEditPersistence(
+            serverURL: state.serverURL,
+            token: { [connection = state.connection] in await connection.tokenStore.get() }),
+          onDone: { _ in Task { await load(tier: .preview) } })
+          .frame(minWidth: 900, minHeight: 640)
+      }
     }
     .onKeyPress(.leftArrow) { page(by: -1); return .handled }
     .onKeyPress(.rightArrow) { page(by: 1); return .handled }
@@ -104,6 +124,62 @@ struct MacViewerView: View {
   private func upgradeTier() {
     guard loadedTier != .original, asset != nil else { return }
     Task { await load(tier: .original) }
+  }
+
+  private var editPreview: NSImage? {
+    if let image { return image }
+    return nil
+  }
+
+  private var editAccess: AccessContext {
+    // Built on demand (membership-lazy): personal + owned assets are decided by user id
+    // alone; space/library rows resolve when the sheet opens via `canEdit`.
+    AccessContext(
+      currentUserId: state.userId ?? "", memberSpaceIds: editSpaceIds,
+      accessibleLibraryIds: editLibraryIds)
+  }
+
+  @State private var editSpaceIds: Set<String> = []
+  @State private var editLibraryIds: Set<String> = []
+  @State private var editMembershipsLoaded = false
+
+  private func canEdit(_ asset: Asset) -> Bool {
+    let ctx = AccessContext(currentUserId: state.userId ?? "")
+    if Permissions.canEdit(asset, in: ctx) { return true }
+    // Space/library memberships load once per viewer (guarded: no refresh loop).
+    if !editMembershipsLoaded {
+      editMembershipsLoaded = true
+      Task { await refreshEditMemberships() }
+    }
+    return Permissions.canEdit(asset, in: editAccess)
+  }
+
+  private func refreshEditMemberships() async {
+    let uid = state.userId ?? ""
+    guard !uid.isEmpty else { return }
+    let spaces = (try? await state.store.spacesForUser(uid)) ?? []
+    let libs = (try? await state.store.librariesForUser(uid)) ?? []
+    editSpaceIds = Set(spaces.map { $0.id })
+    editLibraryIds = Set(libs.map { $0.id })
+  }
+
+  private func downloadOriginal(_ asset: Asset) async throws -> Data {
+    var request = URLRequest(
+      url: MediaEndpoint(serverURL: state.serverURL, assetID: asset.id).originalURL())
+    if let token = await state.connection.tokenStore.get() {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    let (data, _) = try await URLSession.shared.data(for: request)
+    return data
+  }
+
+  private func downloadOriginalFile(_ asset: Asset) async throws -> URL {
+    let data = try await downloadOriginal(asset)
+    let tmp = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension((asset.originalFileName as NSString).pathExtension)
+    try data.write(to: tmp)
+    return tmp
   }
 
   private func toggleFavorite() {
@@ -214,6 +290,7 @@ struct MacInfoPanel: View {
         }
         LabeledContent("Favorite", value: asset.isFavorite ? "Yes" : "No")
       }
+      MacFullExifBrowser(assetId: asset.id, state: state)
     }
     .formStyle(.grouped)
     .frame(minWidth: 260)

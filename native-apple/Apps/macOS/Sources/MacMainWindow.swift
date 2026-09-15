@@ -84,6 +84,9 @@ struct MacLibraryBrowser: View {
     .onReceive(NotificationCenter.default.publisher(for: .macImportFiles)) { _ in
       pickImportFiles()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .macImportCamera)) { _ in
+      state.showingCameraImport = true
+    }
     .task(id: reloadKey) { await reload() }
     .onAppear {
       if let restoredSelection, selection == .library {
@@ -123,6 +126,9 @@ struct MacLibraryBrowser: View {
         }
       }
     }
+    .sheet(isPresented: $state.showingCameraImport) {
+      MacCameraImportView(state: state)
+    }
     .sheet(isPresented: $state.showingImportChooser) {
       MacImportChooserSheet(state: state, urls: state.pendingImportURLs) {
         state.showingImportChooser = false
@@ -155,6 +161,8 @@ struct MacLibraryBrowser: View {
   @ViewBuilder
   private var detailView: some View {
     switch selection?.query {
+    case .search:
+      MacSearchView(state: state)
     case .map:
       MacMapView(state: state)
     case .people:
@@ -438,6 +446,7 @@ extension SidebarDestination {
     switch self {
     case .library: return "library"
     case .collections: return "collections"
+    case .search: return "search"
     case .favorites: return "favorites"
     case .recentlySaved: return "recents"
     case .map: return "map"
@@ -460,6 +469,7 @@ extension SidebarDestination {
   init?(restorableID: String) {
     if restorableID == "library" { self = .library; return }
     if restorableID == "collections" { self = .collections; return }
+    if restorableID == "search" { self = .search; return }
     if restorableID == "favorites" { self = .favorites; return }
     if restorableID == "recents" { self = .recentlySaved; return }
     if restorableID == "map" { self = .map; return }
