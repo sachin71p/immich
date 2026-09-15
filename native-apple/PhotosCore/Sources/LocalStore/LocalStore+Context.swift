@@ -95,6 +95,20 @@ extension PhotosLocalStore {
     return (try? PrefsCoding.decode(data)) ?? SharedLibraryPrefs()
   }
 
+  /// Extension/agent entry points have no signed-in user id handy; the prefs payload is
+  /// per-user but backup/network flags are device-wide in practice — first row wins.
+  public func anyPrefs() async throws -> SharedLibraryPrefs {
+    try await dbQueue.read { db in
+      if let json = try String.fetchOne(
+        db, sql: "SELECT valueJSON FROM userMetadata WHERE key = 'sharedLibraries' LIMIT 1",
+        arguments: []
+      ), let data = json.data(using: .utf8), let prefs = try? PrefsCoding.decode(data) {
+        return prefs
+      }
+      return SharedLibraryPrefs()
+    }
+  }
+
   public func prefs(for userId: String) async throws -> SharedLibraryPrefs {
     try await dbQueue.read { db in try Self.readPrefs(userId: userId, db: db) }
   }
@@ -121,6 +135,15 @@ enum PrefsCoding {
     var defaultUploadTarget: UploadTarget
     var showPersonalInTimeline: Bool
     var hiddenOwnedLibraryIds: [String]
+    // A5 backup fields. Defaults keep pre-A5 payloads decodable (synthesized init uses
+    // `decodeIfPresent` for defaulted properties, so old rows decode to backup-off).
+    var backupEnabled: Bool = false
+    var backupAlbumIds: [String] = []
+    var useCellularForPhotos: Bool = false
+    var useCellularForVideos: Bool = false
+    var allowLowPowerUploads: Bool = false
+    var uploadOriginalPlusEdit: Bool = false
+    var deleteAfterImport: Bool = false
   }
 
   static func decode(_ data: Data) throws -> SharedLibraryPrefs {
@@ -132,7 +155,14 @@ enum PrefsCoding {
     return SharedLibraryPrefs(
       defaultUploadTarget: target,
       showPersonalInTimeline: wire.showPersonalInTimeline,
-      hiddenOwnedLibraryIds: wire.hiddenOwnedLibraryIds
+      hiddenOwnedLibraryIds: wire.hiddenOwnedLibraryIds,
+      backupEnabled: wire.backupEnabled,
+      backupAlbumIds: wire.backupAlbumIds,
+      useCellularForPhotos: wire.useCellularForPhotos,
+      useCellularForVideos: wire.useCellularForVideos,
+      allowLowPowerUploads: wire.allowLowPowerUploads,
+      uploadOriginalPlusEdit: wire.uploadOriginalPlusEdit,
+      deleteAfterImport: wire.deleteAfterImport
     )
   }
 
@@ -144,7 +174,14 @@ enum PrefsCoding {
     }
     let wire = Wire(
       defaultUploadTarget: target, showPersonalInTimeline: prefs.showPersonalInTimeline,
-      hiddenOwnedLibraryIds: prefs.hiddenOwnedLibraryIds
+      hiddenOwnedLibraryIds: prefs.hiddenOwnedLibraryIds,
+      backupEnabled: prefs.backupEnabled,
+      backupAlbumIds: prefs.backupAlbumIds,
+      useCellularForPhotos: prefs.useCellularForPhotos,
+      useCellularForVideos: prefs.useCellularForVideos,
+      allowLowPowerUploads: prefs.allowLowPowerUploads,
+      uploadOriginalPlusEdit: prefs.uploadOriginalPlusEdit,
+      deleteAfterImport: prefs.deleteAfterImport
     )
     let data = try JSONEncoder().encode(wire)
     return String(decoding: data, as: UTF8.self)

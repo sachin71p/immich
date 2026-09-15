@@ -34,7 +34,7 @@ public final class PhotosLocalStore: Sendable {
       for table in [
         "user", "partner", "asset", "assetExif", "album", "albumUser", "albumAsset", "stack", "space",
         "spaceMember", "library", "libraryMember", "person", "face", "memory", "memoryAsset",
-        "userMetadata", "syncAck", "mediaCache",
+        "userMetadata", "syncAck", "mediaCache", "uploadQueue", "backupChangeToken",
       ] {
         try db.execute(sql: "DELETE FROM \(table)")
       }

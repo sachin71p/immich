@@ -32,6 +32,8 @@ struct SettingsView: View {
           UploadTargetPicker()
             .environmentObject(session)
         }
+        BackupSettingsSection()
+          .environmentObject(session)
         Section("Timeline") {
           Button("Timeline Sources…") { showSources = true }
           Toggle(

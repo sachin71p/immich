@@ -7,6 +7,7 @@ import Rules
 import Security
 import SyncEngine
 import SwiftUI
+import Upload
 
 /// The iOS app's session: connection, local mirror, rules contexts, media pipeline, and sync.
 /// The local DB is the UI's only data source (A0 Architecture); every screen reads `store` +
@@ -28,6 +29,7 @@ final class AppSession: ObservableObject {
   var store: PhotosLocalStore?
   var pipeline: MediaPipeline?
   var sync: SyncCoordinator?
+  var uploadQueue: UploadQueue?
 
   static let serverURLKey = "PhotosFork.serverURL"
 
@@ -59,8 +61,8 @@ final class AppSession: ObservableObject {
       return
     }
     do {
-      guard let token = try SharedTokenStore.load(), !token.isEmpty,
-        let urlString = UserDefaults.standard.string(forKey: Self.serverURLKey),
+      guard let token = SharedTokenStore.loadBestEffort(), !token.isEmpty,
+        let urlString = SharedContainer.sharedDefaults.string(forKey: SharedContainer.serverURLKey),
         let url = URL(string: urlString)
       else {
         signedIn = false
@@ -79,8 +81,8 @@ final class AppSession: ObservableObject {
     let userId = try await connection.currentUserId()
     let support = try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-    let store = try PhotosLocalStore(
-      path: support.appendingPathComponent("photosfork.sqlite").path)
+    // A5: shared app-group container so the background-upload extension drains the same queue.
+    let store = try PhotosLocalStore(path: SharedContainer.databaseURL().path)
     let cacheRoot = support.appendingPathComponent("media-cache", isDirectory: true)
     try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
     let mediaServer = MediaServer(
@@ -95,6 +97,8 @@ final class AppSession: ObservableObject {
     self.store = store
     self.pipeline = pipeline
     self.sync = SyncCoordinator(connection: connection, localStore: store)
+    self.uploadQueue = UploadQueue(
+      store: store, transport: ImmichUploadTransport(connection: connection))
     self.serverURL = serverURL
     self.userId = userId
     self.isFixture = false
@@ -164,12 +168,13 @@ final class AppSession: ObservableObject {
   }
 
   func signOut() {
-    try? SharedTokenStore.delete()
-    UserDefaults.standard.removeObject(forKey: Self.serverURLKey)
+    SharedTokenStore.deleteAll()
+    SharedContainer.sharedDefaults.removeObject(forKey: SharedContainer.serverURLKey)
     connection = nil
     store = nil
     pipeline = nil
     sync = nil
+    uploadQueue = nil
     signedIn = false
   }
 

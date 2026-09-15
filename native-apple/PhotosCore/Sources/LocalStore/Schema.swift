@@ -239,6 +239,40 @@ enum Schema {
       }
     }
 
+    // A5: durable upload queue. One row per file part to send (live-photo still+motion and
+    // original+edit pairs enqueue as separate rows linked by `pairId`, uploaded motion-first).
+    migrator.registerMigration("v2_upload_queue") { db in
+      try db.create(table: "uploadQueue") { t in
+        t.primaryKey("id", .text)
+        t.column("pairId", .text)
+        t.column("kind", .text).notNull()
+        t.column("state", .text).notNull().defaults(to: "pending")
+        t.column("localIdentifier", .text)
+        t.column("filePath", .text).notNull()
+        t.column("checksum", .text).notNull()
+        t.column("fileName", .text).notNull()
+        t.column("fileCreatedAt", .datetime)
+        t.column("fileModifiedAt", .datetime)
+        t.column("isFavorite", .boolean).notNull().defaults(to: false)
+        t.column("durationMs", .integer)
+        t.column("isVideo", .boolean).notNull().defaults(to: false)
+        t.column("spaceId", .text)
+        t.column("livePhotoVideoId", .text)
+        t.column("serverAssetId", .text)
+        t.column("attempts", .integer).notNull().defaults(to: 0)
+        t.column("nextRetryAt", .datetime)
+        t.column("lastError", .text)
+        t.column("createdAt", .datetime).notNull()
+      }
+      try db.create(index: "uploadQueue_on_state", on: "uploadQueue", columns: ["state"])
+      try db.create(index: "uploadQueue_on_checksum", on: "uploadQueue", columns: ["checksum"])
+      try db.create(table: "backupChangeToken") { t in
+        t.primaryKey("scope", .text)
+        t.column("tokenData", .blob)
+        t.column("updatedAt", .datetime).notNull()
+      }
+    }
+
     return migrator
   }
 }

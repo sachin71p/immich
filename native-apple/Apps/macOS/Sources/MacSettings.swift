@@ -9,6 +9,10 @@ struct MacSettingsView: View {
   @Bindable var state: MacAppState
   @State private var cacheUsage: [MediaTier: Int] = [:]
   @State private var error: String?
+  @State private var pendingCount = 0
+  @State private var isDraining = false
+  @State private var agentEnabled = false
+  @State private var agentNote = ""
 
   var body: some View {
     Form {
@@ -78,23 +82,38 @@ struct MacSettingsView: View {
         }
         Button("Refresh Usage") { Task { cacheUsage = await state.pipeline.usage() } }
       }
+      Section("Uploads in Flight") {
+        LabeledContent("Pending uploads", value: "\(pendingCount)")
+          .accessibilityIdentifier("settings-pending-count")
+        Button("Upload Now") { Task { await drainNow() } }
+          .disabled(isDraining)
+          .accessibilityIdentifier("settings-upload-now")
+      }
       Section("Background Agent") {
-        // Placeholder until A5: SMAppService login-item wiring lives with the agent target.
+        // A5 brief task 8: SMAppService login item runs sync + the upload queue while the
+        // main app is closed (agent target `PhotosFork-Agent`). Failures (e.g. the helper
+        // not embedded in this build) surface inline instead of failing silently.
         Toggle(
-          "Sync in the background (coming soon)",
+          "Sync in the background",
           isOn: Binding(
-            get: { UserDefaults.standard.bool(forKey: "PhotosFork.agentEnabled") },
-            set: { UserDefaults.standard.set($0, forKey: "PhotosFork.agentEnabled") }
+            get: { agentEnabled },
+            set: { value in Task { await setAgent(enabled: value) } }
           )
         )
-        .disabled(true)
         .accessibilityIdentifier("settings-agent-toggle")
+        if !agentNote.isEmpty {
+          Text(agentNote).font(.caption).foregroundStyle(.secondary)
+        }
       }
       if let error { Text(error).foregroundStyle(.red).font(.caption) }
     }
     .formStyle(.grouped)
     .frame(minWidth: 420, minHeight: 480)
-    .task { cacheUsage = await state.pipeline.usage() }
+    .task {
+      cacheUsage = await state.pipeline.usage()
+      pendingCount = (try? await state.store.pendingUploadCount()) ?? 0
+      refreshAgentStatus()
+    }
   }
 
   private var uploadTargetBinding: Binding<SharedLibraryPrefs.UploadTarget> {
@@ -109,6 +128,28 @@ struct MacSettingsView: View {
       get: { UserDefaults.standard.string(forKey: "PhotosFork.importDestination") ?? "default" },
       set: { UserDefaults.standard.set($0, forKey: "PhotosFork.importDestination") }
     )
+  }
+
+  private func refreshAgentStatus() {
+    agentEnabled = MacAgentLoginItem.isEnabled
+    agentNote = MacAgentLoginItem.statusNote
+  }
+
+  private func setAgent(enabled: Bool) async {
+    do {
+      try MacAgentLoginItem.setEnabled(enabled)
+      agentEnabled = enabled
+      agentNote = MacAgentLoginItem.statusNote
+    } catch {
+      self.error = error.localizedDescription
+    }
+  }
+
+  private func drainNow() async {
+    isDraining = true
+    defer { isDraining = false }
+    _ = await state.uploadQueue.drain(prefs: state.prefs)
+    pendingCount = (try? await state.store.pendingUploadCount()) ?? 0
   }
 
   private func updatePrefs(_ mutate: (inout SharedLibraryPrefs) -> Void) async {

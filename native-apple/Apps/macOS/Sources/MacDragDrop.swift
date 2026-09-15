@@ -78,8 +78,11 @@ struct MacImportChooserSheet: View {
   @Bindable var state: MacAppState
   var urls: [URL]
   var onDone: () -> Void
-  @State private var destination = UserDefaults.standard.string(forKey: "PhotosFork.importDestination") ?? "default"
+  @State private var destination = SharedContainer.sharedDefaults.string(
+    forKey: "PhotosFork.importDestination") ?? "default"
   @State private var staged = false
+  @State private var enqueuedNote = ""
+  @State private var importError: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -100,19 +103,23 @@ struct MacImportChooserSheet: View {
       }
       .accessibilityIdentifier("import-destination-picker")
       if staged {
-        Text("Staged for upload — the background upload queue lands in A5.")
+        Text(enqueuedNote)
           .font(.caption)
           .foregroundStyle(.secondary)
+      }
+      if let importError {
+        Text(importError).foregroundStyle(.red).font(.caption)
       }
       HStack {
         Spacer()
         Button("Cancel") { onDone() }
-        Button(staged ? "Done" : "Stage for Upload") {
+        Button(staged ? "Done" : "Upload") {
           if staged {
             onDone()
           } else {
-            UserDefaults.standard.set(destination, forKey: "PhotosFork.importDestination")
-            staged = true
+            SharedContainer.sharedDefaults.set(
+              destination, forKey: "PhotosFork.importDestination")
+            Task { await enqueue() }
           }
         }
         .keyboardShortcut(.defaultAction)
@@ -121,6 +128,20 @@ struct MacImportChooserSheet: View {
     }
     .padding()
     .frame(minWidth: 360)
+  }
+
+  /// A5: the A4 "stage" step now enqueues into the durable upload queue (checksum dedupe
+  /// makes re-imports free; duplicates resolve at drain time via bulk-upload-check).
+  private func enqueue() async {
+    do {
+      let rows = try await state.enqueueImport(urls: urls, destination: destination)
+      enqueuedNote = rows.isEmpty
+        ? "Nothing new — these files are already queued or uploaded."
+        : "Queued \(rows.count) file\(rows.count == 1 ? "" : "s") for upload."
+      staged = true
+    } catch {
+      importError = error.localizedDescription
+    }
   }
 }
 

@@ -1,0 +1,102 @@
+import Foundation
+import Security
+
+/// Decided A5 #3: one NEW app-group container shared by the iOS app, the background-upload
+/// extension, the macOS app and the menu-bar agent — shared LocalStore, shared defaults and
+/// shared Keychain (via the `keychain-access-groups` entitlement in `PhotosFork.entitlements`).
+///
+/// Everything degrades to per-app storage when the group container is unavailable (ad-hoc
+/// signing, which cannot resolve access groups or app groups; simulator; fixture mode), so
+/// local verify and fresh installs keep working without entitlements.
+public enum SharedContainer {
+  public static let groupIdentifier = "group.com.immich.photosfork.shared"
+  public static let keychainAccessGroup = "$(AppIdentifierPrefix)com.immich.photosfork.shared"
+  public static let databaseFileName = "photosfork.sqlite"
+  public static let serverURLKey = "PhotosFork.serverURL"
+
+  public static func groupURL() -> URL? {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
+  }
+
+  public static var isSharedStorageAvailable: Bool { groupURL() != nil }
+
+  /// File-backed DB location: app-group container when present, else Application Support.
+  public static func databaseURL() throws -> URL {
+    if let group = groupURL() {
+      try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+      return group.appendingPathComponent(databaseFileName)
+    }
+    let support = try FileManager.default.url(
+      for: .applicationSupportDirectory, in: .userDomainMask,
+      appropriateFor: nil, create: true)
+      .appendingPathComponent("PhotosFork", isDirectory: true)
+    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    return support.appendingPathComponent(databaseFileName)
+  }
+
+  /// Group suite when present, else standard (server URL, import destination, agent flag —
+  /// all non-secret cross-process settings live here).
+  public static var sharedDefaults: UserDefaults {
+    UserDefaults(suiteName: groupIdentifier) ?? .standard
+  }
+}
+
+extension SharedTokenStore {
+  /// Group write first (extension + agent share it); plain item fallback when the access
+  /// group is unresolvable (ad-hoc signing). Never throws — login must not fail on Keychain.
+  static func saveBestEffort(_ token: String) {
+    try? save(token, accessGroup: SharedContainer.keychainAccessGroup)
+    if load(accessGroup: SharedContainer.keychainAccessGroup) == nil {
+      try? save(token, accessGroup: nil)
+    }
+  }
+
+  static func loadBestEffort() -> String? {
+    load(accessGroup: SharedContainer.keychainAccessGroup)
+      ?? load(accessGroup: nil)
+  }
+
+  static func deleteAll() {
+    try? delete(accessGroup: SharedContainer.keychainAccessGroup)
+    try? delete(accessGroup: nil)
+  }
+
+  static func save(_ token: String, accessGroup: String?) throws {
+    var query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrAccount as String: "access-token",
+      kSecValueData as String: Data(token.utf8),
+    ]
+    if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+    SecItemDelete(query as CFDictionary)
+    let status = SecItemAdd(query as CFDictionary, nil)
+    guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+  }
+
+  static func load(accessGroup: String?) -> String? {
+    var query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrAccount as String: "access-token",
+      kSecReturnData as String: true,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+      let data = item as? Data
+    else { return nil }
+    return String(data: data, encoding: .utf8)
+  }
+
+  static func delete(accessGroup: String?) throws {
+    var query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrAccount as String: "access-token",
+    ]
+    if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+    SecItemDelete(query as CFDictionary)
+  }
+}

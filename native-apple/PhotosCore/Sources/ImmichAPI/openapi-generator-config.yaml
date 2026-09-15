@@ -13,6 +13,9 @@ filter:
     - getSyncAck
     - deleteSyncAck
     # assets
+    - uploadAsset
+    - checkBulkUpload
+    - getAssetInfo
     - moveAssets
     - deleteAssets
     - updateAssets

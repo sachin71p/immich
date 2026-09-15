@@ -40,6 +40,9 @@ struct MacCommands: Commands {
         NotificationCenter.default.post(name: .macImportFiles, object: nil)
       }
       .keyboardShortcut("o", modifiers: .command)
+      Button("Import from Camera…") {
+        NotificationCenter.default.post(name: .macImportCamera, object: nil)
+      }
     }
     CommandMenu("Image") {
       Button("Favorite") { actions?.favorite() }
@@ -83,4 +86,5 @@ struct MacCommands: Commands {
 
 extension Notification.Name {
   static let macImportFiles = Notification.Name("PhotosFork.MacImportFiles")
+  static let macImportCamera = Notification.Name("PhotosFork.MacImportCamera")
 }

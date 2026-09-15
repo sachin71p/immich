@@ -7,6 +7,7 @@ import Media
 import Rules
 import SyncEngine
 import SwiftUI
+import Upload
 
 /// Shared observable state for the macOS shell. Thin over PhotosCore: the local DB is the UI's
 /// only data source (A0 Architecture); every mutation goes through the SyncEngine `*Mutations`
@@ -21,6 +22,7 @@ final class MacAppState {
   var store: PhotosLocalStore
   var connection: ImmichConnection
   var sync: SyncCoordinator
+  var uploadQueue: UploadQueue
   var pipeline: MediaPipeline
   var diskCache: TieredMediaCache
 
@@ -35,6 +37,7 @@ final class MacAppState {
   /// A5 wires the upload queue; this phase owns only the UI + chooser.
   var pendingImportURLs: [URL] = []
   var showingImportChooser = false
+  var showingCameraImport = false
 
   /// Row ids backing viewer paging (set when the viewer opens).
   var viewerContext: [String] = []
@@ -55,16 +58,16 @@ final class MacAppState {
     self.store = store
     self.connection = connection
     sync = SyncCoordinator(connection: connection, localStore: store)
+    uploadQueue = UploadQueue(
+      store: store, transport: ImmichUploadTransport(connection: connection))
     self.diskCache = diskCache
     pipeline = MediaPipeline.makeDefault(diskCache: diskCache, server: server)
   }
 
   /// Normal launch: file-backed DB in Application Support, token from the Keychain.
   static func standard(serverURL: URL) throws -> MacAppState {
-    let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("PhotosFork", isDirectory: true)
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let store = try PhotosLocalStore(path: dir.appendingPathComponent("photos.sqlite").path)
+    // A5: shared app-group container so the menu-bar agent drains the same queue.
+    let store = try PhotosLocalStore(path: SharedContainer.databaseURL().path)
     return try MacAppState(serverURL: serverURL, token: MacKeychain.loadToken(), store: store)
   }
 
@@ -90,8 +93,8 @@ final class MacAppState {
   func completeLogin(serverURL: URL, token: String) async throws {
     self.serverURL = serverURL
     await connection.tokenStore.set(token)
-    try SharedTokenStore.save(token)
-    UserDefaults.standard.set(serverURL.absoluteString, forKey: "PhotosFork.serverURL")
+    SharedTokenStore.saveBestEffort(token)
+    SharedContainer.sharedDefaults.set(serverURL.absoluteString, forKey: SharedContainer.serverURLKey)
     userId = try await connection.currentUserId()
     await refresh()
   }
@@ -109,7 +112,7 @@ final class MacAppState {
 
   func logout() async {
     await connection.tokenStore.set(nil)
-    UserDefaults.standard.removeObject(forKey: "PhotosFork.serverURL")
+    SharedContainer.sharedDefaults.removeObject(forKey: SharedContainer.serverURLKey)
     userId = nil
     spaces = []
     libraries = []
@@ -175,16 +178,6 @@ final class MacAppState {
 enum MacKeychain {
   /// Read-only mirror of the Keychain item `SharedTokenStore` (Apps/Shared) writes.
   static func loadToken() -> String? {
-    let query: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
-      kSecAttrAccount as String: "access-token",
-      kSecReturnData as String: true,
-    ]
-    var item: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-      let data = item as? Data
-    else { return nil }
-    return String(data: data, encoding: .utf8)
+    SharedTokenStore.loadBestEffort()
   }
 }
