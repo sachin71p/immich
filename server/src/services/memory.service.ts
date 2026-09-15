@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { Memory } from 'src/database.js';
 import { OnJob } from 'src/decorators.js';
@@ -15,11 +15,14 @@ import { DatabaseLock, JobName, MemoryType, Permission, QueueName, SystemMetadat
 import { BaseService } from 'src/services/base.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { findOrFail } from 'src/utils/misc.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 
 const DAYS = 3;
 
 @Injectable()
 export class MemoryService extends BaseService {
+  // fork: shared-libraries
+  @Inject() private containerScopeService!: ContainerScopeService;
   @OnJob({ name: JobName.MemoryGenerate, queue: QueueName.BackgroundTask })
   async onMemoriesCreate() {
     const users = await this.userRepository.getList({ withDeleted: false });
@@ -54,7 +57,10 @@ export class MemoryService extends BaseService {
   private async createOnThisDayMemories(ownerId: string, target: DateTime) {
     const showAt = target.startOf('day').toISO();
     const hideAt = target.endOf('day').toISO();
-    const memories = await this.assetRepository.getByDayOfYear([ownerId], target);
+    const scope = await this.containerScopeService.resolve({ user: { id: ownerId } } as AuthDto, {
+      purpose: 'timeline',
+    });
+    const memories = await this.assetRepository.getByDayOfYear([ownerId], target, scope);
     await Promise.all(
       memories.map(({ year, assets }) =>
         this.memoryRepository.create(

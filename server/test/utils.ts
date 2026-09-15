@@ -448,6 +448,8 @@ export const newTestService = <T extends BaseService>(
     overrides.websocket || (mocks.websocket as As<WebsocketRepository>),
     overrides.workflow || (mocks.workflow as As<WorkflowRepository>),
   );
+  // fork: shared-libraries - production uses Nest property injection for this provider.
+  Object.assign(sut, { containerScopeService: { resolve: vitest.fn().mockResolvedValue(undefined) } });
 
   return {
     sut,

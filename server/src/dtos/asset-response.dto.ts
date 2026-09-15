@@ -72,6 +72,8 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
       .nullish()
       .describe('Library ID')
       .meta(new HistoryBuilder().added('v1').deprecated('v1').getExtensions()),
+    // fork: shared-libraries
+    spaceId: z.uuidv4().nullish().describe('Shared space ID'),
     originalPath: z.string().describe('Original file path'),
     originalFileName: z.string().describe('Original file name'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
@@ -217,6 +219,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     ownerId: entity.ownerId,
     owner: entity.owner ? mapUser(entity.owner) : undefined,
     libraryId: entity.libraryId,
+    // fork: shared-libraries
+    spaceId: entity.spaceId,
     type: entity.type,
     originalPath: entity.originalPath,
     originalFileName: entity.originalFileName,
@@ -226,7 +230,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
-    isFavorite: options.auth?.user.id === entity.ownerId && entity.isFavorite,
+    // fork: shared-libraries - favorites are global for shared-space assets.
+    isFavorite: (options.auth?.user.id === entity.ownerId || entity.spaceId !== null) && entity.isFavorite,
     isArchived: entity.visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility: entity.visibility,

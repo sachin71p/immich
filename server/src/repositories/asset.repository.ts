@@ -56,6 +56,8 @@ import {
   withTags,
 } from 'src/utils/database.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
+import { withContainerScope } from 'src/utils/container-scope.js';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -95,6 +97,8 @@ interface AssetBuilderOptions {
   visibility?: AssetVisibility;
   withCoordinates?: boolean;
   bbox?: BoundingBox;
+  // fork: shared-libraries
+  scope?: ContainerScope;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -459,7 +463,7 @@ export class AssetRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { year: 2000, day: 1, month: 1 }] })
-  getByDayOfYear(ownerIds: string[], { year, day, month }: YearMonthDay) {
+  getByDayOfYear(ownerIds: string[], { year, day, month }: YearMonthDay, scope?: ContainerScope) {
     return this.db
       .with('res', (qb) =>
         qb
@@ -483,7 +487,8 @@ export class AssetRepository {
                 .select(['asset.id', 'asset.localDateTime'])
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
-                .where('asset.ownerId', '=', anyUuid(ownerIds))
+                .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+                .$if(!scope, (qb) => qb.where('asset.ownerId', '=', anyUuid(ownerIds)))
                 .where('asset.visibility', '=', AssetVisibility.Timeline)
                 .where((eb) =>
                   eb.exists((qb) =>
@@ -768,14 +773,19 @@ export class AssetRepository {
       .executeTakeFirst();
   }
 
-  getStatistics(ownerId: string, { visibility, isFavorite, isTrashed }: AssetStatsOptions): Promise<AssetStats> {
+  getStatistics(
+    ownerId: string,
+    { visibility, isFavorite, isTrashed }: AssetStatsOptions,
+    scope?: ContainerScope,
+  ): Promise<AssetStats> {
     return this.db
       .selectFrom('asset')
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
-      .where('ownerId', '=', asUuid(ownerId))
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', asUuid(ownerId)))
       .$if(visibility === undefined, withDefaultVisibility)
       .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
       .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
@@ -787,7 +797,11 @@ export class AssetRepository {
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
-  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }) {
+  getCalendarHeatmap(
+    ownerId: string,
+    dto: { from: Date; to: Date; type: CalendarHeatmapType },
+    scope?: ContainerScope,
+  ) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -801,7 +815,8 @@ export class AssetRepository {
       .selectFrom('asset')
       .select(date.as('date'))
       .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('ownerId', '=', asUuid(ownerId))
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', asUuid(ownerId)))
       .where(column, '>=', dto.from)
       .where(column, '<', dto.to)
       .where('deletedAt', 'is', null)
@@ -848,13 +863,14 @@ export class AssetRepository {
               )
               .where((eb) => eb.or([eb('asset.stackId', 'is', null), eb(eb.table('stack'), 'is not', null)])),
           )
-          .$if(!!options.userIds, (qb) =>
+          .$if(!!options.userIds && !options.scope, (qb) =>
             qb.where((eb) => {
               // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
               return options.personId ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
+          .$if(!!options.scope, (qb) => qb.where((eb) => withContainerScope(eb, options.scope!)))
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
           .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
           .$if(options.isDuplicate !== undefined, (qb) =>
@@ -884,7 +900,10 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            // fork: shared-libraries - favorites are global for shared-space assets.
+            sql`asset."isFavorite" and (asset."ownerId" = ${auth.user.id} or asset."spaceId" is not null)`.as(
+              'isFavorite',
+            ),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
@@ -940,12 +959,13 @@ export class AssetRepository {
             ),
           )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
-          .$if(!!options.userIds, (qb) =>
+          .$if(!!options.userIds && !options.scope, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
               return options.personId ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
+          .$if(!!options.scope, (qb) => qb.where((eb) => withContainerScope(eb, options.scope!)))
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
           .$if(!!options.withStacked, (qb) =>
             qb
@@ -1032,7 +1052,11 @@ export class AssetRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { minAssetsPerField: 5, maxFields: 12 }] })
-  async getAssetIdByCity(ownerId: string, { minAssetsPerField, maxFields }: AssetExploreFieldOptions) {
+  async getAssetIdByCity(
+    ownerId: string,
+    { minAssetsPerField, maxFields }: AssetExploreFieldOptions,
+    scope?: ContainerScope,
+  ) {
     const items = await this.db
       .with('cities', (qb) =>
         qb
@@ -1048,7 +1072,9 @@ export class AssetRepository {
       .distinctOn('asset_exif.city')
       .select(['assetId as data', 'asset_exif.city as value'])
       .$narrowType<{ value: NotNull }>()
-      .where('ownerId', '=', asUuid(ownerId))
+      // fork: shared-libraries
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', asUuid(ownerId)))
       .where('visibility', '=', AssetVisibility.Timeline)
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
@@ -1059,11 +1085,13 @@ export class AssetRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, 12] })
-  async getRecentlyCreatedAssetIds(ownerId: string, maxAssets: number) {
+  async getRecentlyCreatedAssetIds(ownerId: string, maxAssets: number, scope?: ContainerScope) {
     const items = await this.db
       .selectFrom('asset')
       .select(['id as data', 'createdAt as value'])
-      .where('ownerId', '=', asUuid(ownerId))
+      // fork: shared-libraries
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', asUuid(ownerId)))
       .where('asset.visibility', '=', AssetVisibility.Timeline)
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)

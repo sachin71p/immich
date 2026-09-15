@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -6,9 +6,12 @@ import { TrashResponseDto } from 'src/dtos/trash.dto.js';
 import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { batched } from 'src/utils/misc.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 
 @Injectable()
 export class TrashService extends BaseService {
+  // fork: shared-libraries
+  @Inject() private containerScopeService!: ContainerScopeService;
   async restoreAssets(auth: AuthDto, dto: BulkIdsDto): Promise<TrashResponseDto> {
     const { ids } = dto;
     if (ids.length === 0) {
@@ -16,7 +19,12 @@ export class TrashService extends BaseService {
     }
 
     await this.requireAccess({ auth, permission: Permission.AssetDelete, ids });
-    await this.trashRepository.restoreAll(ids);
+    const scope = await this.containerScopeService.resolve(auth, { purpose: 'manage' });
+    if (scope) {
+      await this.trashRepository.restoreAll(ids, scope);
+    } else {
+      await this.trashRepository.restoreAll(ids);
+    }
     await this.eventRepository.emit('AssetRestoreAll', { assetIds: ids, userId: auth.user.id });
 
     this.logger.log(`Restored ${ids.length} asset(s) from trash`);
@@ -25,7 +33,10 @@ export class TrashService extends BaseService {
   }
 
   async restore(auth: AuthDto): Promise<TrashResponseDto> {
-    const count = await this.trashRepository.restore(auth.user.id);
+    const scope = await this.containerScopeService.resolve(auth, { purpose: 'manage' });
+    const count = scope
+      ? await this.trashRepository.restore(auth.user.id, scope)
+      : await this.trashRepository.restore(auth.user.id);
     if (count > 0) {
       this.logger.log(`Restored ${count} asset(s) from trash`);
     }
@@ -33,7 +44,10 @@ export class TrashService extends BaseService {
   }
 
   async empty(auth: AuthDto): Promise<TrashResponseDto> {
-    const count = await this.trashRepository.empty(auth.user.id);
+    const scope = await this.containerScopeService.resolve(auth, { purpose: 'manage' });
+    const count = scope
+      ? await this.trashRepository.empty(auth.user.id, scope)
+      : await this.trashRepository.empty(auth.user.id);
     if (count > 0) {
       await this.jobRepository.queue({ name: JobName.AssetEmptyTrash, data: {} });
     }

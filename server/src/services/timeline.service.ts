@@ -1,14 +1,17 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { TimeBucketAssetDto, TimeBucketDto, TimeBucketsResponseDto } from 'src/dtos/time-bucket.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
+  // fork: shared-libraries
+  @Inject() private containerScopeService!: ContainerScopeService;
   async getTimeBuckets(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketsResponseDto[]> {
     await this.timeBucketChecks(auth, dto);
     const timeBucketOptions = await this.buildTimeBucketOptions(auth, dto);
@@ -27,21 +30,39 @@ export class TimelineService extends BaseService {
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
     const { userId, ...options } = dto;
-    let userIds: string[] | undefined;
+    let userIds: string[] | undefined = [auth.user.id];
 
     if (userId) {
       userIds = [userId];
+      // Explicit partner timelines retain upstream behavior and deliberately ignore preferences.
       if (dto.withPartners) {
-        const partnerIds = await getMyPartnerIds({
-          userId: auth.user.id,
-          repository: this.partnerRepository,
-          timelineEnabled: true,
-        });
-        userIds.push(...partnerIds);
+        userIds.push(
+          ...(await getMyPartnerIds({
+            userId: auth.user.id,
+            repository: this.partnerRepository,
+            timelineEnabled: true,
+          })),
+        );
       }
     }
 
-    return { ...options, userIds };
+    if (dto.albumId) {
+      return { ...options, userIds: undefined };
+    }
+
+    const scope = userId
+      ? undefined
+      : await this.containerScopeService.resolve(auth, {
+          purpose:
+            dto.visibility === AssetVisibility.Locked
+              ? 'locked'
+              : dto.visibility === AssetVisibility.Archive
+                ? 'manage'
+                : 'timeline',
+          withPartners: dto.withPartners,
+          filter: { spaceId: dto.spaceId, libraryId: dto.libraryId, personalOnly: dto.personalOnly },
+        });
+    return { ...options, userIds, ...(scope ? { scope } : {}) };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
@@ -51,8 +72,6 @@ export class TimelineService extends BaseService {
 
     if (dto.albumId) {
       await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [dto.albumId] });
-    } else {
-      dto.userId ||= auth.user.id;
     }
 
     if (dto.userId) {

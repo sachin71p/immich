@@ -35,6 +35,7 @@ import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
@@ -92,6 +93,8 @@ export const services = [
   SessionService,
   SharedLinkService,
   SharedSpaceService,
+  // fork: shared-libraries
+  ContainerScopeService,
   SmartInfoService,
   StackService,
   StorageService,

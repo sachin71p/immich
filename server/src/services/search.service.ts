@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { LRUMap } from 'mnemonist';
 import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -30,9 +30,12 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
+import { ContainerScope, ContainerScopeService } from 'src/utils/container-scope.js';
 
 @Injectable()
 export class SearchService extends BaseService {
+  // fork: shared-libraries
+  @Inject() private containerScopeService!: ContainerScopeService;
   private embeddingCache = new LRUMap<string, string>(100);
 
   async searchPerson(auth: AuthDto, dto: SearchPeopleDto): Promise<PersonResponseDto[]> {
@@ -47,15 +50,20 @@ export class SearchService extends BaseService {
 
   async getExploreData(auth: AuthDto) {
     const options = { maxFields: 12, minAssetsPerField: 5 };
+    const scope = await this.resolveContainerScope(auth, {});
 
-    const cities = await this.assetRepository.getAssetIdByCity(auth.user.id, options);
+    const cities = scope
+      ? await this.assetRepository.getAssetIdByCity(auth.user.id, options, scope)
+      : await this.assetRepository.getAssetIdByCity(auth.user.id, options);
     const cityAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
       cities.items.map(({ data }) => data),
       auth.user.id,
     );
     const cityItems = cityAssets.map((asset) => ({ value: asset.exifInfo!.city!, data: mapAsset(asset, { auth }) }));
 
-    const recents = await this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options.maxFields);
+    const recents = scope
+      ? await this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options.maxFields, scope)
+      : await this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options.maxFields);
     const recentAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
       recents.items.map((item) => item.data),
       auth.user.id,
@@ -87,6 +95,7 @@ export class SearchService extends BaseService {
     }
 
     let userIds: string[] | undefined;
+    let scope: ContainerScope | undefined;
 
     if (dto.albumIds && dto.albumIds.length > 0) {
       await this.requireAccess({ auth, ids: dto.albumIds, permission: Permission.AlbumRead });
@@ -94,6 +103,7 @@ export class SearchService extends BaseService {
       throw new BadRequestException('Shared link access is only allowed in combination with an albumIds filter');
     } else {
       userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+      scope = await this.resolveContainerScope(auth, dto, true);
     }
 
     const page = dto.page ?? 1;
@@ -105,6 +115,7 @@ export class SearchService extends BaseService {
         checksum,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
         userIds,
+        ...(scope ? { scope } : {}),
         viewingUserId: auth.user.id,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
@@ -119,6 +130,7 @@ export class SearchService extends BaseService {
     }
 
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    const scope = await this.resolveContainerScope(auth, dto, true);
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
@@ -127,6 +139,7 @@ export class SearchService extends BaseService {
       ...dto,
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
+      ...(scope ? { scope } : {}),
       viewingUserId: auth.user.id,
     });
   }
@@ -141,10 +154,12 @@ export class SearchService extends BaseService {
     }
 
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    const scope = await this.resolveContainerScope(auth, dto, true);
     const items = await this.searchRepository.searchRandom(dto.size, {
       ...dto,
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
+      ...(scope ? { scope } : {}),
       viewingUserId: auth.user.id,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -156,10 +171,12 @@ export class SearchService extends BaseService {
     }
 
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    const scope = await this.resolveContainerScope(auth, dto, true);
     const items = await this.searchRepository.searchLargeAssets(dto.size, {
       ...dto,
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
+      ...(scope ? { scope } : {}),
       viewingUserId: auth.user.id,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -180,6 +197,7 @@ export class SearchService extends BaseService {
     }
 
     const userIds = this.getUserIdsToSearch(auth, dto.visibility);
+    const scope = await this.resolveContainerScope(auth, dto, true);
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size;
@@ -188,6 +206,7 @@ export class SearchService extends BaseService {
       {
         ...dto,
         userIds: await userIds,
+        ...(scope ? { scope } : {}),
         viewingUserId: auth.user.id,
         embedding,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
@@ -198,39 +217,55 @@ export class SearchService extends BaseService {
   }
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
-    const userIds = await this.getUserIdsToSearch(auth);
-    const assets = await this.searchRepository.getAssetsByCity(userIds);
+    const scope = await this.resolveContainerScope(auth, {});
+    const assets = scope
+      ? await this.searchRepository.getAssetsByCity([], scope)
+      : await this.searchRepository.getAssetsByCity(await this.getUserIdsToSearch(auth));
     return assets.map((asset) => mapAsset(asset));
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {
-    const userIds = await this.getUserIdsToSearch(auth);
-    const suggestions = await this.getSuggestions(userIds, dto);
+    const scope = await this.resolveContainerScope(auth, dto, true);
+    const suggestions = await this.getSuggestions(scope ? [] : await this.getUserIdsToSearch(auth), dto, scope);
     if (dto.includeNull) {
       suggestions.push(null);
     }
     return suggestions;
   }
 
-  private getSuggestions(userIds: string[], dto: SearchSuggestionRequestDto): Promise<Array<string | null>> {
+  private getSuggestions(
+    userIds: string[],
+    dto: SearchSuggestionRequestDto,
+    scope?: ContainerScope,
+  ): Promise<Array<string | null>> {
     switch (dto.type) {
       case SearchSuggestionType.COUNTRY: {
-        return this.searchRepository.getCountries(userIds);
+        return scope ? this.searchRepository.getCountries(userIds, scope) : this.searchRepository.getCountries(userIds);
       }
       case SearchSuggestionType.STATE: {
-        return this.searchRepository.getStates(userIds, dto);
+        return scope
+          ? this.searchRepository.getStates(userIds, dto, scope)
+          : this.searchRepository.getStates(userIds, dto);
       }
       case SearchSuggestionType.CITY: {
-        return this.searchRepository.getCities(userIds, dto);
+        return scope
+          ? this.searchRepository.getCities(userIds, dto, scope)
+          : this.searchRepository.getCities(userIds, dto);
       }
       case SearchSuggestionType.CAMERA_MAKE: {
-        return this.searchRepository.getCameraMakes(userIds, dto);
+        return scope
+          ? this.searchRepository.getCameraMakes(userIds, dto, scope)
+          : this.searchRepository.getCameraMakes(userIds, dto);
       }
       case SearchSuggestionType.CAMERA_MODEL: {
-        return this.searchRepository.getCameraModels(userIds, dto);
+        return scope
+          ? this.searchRepository.getCameraModels(userIds, dto, scope)
+          : this.searchRepository.getCameraModels(userIds, dto);
       }
       case SearchSuggestionType.CAMERA_LENS_MODEL: {
-        return this.searchRepository.getCameraLensModels(userIds, dto);
+        return scope
+          ? this.searchRepository.getCameraLensModels(userIds, dto, scope)
+          : this.searchRepository.getCameraLensModels(userIds, dto);
       }
       default: {
         return Promise.resolve([]);
@@ -301,7 +336,13 @@ export class SearchService extends BaseService {
 
   private async resolveSearchScopeV3(
     auth: AuthDto,
-    dto: { filter?: SearchFilter },
+    dto: {
+      filter?: SearchFilter;
+      visibility?: AssetVisibility;
+      spaceId?: string;
+      libraryId?: string | null;
+      personalOnly?: boolean;
+    },
   ): Promise<{ filter: SearchFilter; scope: AssetSearchScope }> {
     const filter = dto.filter ?? {};
     const effectiveFilter = applyLockedVisibilityPolicy(auth, filter);
@@ -313,13 +354,22 @@ export class SearchService extends BaseService {
     }
 
     const albumIds = collectFilterIds(filter, 'albumIds');
-    const [userIds] = await Promise.all([
+    const [userIds, , containerScope] = await Promise.all([
       // a fully confined filter searches albums only, so the unused universe can skip the partner lookup
       fullyConfined ? [auth.user.id] : this.getUserIdsToSearch(auth),
       albumIds.length > 0 ? this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead }) : undefined,
+      fullyConfined ? undefined : this.resolveContainerScope(auth, dto, true),
     ]);
 
-    return { filter: effectiveFilter, scope: { userIds, lockedOwnerId: auth.user.id, viewingUserId: auth.user.id } };
+    return {
+      filter: effectiveFilter,
+      scope: {
+        userIds,
+        lockedOwnerId: auth.user.id,
+        viewingUserId: auth.user.id,
+        ...(containerScope ? { containerScope } : {}),
+      },
+    };
   }
 
   private async resolveEmbedding(
@@ -364,6 +414,24 @@ export class SearchService extends BaseService {
       timelineEnabled: true,
     });
     return [auth.user.id, ...partnerIds];
+  }
+
+  // fork: shared-libraries
+  private resolveContainerScope(
+    auth: AuthDto,
+    dto: { visibility?: AssetVisibility; spaceId?: string; libraryId?: string | null; personalOnly?: boolean },
+    withPartners = false,
+  ) {
+    return this.containerScopeService.resolve(auth, {
+      purpose:
+        dto.visibility === AssetVisibility.Locked
+          ? 'locked'
+          : dto.visibility === AssetVisibility.Archive
+            ? 'manage'
+            : 'timeline',
+      withPartners,
+      filter: { spaceId: dto.spaceId, libraryId: dto.libraryId ?? undefined, personalOnly: dto.personalOnly },
+    });
   }
 
   private mapResponse(

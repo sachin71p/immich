@@ -22,6 +22,8 @@ import {
   withSearchOrder,
 } from 'src/utils/database.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
+import type { ContainerScope } from 'src/utils/container-scope.js';
+import { withContainerScope } from 'src/utils/container-scope.js';
 
 export interface SearchAssetIdOptions {
   checksum?: Buffer;
@@ -31,6 +33,8 @@ export interface SearchAssetIdOptions {
 export interface SearchUserIdOptions {
   libraryId?: string | null;
   userIds?: string[];
+  // fork: shared-libraries
+  scope?: ContainerScope;
 }
 
 export type SearchIdOptions = SearchAssetIdOptions & SearchUserIdOptions;
@@ -140,6 +144,8 @@ export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection
 export interface AssetSearchScope {
   userIds: string[];
   lockedOwnerId: string;
+  // fork: shared-libraries
+  containerScope?: ContainerScope;
   /** whose version of the people to select, required when selecting faces or people */
   viewingUserId?: string;
 }
@@ -424,14 +430,15 @@ export class SearchRepository {
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
-  getAssetsByCity(userIds: string[]) {
+  getAssetsByCity(userIds: string[], scope?: ContainerScope) {
     return this.db
       .withRecursive('cte', (qb) => {
         const base = qb
           .selectFrom('asset_exif')
           .select(['city', 'assetId'])
           .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-          .where('asset.ownerId', '=', anyUuid(userIds))
+          .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+          .$if(!scope, (qb) => qb.where('asset.ownerId', '=', anyUuid(userIds)))
           .where('asset.visibility', '=', AssetVisibility.Timeline)
           .where('asset.type', '=', AssetType.Image)
           .where('asset.deletedAt', 'is', null)
@@ -447,7 +454,8 @@ export class SearchRepository {
                 .selectFrom('asset_exif')
                 .select(['city', 'assetId'])
                 .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-                .where('asset.ownerId', '=', anyUuid(userIds))
+                .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+                .$if(!scope, (qb) => qb.where('asset.ownerId', '=', anyUuid(userIds)))
                 .where('asset.visibility', '=', AssetVisibility.Timeline)
                 .where('asset.type', '=', AssetType.Image)
                 .where('asset.deletedAt', 'is', null)
@@ -482,14 +490,14 @@ export class SearchRepository {
       .execute();
   }
 
-  async getCountries(userIds: string[]): Promise<string[]> {
-    const res = await this.getExifField('country', userIds).execute();
+  async getCountries(userIds: string[], scope?: ContainerScope): Promise<string[]> {
+    const res = await this.getExifField('country', userIds, scope).execute();
     return res.map((row) => row.country!);
   }
 
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING] })
-  async getStates(userIds: string[], { country }: GetStatesOptions): Promise<string[]> {
-    const res = await this.getExifField('state', userIds)
+  async getStates(userIds: string[], { country }: GetStatesOptions, scope?: ContainerScope): Promise<string[]> {
+    const res = await this.getExifField('state', userIds, scope)
       .$if(!!country, (qb) => qb.where('country', '=', country!))
       .execute();
 
@@ -497,8 +505,8 @@ export class SearchRepository {
   }
 
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING] })
-  async getCities(userIds: string[], { country, state }: GetCitiesOptions): Promise<string[]> {
-    const res = await this.getExifField('city', userIds)
+  async getCities(userIds: string[], { country, state }: GetCitiesOptions, scope?: ContainerScope): Promise<string[]> {
+    const res = await this.getExifField('city', userIds, scope)
       .$if(!!country, (qb) => qb.where('country', '=', country!))
       .$if(!!state, (qb) => qb.where('state', '=', state!))
       .execute();
@@ -507,8 +515,12 @@ export class SearchRepository {
   }
 
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING] })
-  async getCameraMakes(userIds: string[], { model, lensModel }: GetCameraMakesOptions): Promise<string[]> {
-    const res = await this.getExifField('make', userIds)
+  async getCameraMakes(
+    userIds: string[],
+    { model, lensModel }: GetCameraMakesOptions,
+    scope?: ContainerScope,
+  ): Promise<string[]> {
+    const res = await this.getExifField('make', userIds, scope)
       .$if(!!model, (qb) => qb.where('model', '=', model!))
       .$if(!!lensModel, (qb) => qb.where('lensModel', '=', lensModel!))
       .execute();
@@ -517,8 +529,12 @@ export class SearchRepository {
   }
 
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING] })
-  async getCameraModels(userIds: string[], { make, lensModel }: GetCameraModelsOptions): Promise<string[]> {
-    const res = await this.getExifField('model', userIds)
+  async getCameraModels(
+    userIds: string[],
+    { make, lensModel }: GetCameraModelsOptions,
+    scope?: ContainerScope,
+  ): Promise<string[]> {
+    const res = await this.getExifField('model', userIds, scope)
       .$if(!!make, (qb) => qb.where('make', '=', make!))
       .$if(!!lensModel, (qb) => qb.where('lensModel', '=', lensModel!))
       .execute();
@@ -527,8 +543,12 @@ export class SearchRepository {
   }
 
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING] })
-  async getCameraLensModels(userIds: string[], { make, model }: GetCameraLensModelsOptions): Promise<string[]> {
-    const res = await this.getExifField('lensModel', userIds)
+  async getCameraLensModels(
+    userIds: string[],
+    { make, model }: GetCameraLensModelsOptions,
+    scope?: ContainerScope,
+  ): Promise<string[]> {
+    const res = await this.getExifField('lensModel', userIds, scope)
       .$if(!!make, (qb) => qb.where('make', '=', make!))
       .$if(!!model, (qb) => qb.where('model', '=', model!))
       .execute();
@@ -590,13 +610,18 @@ export class SearchRepository {
       .executeTakeFirstOrThrow();
   }
 
-  private getExifField(field: 'city' | 'state' | 'country' | 'make' | 'model' | 'lensModel', userIds: string[]) {
+  private getExifField(
+    field: 'city' | 'state' | 'country' | 'make' | 'model' | 'lensModel',
+    userIds: string[],
+    scope?: ContainerScope,
+  ) {
     return this.db
       .selectFrom('asset_exif')
       .select(field)
       .distinctOn(field)
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-      .where('ownerId', '=', anyUuid(userIds))
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', anyUuid(userIds)))
       .where('visibility', '=', AssetVisibility.Timeline)
       .where('deletedAt', 'is', null)
       .where(field, 'is not', null)

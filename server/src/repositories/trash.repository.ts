@@ -3,6 +3,8 @@ import type { Kysely } from 'kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { withContainerScope } from 'src/utils/container-scope.js';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 
 export class TrashRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -12,10 +14,12 @@ export class TrashRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  async restore(userId: string): Promise<number> {
+  async restore(userId: string, scope?: ContainerScope): Promise<number> {
     const { numUpdatedRows } = await this.db
       .updateTable('asset')
-      .where('ownerId', '=', userId)
+      // fork: shared-libraries
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', userId))
       .where('status', '=', AssetStatus.Trashed)
       .set({ status: AssetStatus.Active, deletedAt: null })
       .executeTakeFirst();
@@ -24,10 +28,12 @@ export class TrashRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  async empty(userId: string): Promise<number> {
+  async empty(userId: string, scope?: ContainerScope): Promise<number> {
     const { numUpdatedRows } = await this.db
       .updateTable('asset')
-      .where('ownerId', '=', userId)
+      // fork: shared-libraries
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
+      .$if(!scope, (qb) => qb.where('ownerId', '=', userId))
       .where('status', '=', AssetStatus.Trashed)
       .set({ status: AssetStatus.Deleted })
       .executeTakeFirst();
@@ -36,7 +42,7 @@ export class TrashRepository {
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
-  async restoreAll(ids: string[]): Promise<number> {
+  async restoreAll(ids: string[], scope?: ContainerScope): Promise<number> {
     if (ids.length === 0) {
       return 0;
     }
@@ -45,6 +51,8 @@ export class TrashRepository {
       .updateTable('asset')
       .where('status', '=', AssetStatus.Trashed)
       .where('id', 'in', ids)
+      // fork: shared-libraries
+      .$if(!!scope, (qb) => qb.where((eb) => withContainerScope(eb, scope!)))
       .set({ status: AssetStatus.Active, deletedAt: null })
       .executeTakeFirst();
 

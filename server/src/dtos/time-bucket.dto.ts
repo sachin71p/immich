@@ -7,6 +7,10 @@ import { stringToBool } from 'src/validation.js';
 const TimeBucketQueryBaseSchema = z
   .object({
     userId: z.uuidv4().optional().describe('Filter assets by specific user ID'),
+    // fork: shared-libraries
+    spaceId: z.uuidv4().optional().describe('Filter assets by a shared space'),
+    libraryId: z.uuidv4().optional().describe('Filter assets by a library'),
+    personalOnly: stringToBool.optional().describe('Only include personal assets'),
     albumId: z.uuidv4().optional().describe('Filter assets belonging to a specific album'),
     personId: z.uuidv4().optional().describe('Filter assets containing a specific person (face recognition)'),
     tagId: z.uuidv4().optional().describe('Filter assets with a specific tag'),
@@ -61,6 +65,9 @@ const TimeBucketQueryBaseSchema = z
       .optional()
       .describe('Bounding box coordinates as west,south,east,north (WGS84)')
       .meta({ example: '11.075683,49.416711,11.117589,49.454875' }),
+  })
+  .refine((dto) => [dto.spaceId, dto.libraryId, dto.personalOnly].filter((value) => value !== undefined).length <= 1, {
+    message: 'spaceId, libraryId, and personalOnly are mutually exclusive',
   })
   .meta({ id: 'TimeBucketDto' });
 

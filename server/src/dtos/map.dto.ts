@@ -25,6 +25,13 @@ const MapMarkerSchema = z
     fileCreatedBefore: isoDatetimeToDate.optional().describe('Filter assets created before this date'),
     withPartners: stringToBool.optional().describe('Include partner assets'),
     withSharedAlbums: stringToBool.optional().describe('Include shared album assets'),
+    // fork: shared-libraries
+    spaceId: z.uuidv4().optional().describe('Filter markers by a shared space'),
+    libraryId: z.uuidv4().optional().describe('Filter markers by a library'),
+    personalOnly: stringToBool.optional().describe('Only include personal assets'),
+  })
+  .refine((dto) => [dto.spaceId, dto.libraryId, dto.personalOnly].filter((value) => value !== undefined).length <= 1, {
+    message: 'spaceId, libraryId, and personalOnly are mutually exclusive',
   })
   .meta({ id: 'MapMarkerDto' });
 

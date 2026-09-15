@@ -41,6 +41,9 @@ immediately.
 | `server/src/cores/storage.core.ts` | namespaces generated files by shared-space storage key | shared storage relocation | S3 |
 | `server/src/services/asset-relocation.service.ts` | resumes and performs crash-safe asset file relocations | shared storage relocation | S3 |
 | `server/src/{repositories/asset.repository.ts,services/library.service.ts}` | guards external scans/watchers while moves are pending | shared storage relocation | S3 |
+| `server/src/utils/container-scope.ts` | resolves visibility scope and emits container SQL predicates | visibility scope | S5 |
+| `server/src/repositories/{asset,search,map,trash}.repository.ts` | applies container-scoped listing and mutation queries | visibility scope | S5 |
+| `server/src/services/{timeline,search,map,asset,trash,user,memory}.service.ts` | resolves and applies request visibility scopes | visibility scope | S5 |
 | `server/src/{controllers,dtos}/shared-space.*` (new), `server/src/{repositories,services}/shared-space.*` (new) | shared-space CRUD, members, ownership transfer API | spaces & library-member API | S4 |
 | `server/src/controllers/library.controller.ts`, `server/src/dtos/library.dto.ts`, `server/src/services/library.service.ts` | external-library member endpoints, `uploadPath`, `GET /libraries/shared` | spaces & library-member API | S4 |
 | `server/src/{controllers/asset.controller.ts,dtos/asset.dto.ts,services/asset.service.ts,repositories/asset.repository.ts}` | `POST /assets/move` (live-pair/stack expansion, target rules, crash-safe relocation) | move API | S4 |

@@ -14,6 +14,8 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
+import { withContainerScope } from 'src/utils/container-scope.js';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 
 export interface MapMarkerSearchOptions {
   isArchived?: boolean;
@@ -84,6 +86,7 @@ export class MapRepository {
     ownerIds: string[],
     albumIds: string[],
     { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore }: MapMarkerSearchOptions = {},
+    scope?: ContainerScope,
   ) {
     return this.mapMarkersQuery()
       .$if(isArchived === true, (qb) =>
@@ -103,7 +106,9 @@ export class MapRepository {
       .where((eb) => {
         const expression: Expression<SqlBool>[] = [];
 
-        if (ownerIds.length > 0) {
+        if (scope) {
+          expression.push(withContainerScope(eb, scope));
+        } else if (ownerIds.length > 0) {
           expression.push(eb('ownerId', 'in', ownerIds));
         }
 

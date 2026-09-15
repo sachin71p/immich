@@ -219,6 +219,9 @@ class AlbumAssetSync extends BaseSync {
           .case()
           .when('asset.ownerId', '=', userId)
           .then(eb.ref('asset.isFavorite'))
+          // fork: shared-libraries - favorites on a space asset are visible to every member.
+          .when('asset.spaceId', 'is not', null)
+          .then(eb.ref('asset.isFavorite'))
           .else(eb.val(false))
           .end()
           .as('isFavorite'),
@@ -238,6 +241,9 @@ class AlbumAssetSync extends BaseSync {
         eb
           .case()
           .when('asset.ownerId', '=', userId)
+          .then(eb.ref('asset.isFavorite'))
+          // fork: shared-libraries - favorites on a space asset are visible to every member.
+          .when('asset.spaceId', 'is not', null)
           .then(eb.ref('asset.isFavorite'))
           .else(eb.val(false))
           .end()
@@ -261,6 +267,9 @@ class AlbumAssetSync extends BaseSync {
         eb
           .case()
           .when('asset.ownerId', '=', userId)
+          .then(eb.ref('asset.isFavorite'))
+          // fork: shared-libraries - favorites on a space asset are visible to every member.
+          .when('asset.spaceId', 'is not', null)
           .then(eb.ref('asset.isFavorite'))
           .else(eb.val(false))
           .end()

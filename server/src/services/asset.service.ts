@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AssetFile } from 'src/database.js';
@@ -42,6 +42,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import {
   getAssetFiles,
   getDimensions,
@@ -57,6 +58,8 @@ import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 @Injectable()
 export class AssetService extends BaseService {
+  // fork: shared-libraries
+  @Inject() private containerScopeService!: ContainerScopeService;
   // fork: shared-libraries
   async move(auth: AuthDto, dto: AssetMoveDto): Promise<AssetMoveResponseDto> {
     const requested = await this.assetRepository.getByIds(dto.assetIds);
@@ -164,7 +167,13 @@ export class AssetService extends BaseService {
       requireElevatedPermission(auth);
     }
 
-    const stats = await this.assetRepository.getStatistics(auth.user.id, dto);
+    const scope = await this.containerScopeService.resolve(auth, {
+      purpose: dto.visibility === AssetVisibility.Locked ? 'locked' : 'timeline',
+      filter: { spaceId: dto.spaceId, libraryId: dto.libraryId, personalOnly: dto.personalOnly },
+    });
+    const stats = scope
+      ? await this.assetRepository.getStatistics(auth.user.id, dto, scope)
+      : await this.assetRepository.getStatistics(auth.user.id, dto);
     return mapStats(stats);
   }
 

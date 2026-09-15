@@ -101,6 +101,13 @@ const AssetStatsSchema = z
     visibility: AssetVisibilitySchema.optional(),
     isFavorite: stringToBool.optional().describe('Filter by favorite status'),
     isTrashed: stringToBool.optional().describe('Filter by trash status'),
+    // fork: shared-libraries
+    spaceId: z.uuidv4().optional().describe('Filter statistics by a shared space'),
+    libraryId: z.uuidv4().optional().describe('Filter statistics by a library'),
+    personalOnly: stringToBool.optional().describe('Only include personal assets'),
+  })
+  .refine((dto) => [dto.spaceId, dto.libraryId, dto.personalOnly].filter((value) => value !== undefined).length <= 1, {
+    message: 'spaceId, libraryId, and personalOnly are mutually exclusive',
   })
   .meta({ id: 'AssetStatsDto' });
 

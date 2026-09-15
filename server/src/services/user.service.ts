@@ -33,6 +33,7 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 
 @Injectable()
@@ -41,6 +42,8 @@ export class UserService extends BaseService {
   // since every BaseService subclass currently shares BaseService's exact constructor signature.
   @Inject() private sharedSpaceRepository!: SharedSpaceRepository;
   @Inject() private assetRelocationService!: AssetRelocationService;
+  // fork: shared-libraries
+  @Inject() private containerScopeService!: ContainerScopeService;
 
   async search(auth: AuthDto): Promise<UserResponseDto[]> {
     const config = await this.getConfig({ withCache: false });
@@ -65,8 +68,12 @@ export class UserService extends BaseService {
     return mapUserAdmin(user);
   }
 
-  getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
-    return getCalendarHeatmap(auth.user.id, dto, { asset: this.assetRepository });
+  async getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
+    const scope = await this.containerScopeService.resolve(auth, {
+      purpose: 'timeline',
+      filter: { spaceId: dto.spaceId, libraryId: dto.libraryId, personalOnly: dto.personalOnly },
+    });
+    return getCalendarHeatmap(auth.user.id, dto, { asset: this.assetRepository }, scope);
   }
 
   async updateMe({ user }: AuthDto, dto: UserUpdateMeDto): Promise<UserAdminResponseDto> {
