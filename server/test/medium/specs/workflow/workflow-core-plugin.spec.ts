@@ -1,6 +1,7 @@
 import { WorkflowStepConfig, WorkflowTrigger } from '@immich/plugin-sdk';
 import { Kysely } from 'kysely';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto.js';
 import { AssetType, AssetVisibility, LogLevel } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -21,6 +22,20 @@ import { resolveMethod } from 'src/utils/workflow.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getKyselyDB } from 'test/utils.js';
+
+// fork: absolute core-plugin path (cwd-independent) plus a fail-fast when the
+// wasm artifact is missing. importFolder swallows the ENOENT as a bare WARN,
+// which otherwise surfaces as N cryptic `Plugin method not found` failures.
+// The wasm is built by `mise run //:plugins` (also part of `ci-medium`).
+const corePluginDir = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'packages', 'plugin-core');
+
+const requireCorePluginWasm = () => {
+  const manifest = JSON.parse(readFileSync(join(corePluginDir, 'manifest.json'), 'utf8')) as { wasmPath: string };
+  const wasmPath = join(corePluginDir, manifest.wasmPath);
+  if (!existsSync(wasmPath)) {
+    throw new Error(`Core plugin wasm not found at ${wasmPath}; run \`mise run //:plugins\` first.`);
+  }
+};
 
 let isInitialized = false;
 
@@ -49,8 +64,9 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
       return;
     }
 
+    requireCorePluginWasm(); // fork: fail fast instead of N `Plugin method not found` errors
     const mockData = mockEnvData({});
-    mockData.resourcePaths.corePlugin = '../packages/plugin-core';
+    mockData.resourcePaths.corePlugin = corePluginDir;
     mockData.plugins.external.allow = false;
     this.getMock(ConfigRepository).getEnv.mockReturnValue(mockData);
     this.getMock(EventRepository).emit.mockResolvedValue();
@@ -115,7 +131,7 @@ beforeAll(async () => {
 describe('core plugin', () => {
   describe('validation', () => {
     it('should have a valid manifest.json', () => {
-      const buffer = readFileSync('../packages/plugin-core/manifest.json');
+      const buffer = readFileSync(join(corePluginDir, 'manifest.json')); // fork: absolute path, cwd-independent
       const result = PluginManifestDto.schema.safeParse(JSON.parse(buffer.toString()));
       if (!result.success) {
         const issues =

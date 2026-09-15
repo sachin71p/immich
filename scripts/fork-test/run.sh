@@ -45,6 +45,17 @@ record() { # record <tier> <status> <detail>
 
 stack_up() {
   (cd "$ROOT" && docker compose -f e2e/docker-compose.yml -f e2e/docker-compose.fork.yml up -d --build)
+  # fork: shared-libraries - `up -d` returns before boot; vitest starts instantly and every spec
+  # then fails resetDatabase on an empty DB. Wait for the server ping (same readiness signal the
+  # e2e globalSetup uses) so migrations have finished before any test runs.
+  for _ in $(seq 1 120); do
+    if curl -fsS --max-time 2 http://127.0.0.1:2285/api/server/ping >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "server did not become ready at 127.0.0.1:2285 (migrations may have failed)" >&2
+  return 1
 }
 
 stack_down() {
