@@ -89,7 +89,7 @@ final class MacGridLoader {
       return [MacGridSection(header: nil, rows: try await store.archivedAssets(scope: s).map(TimelineRow.init(asset:)))]
     case .locked:
       return [MacGridSection(header: nil, rows: try await store.lockedAssets(currentUserId: userId, limit: 1000))]
-    case .map, .people, .memories:
+    case .map, .people, .memories, .search:
       return []
     }
   }
