@@ -15,6 +15,7 @@ import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -34,6 +35,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { withContainerScope } from 'src/utils/container-scope.js';
 import {
   anyUuid,
   asUuid,
@@ -56,8 +58,6 @@ import {
   withTags,
 } from 'src/utils/database.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
-import { withContainerScope } from 'src/utils/container-scope.js';
-import type { ContainerScope } from 'src/utils/container-scope.js';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -724,13 +724,22 @@ export class AssetRepository {
   }
 
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, libraryId: DummyValue.UUID, checksum: DummyValue.BUFFER }] })
-  getByChecksum({ ownerId, libraryId, checksum }: AssetGetByChecksumOptions) {
+  // fork: shared-libraries - excludeIds lets move pre-checks skip the group itself so a
+  // limit(1) lookup cannot return a group member and hide the real duplicate (S9 fix).
+  getByChecksum({ ownerId, libraryId, checksum, excludeIds }: AssetGetByChecksumOptions & { excludeIds?: string[] }) {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
       .where('ownerId', '=', asUuid(ownerId))
       .where('checksum', '=', checksum)
       .$call((qb) => (libraryId ? qb.where('libraryId', '=', asUuid(libraryId)) : qb.where('libraryId', 'is', null)))
+      .$if(!!excludeIds?.length, (qb) =>
+        qb.where(
+          'asset.id',
+          'not in',
+          excludeIds!.map((id) => asUuid(id)),
+        ),
+      )
       .limit(1)
       .executeTakeFirst();
   }

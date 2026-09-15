@@ -134,21 +134,23 @@ export class AssetService extends BaseService {
         results.push({ id, status: 'error', reason: 'target_access' });
         continue;
       }
-      // fork: shared-libraries - the external-library unique index is per owner/library/checksum.
-      if (target.libraryId) {
-        const duplicate = await Promise.all(
-          group.map((item) =>
-            this.assetRepository.getByChecksum({
-              ownerId: item.ownerId,
-              libraryId: target.libraryId!,
-              checksum: item.checksum,
-            }),
-          ),
-        );
-        if (duplicate.some((item) => item && !groupIds.includes(item.id))) {
-          results.push({ id, status: 'error', reason: 'duplicate' });
-          continue;
-        }
+      // fork: shared-libraries - checksum uniqueness is (ownerId, checksum) for personal/space
+      // assets and (ownerId, libraryId, checksum) for external-library assets (§6.8). The group
+      // itself is excluded in the query so live pairs and stacks never self-collide and a
+      // limit(1) lookup cannot hide the real duplicate behind a group member.
+      const duplicate = await Promise.all(
+        group.map((item) =>
+          this.assetRepository.getByChecksum({
+            ownerId: item.ownerId,
+            libraryId: target.libraryId ?? undefined,
+            checksum: item.checksum,
+            excludeIds: groupIds,
+          }),
+        ),
+      );
+      if (duplicate.some(Boolean)) {
+        results.push({ id, status: 'error', reason: 'duplicate' });
+        continue;
       }
       await this.assetRepository.moveWithRelocation(groupIds, target, auth.user.id);
       // fork: shared-libraries - re-cluster faces when a move crosses a space boundary (S9).
