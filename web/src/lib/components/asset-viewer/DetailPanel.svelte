@@ -2,6 +2,8 @@
   import { goto } from '$app/navigation';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
+  // fork: shared-libraries
+  import DetailPanelFullMetadata from '$lib/components/asset-viewer/DetailPanelFullMetadata.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
@@ -311,6 +313,11 @@
 
       <DetailPanelLocation {isOwner} {asset} />
     </div>
+
+    {#if !asset.isOffline}
+      <!-- fork: shared-libraries -->
+      <DetailPanelFullMetadata assetId={asset.id} />
+    {/if}
   </section>
 
   {#if latlng && featureFlagsManager.value.map}

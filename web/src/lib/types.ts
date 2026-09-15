@@ -61,6 +61,40 @@ export type SearchLocationFilter = {
   city?: string;
 };
 
+// fork: shared-libraries
+export type SearchExposureFilter = {
+  isoMin?: number;
+  isoMax?: number;
+  fNumberMin?: number;
+  fNumberMax?: number;
+  focalLengthMin?: number;
+  focalLengthMax?: number;
+};
+
+// fork: shared-libraries
+export type SearchFileFilter = {
+  fileExtensions: string[];
+  mimeTypes: string[];
+  fileSizeMin?: number;
+  fileSizeMax?: number;
+  widthMin?: number;
+  heightMin?: number;
+  is360?: boolean;
+  hasLocation?: boolean;
+  fpsMin?: number;
+  fpsMax?: number;
+};
+
+// fork: shared-libraries
+export type SearchLibraryScope = 'all' | 'personal' | 'space' | 'library';
+
+// fork: shared-libraries
+export type SearchLibraryFilter = {
+  scope: SearchLibraryScope;
+  spaceId?: string;
+  libraryId?: string;
+};
+
 export type SearchFilter = {
   query: string;
   ocr?: string;
@@ -74,6 +108,12 @@ export type SearchFilter = {
   display: SearchDisplayFilters;
   mediaType: MediaType;
   rating?: number | null;
+  // fork: shared-libraries
+  exposure: SearchExposureFilter;
+  // fork: shared-libraries
+  file: SearchFileFilter;
+  // fork: shared-libraries
+  library: SearchLibraryFilter;
 };
 
 export type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object';

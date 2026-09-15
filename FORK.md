@@ -76,3 +76,7 @@ immediately.
 | `web/src/lib/{services/asset.service.ts,components/asset-viewer/{AssetViewerNavBar,DetailPanel}.svelte,components/timeline/TimelineAssetViewer.svelte,constants.ts,utils/actions.ts}` | permission gates + move wiring | R4 | S8b |
 | `web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte` | any album member may add/remove | R11 | S8b |
 | `web/src/lib/{layouts/UserPageLayout.svelte,utils/file-uploader.ts,managers/user-preferences-manager.svelte.ts},routes,i18n/en.json` | upload target; switcher pref | R3,R8,R9 | S8b |
+| `web/src/lib/components/asset-viewer/{DetailPanel.svelte,DetailPanelFullMetadata.svelte}` | full metadata viewer | R12 | S8c |
+| `web/src/lib/components/shared-components/search-bar/{SearchExposureSection,SearchFileSection,SearchLibrarySection}.svelte` | extended metadata filters + library scope | R13 | S8c |
+| `web/src/lib/{components/shared-components/search-bar/search-bar-utils.ts,managers/search-manager.svelte.ts,types.ts}` | filter<->URL query mapping | R13 | S8c |
+| `packages/sdk/src/fetch-client.ts` | hand-added AssetFullExifResponseDto/getAssetFullExif + rich search fields (SDK hunks ride with the S8b commit) | R12/R13 | S8c |

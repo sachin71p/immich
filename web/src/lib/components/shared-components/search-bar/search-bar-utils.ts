@@ -1,9 +1,18 @@
-import { getAllPeople, type PersonResponseDto, type TagResponseDto } from '@immich/sdk';
+import {
+  getAllPeople,
+  type MetadataSearchDto,
+  type PersonResponseDto,
+  type SharedLibraryResponseDto,
+  type SharedSpaceResponseDto,
+  type SmartSearchDto,
+  type TagResponseDto,
+} from '@immich/sdk';
 import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
 import type { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
-import { MediaType } from '$lib/constants';
+import { MediaType, ProjectionType } from '$lib/constants';
+import type { SearchExposureFilter, SearchFileFilter, SearchLibraryFilter } from '$lib/types';
 import { handleError } from '$lib/utils/handle-error';
 
 export enum SearchDatePreset {
@@ -178,6 +187,131 @@ export const getSearchTagsTitle = (tags: TagResponseDto[], selected: SvelteSet<s
   }
 
   return selected.size === 1 ? tag : $t('tag_plus_more_tags', { values: { tag, count: selected.size - 1 } });
+};
+
+// fork: shared-libraries
+export const fromExposureQuery = (searchQuery: MetadataSearchDto | SmartSearchDto): SearchExposureFilter => ({
+  isoMin: searchQuery.isoMin,
+  isoMax: searchQuery.isoMax,
+  fNumberMin: searchQuery.fNumberMin,
+  fNumberMax: searchQuery.fNumberMax,
+  focalLengthMin: searchQuery.focalLengthMin,
+  focalLengthMax: searchQuery.focalLengthMax,
+});
+
+// fork: shared-libraries
+export const toExposureQuery = (filter: SearchExposureFilter): Partial<MetadataSearchDto & SmartSearchDto> => ({
+  isoMin: filter.isoMin,
+  isoMax: filter.isoMax,
+  fNumberMin: filter.fNumberMin,
+  fNumberMax: filter.fNumberMax,
+  focalLengthMin: filter.focalLengthMin,
+  focalLengthMax: filter.focalLengthMax,
+});
+
+// fork: shared-libraries
+export const getSearchExposureTitle = (filter: SearchExposureFilter): string | undefined => {
+  const $t = get(t);
+  const parts: string[] = [];
+  if (filter.isoMin !== undefined || filter.isoMax !== undefined) {
+    parts.push($t('iso'));
+  }
+  if (filter.fNumberMin !== undefined || filter.fNumberMax !== undefined) {
+    parts.push($t('f_number'));
+  }
+  if (filter.focalLengthMin !== undefined || filter.focalLengthMax !== undefined) {
+    parts.push($t('focal_length'));
+  }
+  return parts.length > 0 ? parts.join(', ') : undefined;
+};
+
+// fork: shared-libraries
+export const fromFileQuery = (searchQuery: MetadataSearchDto | SmartSearchDto): SearchFileFilter => ({
+  fileExtensions: searchQuery.fileExtensions ?? [],
+  mimeTypes: searchQuery.mimeTypes ?? [],
+  fileSizeMin: searchQuery.fileSizeMin,
+  fileSizeMax: searchQuery.fileSizeMax,
+  widthMin: searchQuery.widthMin,
+  heightMin: searchQuery.heightMin,
+  is360: searchQuery.projectionType === ProjectionType.EQUIRECTANGULAR,
+  hasLocation: searchQuery.hasLocation,
+  fpsMin: searchQuery.fpsMin,
+  fpsMax: searchQuery.fpsMax,
+});
+
+// fork: shared-libraries
+export const toFileQuery = (filter: SearchFileFilter): Partial<MetadataSearchDto & SmartSearchDto> => ({
+  fileExtensions: filter.fileExtensions.length > 0 ? filter.fileExtensions : undefined,
+  mimeTypes: filter.mimeTypes.length > 0 ? filter.mimeTypes : undefined,
+  fileSizeMin: filter.fileSizeMin,
+  fileSizeMax: filter.fileSizeMax,
+  widthMin: filter.widthMin,
+  heightMin: filter.heightMin,
+  projectionType: filter.is360 ? ProjectionType.EQUIRECTANGULAR : undefined,
+  hasLocation: filter.hasLocation || undefined,
+  fpsMin: filter.fpsMin,
+  fpsMax: filter.fpsMax,
+});
+
+// fork: shared-libraries
+export const getSearchFileTitle = (filter: SearchFileFilter): string | undefined => {
+  const $t = get(t);
+  const active =
+    filter.fileExtensions.length > 0 ||
+    filter.mimeTypes.length > 0 ||
+    filter.fileSizeMin !== undefined ||
+    filter.fileSizeMax !== undefined ||
+    filter.widthMin !== undefined ||
+    filter.heightMin !== undefined ||
+    filter.is360 ||
+    filter.hasLocation ||
+    filter.fpsMin !== undefined ||
+    filter.fpsMax !== undefined;
+  return active ? $t('search_filter_file') : undefined;
+};
+
+// fork: shared-libraries
+export const fromLibraryQuery = (searchQuery: MetadataSearchDto | SmartSearchDto): SearchLibraryFilter => {
+  if (searchQuery.spaceId) {
+    return { scope: 'space', spaceId: searchQuery.spaceId };
+  }
+  if (searchQuery.libraryId) {
+    return { scope: 'library', libraryId: searchQuery.libraryId };
+  }
+  if (searchQuery.personalOnly) {
+    return { scope: 'personal' };
+  }
+  return { scope: 'all' };
+};
+
+// fork: shared-libraries
+export const toLibraryQuery = (filter: SearchLibraryFilter): Partial<MetadataSearchDto & SmartSearchDto> => ({
+  spaceId: filter.scope === 'space' ? filter.spaceId : undefined,
+  libraryId: filter.scope === 'library' ? filter.libraryId : undefined,
+  personalOnly: filter.scope === 'personal' ? true : undefined,
+});
+
+// fork: shared-libraries
+export const getSearchLibraryTitle = (
+  filter: SearchLibraryFilter,
+  spaces: SharedSpaceResponseDto[],
+  libraries: SharedLibraryResponseDto[],
+): string | undefined => {
+  const $t = get(t);
+  switch (filter.scope) {
+    case 'personal': {
+      return $t('personal_library');
+    }
+    case 'space': {
+      return spaces.find((space) => space.id === filter.spaceId)?.name;
+    }
+    case 'library': {
+      return libraries.find((library) => library.id === filter.libraryId)?.name;
+    }
+    default: {
+      return undefined;
+    }
+  }
 };
 
 export const isPopoverContent = (event: FocusEvent): boolean => {

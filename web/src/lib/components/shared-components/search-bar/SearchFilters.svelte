@@ -9,6 +9,8 @@
     mdiChevronDown,
     mdiChevronUp,
     mdiImage,
+    // fork: shared-libraries
+    mdiLibrary,
     mdiMagnify,
     mdiMapMarker,
     mdiTagMultiple,
@@ -24,11 +26,24 @@
   import SearchTextSection from './SearchTextSection.svelte';
   import SearchDisplaySection from './SearchDisplaySection.svelte';
   import SearchRatingsSection from './SearchRatingsSection.svelte';
+  // fork: shared-libraries
+  import SearchExposureSection from './SearchExposureSection.svelte';
+  // fork: shared-libraries
+  import SearchFileSection from './SearchFileSection.svelte';
+  // fork: shared-libraries
+  import SearchLibrarySection from './SearchLibrarySection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { sharedSpaces } from '$lib/stores/shared-spaces.svelte';
   import {
     getPeople,
     getSearchDatePreset,
     getSearchDateTitle,
+    // fork: shared-libraries
+    getSearchExposureTitle,
+    // fork: shared-libraries
+    getSearchFileTitle,
+    // fork: shared-libraries
+    getSearchLibraryTitle,
     getSearchMediaTitle,
     getSearchPeopleTitle,
     getSearchPlacesTitle,
@@ -86,6 +101,14 @@
   );
   let tagsTitle = $state<string>();
   let mediaTitle = $derived(getSearchMediaTitle(searchManager.filter.mediaType));
+  // fork: shared-libraries
+  let libraryTitle = $derived(
+    getSearchLibraryTitle(searchManager.filter.library, sharedSpaces.spaces, sharedSpaces.libraries),
+  );
+  // fork: shared-libraries
+  let exposureTitle = $derived(getSearchExposureTitle(searchManager.filter.exposure));
+  // fork: shared-libraries
+  let fileTitle = $derived(getSearchFileTitle(searchManager.filter.file));
 
   let filters = [
     {
@@ -128,13 +151,24 @@
       title: $t('media'),
       activeTitle: () => mediaTitle,
     },
+    // fork: shared-libraries
+    {
+      name: 'library',
+      icon: mdiLibrary,
+      title: $t('library'),
+      activeTitle: () => libraryTitle,
+    },
   ];
 
   const advancedFiltersSet = $derived(
     searchManager.filter.display.isArchive ||
       searchManager.filter.display.isFavorite ||
       searchManager.filter.display.isNotInAlbum ||
-      searchManager.filter.rating,
+      searchManager.filter.rating ||
+      // fork: shared-libraries
+      Boolean(exposureTitle) ||
+      // fork: shared-libraries
+      Boolean(fileTitle),
   );
 
   const clear = () => {
@@ -152,6 +186,9 @@
       tagsPromise = getAllTags();
       void tagsPromise.then((res) => (tags = res));
     }
+
+    // fork: shared-libraries
+    void sharedSpaces.ensureLoaded();
   });
 
   $effect(() => {
@@ -229,6 +266,9 @@
             <SearchTagsSection bind:title={tagsTitle} parentPromise={tagsPromise} />
           {:else if activeFilter === 'media'}
             <SearchMediaSection />
+          {:else if activeFilter === 'library'}
+            <!-- fork: shared-libraries -->
+            <SearchLibrarySection />
           {/if}
         </div>
       {/if}
@@ -246,6 +286,10 @@
               <SearchRatingsSection />
             {/if}
             <SearchDisplaySection />
+            <!-- fork: shared-libraries -->
+            <SearchExposureSection />
+            <!-- fork: shared-libraries -->
+            <SearchFileSection />
           </div>
         </div>
       </div>

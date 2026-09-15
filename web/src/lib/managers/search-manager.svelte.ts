@@ -2,6 +2,15 @@ import { AssetTypeEnum, AssetVisibility, type MetadataSearchDto, type SmartSearc
 import type { DateTime } from 'luxon';
 import { SvelteSet } from 'svelte/reactivity';
 import { goto } from '$app/navigation';
+// fork: shared-libraries
+import {
+  fromExposureQuery,
+  fromFileQuery,
+  fromLibraryQuery,
+  toExposureQuery,
+  toFileQuery,
+  toLibraryQuery,
+} from '$lib/components/shared-components/search-bar/search-bar-utils';
 import { MediaType, QueryType, validQueryTypes } from '$lib/constants';
 import { Route } from '$lib/route';
 import type { SearchFilter } from '$lib/types';
@@ -88,6 +97,12 @@ class SearchManager {
             ? MediaType.Video
             : MediaType.All,
       rating: searchQuery.rating,
+      // fork: shared-libraries
+      exposure: fromExposureQuery(searchQuery),
+      // fork: shared-libraries
+      file: fromFileQuery(searchQuery),
+      // fork: shared-libraries
+      library: fromLibraryQuery(searchQuery),
     };
   }
 
@@ -127,6 +142,12 @@ class SearchManager {
       tagIds: this.filter.tagIds === null ? null : this.filter.tagIds.size > 0 ? [...this.filter.tagIds] : undefined,
       type,
       rating: this.filter.rating,
+      // fork: shared-libraries
+      ...toExposureQuery(this.filter.exposure),
+      // fork: shared-libraries
+      ...toFileQuery(this.filter.file),
+      // fork: shared-libraries
+      ...toLibraryQuery(this.filter.library),
     };
   }
 
