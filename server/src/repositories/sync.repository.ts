@@ -44,6 +44,12 @@ const dummyQueryOptions = {
   },
 };
 
+// fork: shared-libraries - updateIds are time-ordered UUIDv7 (millisecond precision) while createdAt
+// carries microseconds, so the bound is exclusive at +1ms: rows created inside the checkpoint's own
+// millisecond count as already known to the client, rows created later do not.
+const createdBeforeCheckpoint = (updateId: string) =>
+  new Date(Number.parseInt(updateId.replaceAll('-', '').slice(0, 12), 16) + 1);
+
 @Injectable()
 export class SyncRepository {
   album: AlbumSync;
@@ -1040,15 +1046,18 @@ class SharedSpaceAssetSync extends BaseSync {
     return this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId')
-      .where('asset.updateId', '<=', createAck.updateId)
+      .where('asset.createdAt', '<', createdBeforeCheckpoint(createAck.updateId))
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getCreates(options: SyncQueryOptions) {
-    const query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+    let query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId');
+    if (options.ack) {
+      query = query.where('asset.createdAt', '>=', createdBeforeCheckpoint(options.ack.updateId));
+    }
     return query.stream();
   }
 
@@ -1072,18 +1081,21 @@ class SharedSpaceAssetSync extends BaseSync {
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
-      .where('asset.updateId', '<=', createAck.updateId)
+      .where('asset.createdAt', '<', createdBeforeCheckpoint(createAck.updateId))
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getExifCreates(options: SyncQueryOptions) {
-    const query = this.visibleAssets(
+    let query = this.visibleAssets(
       this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
       options.userId,
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId');
+    if (options.ack) {
+      query = query.where('asset.createdAt', '>=', createdBeforeCheckpoint(options.ack.updateId));
+    }
     return query.stream();
   }
 
@@ -1174,15 +1186,18 @@ class LibraryAssetSync extends BaseSync {
     return this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId')
-      .where('asset.updateId', '<=', createAck.updateId)
+      .where('asset.createdAt', '<', createdBeforeCheckpoint(createAck.updateId))
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getCreates(options: SyncQueryOptions) {
-    const query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+    let query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId');
+    if (options.ack) {
+      query = query.where('asset.createdAt', '>=', createdBeforeCheckpoint(options.ack.updateId));
+    }
     return query.stream();
   }
 
@@ -1206,18 +1221,21 @@ class LibraryAssetSync extends BaseSync {
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
-      .where('asset.updateId', '<=', createAck.updateId)
+      .where('asset.createdAt', '<', createdBeforeCheckpoint(createAck.updateId))
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getExifCreates(options: SyncQueryOptions) {
-    const query = this.visibleAssets(
+    let query = this.visibleAssets(
       this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
       options.userId,
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId');
+    if (options.ack) {
+      query = query.where('asset.createdAt', '>=', createdBeforeCheckpoint(options.ack.updateId));
+    }
     return query.stream();
   }
 
