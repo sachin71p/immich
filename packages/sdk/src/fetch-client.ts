@@ -703,6 +703,16 @@ export type RecentlyAddedResponse = {
     /** Whether the recently added page appears in the web sidebar */
     sidebarWeb: boolean;
 };
+export type SharedLibrariesResponse = {
+    defaultUploadTarget: {
+        "type": Type;
+    } | {
+        "type": Type2;
+        spaceId: string;
+    };
+    hiddenOwnedLibraryIds: string[];
+    showPersonalInTimeline: boolean;
+};
 export type SharedLinksResponse = {
     /** Whether shared links are enabled */
     enabled: boolean;
@@ -726,6 +736,7 @@ export type UserPreferencesResponseDto = {
     purchase: PurchaseResponse;
     ratings: RatingsResponse;
     recentlyAdded: RecentlyAddedResponse;
+    sharedLibraries: SharedLibrariesResponse;
     sharedLinks: SharedLinksResponse;
     tags: TagsResponse;
 };
@@ -789,6 +800,16 @@ export type RecentlyAddedUpdate = {
     /** Whether the recently added page appears in the web sidebar */
     sidebarWeb?: boolean;
 };
+export type SharedLibrariesUpdate = {
+    defaultUploadTarget?: {
+        "type": Type3;
+    } | {
+        "type": Type4;
+        spaceId: string;
+    };
+    hiddenOwnedLibraryIds?: string[];
+    showPersonalInTimeline?: boolean;
+};
 export type SharedLinksUpdate = {
     /** Whether shared links are enabled */
     enabled?: boolean;
@@ -813,6 +834,7 @@ export type UserPreferencesUpdateDto = {
     purchase?: PurchaseUpdate;
     ratings?: RatingsUpdate;
     recentlyAdded?: RecentlyAddedUpdate;
+    sharedLibraries?: SharedLibrariesUpdate;
     sharedLinks?: SharedLinksUpdate;
     tags?: TagsUpdate;
 };
@@ -1059,6 +1081,8 @@ export type AssetMediaCreateDto = {
     metadata?: AssetMetadataUpsertItemDto[];
     /** Sidecar file data */
     sidecarData?: Blob;
+    /** Shared space upload target */
+    spaceId?: string;
     visibility?: AssetVisibility;
 };
 export type AssetMediaResponseDto = {
@@ -1169,6 +1193,25 @@ export type AssetMetadataBulkResponseDto = {
     value: {
         [key: string]: any;
     };
+};
+export type AssetMoveDto = {
+    assetIds: string[];
+    target: {
+        "type": Type5;
+    } | {
+        "type": Type6;
+        id: string;
+    } | {
+        "type": Type7;
+        id: string;
+    };
+};
+export type AssetMoveResponseDto = {
+    results: {
+        id: string;
+        reason?: string;
+        status: Status;
+    }[];
 };
 export type ExifResponseDto = {
     /** City name */
@@ -1798,6 +1841,15 @@ export type CreateLibraryDto = {
     /** Owner user ID */
     ownerId: string;
 };
+export type SharedLibraryResponseDto = {
+    assetCount: number;
+    hasUploadPath: boolean;
+    id: string;
+    isOwner: boolean;
+    name: string;
+    ownerId: string;
+    showInTimeline: boolean;
+};
 export type UpdateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
@@ -1805,6 +1857,19 @@ export type UpdateLibraryDto = {
     importPaths?: string[];
     /** Library name */
     name?: string;
+    /** Writable upload path inside an import path */
+    uploadPath?: string | null;
+};
+export type LibraryMemberResponseDto = {
+    createdAt: string;
+    showInTimeline: boolean;
+    userId: string;
+};
+export type LibraryMembersDto = {
+    userIds: string[];
+};
+export type LibraryTimelineDto = {
+    showInTimeline: boolean;
 };
 export type LibraryStatsResponseDto = {
     /** Number of photos */
@@ -2963,6 +3028,42 @@ export type AssetIdsResponseDto = {
     error?: AssetIdErrorReason;
     /** Whether operation succeeded */
     success: boolean;
+};
+export type SharedSpaceResponseDto = {
+    assetCount: number;
+    createdAt: string;
+    description: string;
+    id: string;
+    memberCount: number;
+    name: string;
+    role: SharedSpaceRole;
+    showInTimeline: boolean;
+    thumbnailAssetId: string | null;
+    updatedAt: string;
+};
+export type SharedSpaceCreateDto = {
+    description?: string;
+    name: string;
+};
+export type SharedSpaceUpdateDto = {
+    description?: string;
+    name?: string;
+    thumbnailAssetId?: string | null;
+};
+export type SharedSpaceMemberResponseDto = {
+    createdAt: string;
+    role: SharedSpaceRole;
+    showInTimeline: boolean;
+    userId: string;
+};
+export type SharedSpaceMembersDto = {
+    userIds: string[];
+};
+export type SharedSpaceTimelineDto = {
+    showInTimeline: boolean;
+};
+export type SharedSpaceOwnerDto = {
+    userId: string;
 };
 export type StackResponseDto = {
     assets: AssetResponseDto[];
@@ -4702,6 +4803,21 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
     })));
 }
 /**
+ * Move assets between personal and shared libraries
+ */
+export function moveAssets({ assetMoveDto }: {
+    assetMoveDto: AssetMoveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetMoveResponseDto;
+    }>("/assets/move", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetMoveDto
+    })));
+}
+/**
  * Get asset statistics
  */
 export function getAssetStatistics({ isFavorite, isTrashed, visibility }: {
@@ -5473,6 +5589,17 @@ export function createLibrary({ createLibraryDto }: {
     })));
 }
 /**
+ * List my shared external libraries
+ */
+export function getSharedLibraries(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedLibraryResponseDto[];
+    }>("/libraries/shared", {
+        ...opts
+    }));
+}
+/**
  * Delete a library
  */
 export function deleteLibrary({ id }: {
@@ -5511,6 +5638,57 @@ export function updateLibrary({ id, updateLibraryDto }: {
         method: "PUT",
         body: updateLibraryDto
     })));
+}
+/**
+ * List external-library members
+ */
+export function getMembers({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMemberResponseDto[];
+    }>(`/libraries/${encodeURIComponent(id)}/members`, {
+        ...opts
+    }));
+}
+/**
+ * Add external-library members
+ */
+export function addMembers({ id, libraryMembersDto }: {
+    id: string;
+    libraryMembersDto: LibraryMembersDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/members`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryMembersDto
+    })));
+}
+/**
+ * Update my external-library settings
+ */
+export function updateMyTimeline({ id, libraryTimelineDto }: {
+    id: string;
+    libraryTimelineDto: LibraryTimelineDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/members/me`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: libraryTimelineDto
+    })));
+}
+/**
+ * Remove an external-library member
+ */
+export function removeMember({ id, userId }: {
+    id: string;
+    userId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Scan a library
@@ -6920,6 +7098,136 @@ export function addSharedLinkAssets({ id, assetIdsDto }: {
     })));
 }
 /**
+ * List my shared spaces
+ */
+export function getAll(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceResponseDto[];
+    }>("/shared-spaces", {
+        ...opts
+    }));
+}
+/**
+ * Create a shared space
+ */
+export function create({ sharedSpaceCreateDto }: {
+    sharedSpaceCreateDto: SharedSpaceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SharedSpaceResponseDto;
+    }>("/shared-spaces", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedSpaceCreateDto
+    })));
+}
+/**
+ * Delete a shared space
+ */
+export function deleteSharedSpacesById({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a shared space
+ */
+export function getSharedSpacesById({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a shared space
+ */
+export function update({ id, sharedSpaceUpdateDto }: {
+    id: string;
+    sharedSpaceUpdateDto: SharedSpaceUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: sharedSpaceUpdateDto
+    })));
+}
+/**
+ * List shared-space members
+ */
+export function getMembers2({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceMemberResponseDto[];
+    }>(`/shared-spaces/${encodeURIComponent(id)}/members`, {
+        ...opts
+    }));
+}
+/**
+ * Add shared-space members
+ */
+export function addMembers2({ id, sharedSpaceMembersDto }: {
+    id: string;
+    sharedSpaceMembersDto: SharedSpaceMembersDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/members`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedSpaceMembersDto
+    })));
+}
+/**
+ * Update my shared-space settings
+ */
+export function updateMyTimeline2({ id, sharedSpaceTimelineDto }: {
+    id: string;
+    sharedSpaceTimelineDto: SharedSpaceTimelineDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/members/me`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: sharedSpaceTimelineDto
+    })));
+}
+/**
+ * Remove a shared-space member
+ */
+export function removeMember2({ id, userId }: {
+    id: string;
+    userId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Transfer shared-space ownership
+ */
+export function transferOwner({ id, sharedSpaceOwnerDto }: {
+    id: string;
+    sharedSpaceOwnerDto: SharedSpaceOwnerDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/owner`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: sharedSpaceOwnerDto
+    })));
+}
+/**
  * Delete stacks
  */
 export function deleteStacks({ bulkIdsDto }: {
@@ -7901,6 +8209,18 @@ export enum AssetOrder {
     Asc = "asc",
     Desc = "desc"
 }
+export enum Type {
+    Personal = "personal"
+}
+export enum Type2 {
+    Space = "space"
+}
+export enum Type3 {
+    Personal = "personal"
+}
+export enum Type4 {
+    Space = "space"
+}
 export enum AssetVisibility {
     Archive = "archive",
     Timeline = "timeline",
@@ -7941,6 +8261,8 @@ export enum Permission {
     AssetUpload = "asset.upload",
     AssetCopy = "asset.copy",
     AssetDerive = "asset.derive",
+    AssetMove = "asset.move",
+    AssetFavorite = "asset.favorite",
     AssetFileRead = "assetFile.read",
     AssetFileDelete = "assetFile.delete",
     AssetFileDownload = "assetFile.download",
@@ -7959,6 +8281,15 @@ export enum Permission {
     AlbumUserCreate = "albumUser.create",
     AlbumUserUpdate = "albumUser.update",
     AlbumUserDelete = "albumUser.delete",
+    SharedSpaceCreate = "sharedSpace.create",
+    SharedSpaceRead = "sharedSpace.read",
+    SharedSpaceUpdate = "sharedSpace.update",
+    SharedSpaceDelete = "sharedSpace.delete",
+    SharedSpaceMemberCreate = "sharedSpaceMember.create",
+    SharedSpaceMemberUpdate = "sharedSpaceMember.update",
+    SharedSpaceMemberDelete = "sharedSpaceMember.delete",
+    LibraryMemberCreate = "libraryMember.create",
+    LibraryMemberDelete = "libraryMember.delete",
     AuthChangePassword = "auth.changePassword",
     AuthDeviceDelete = "authDevice.delete",
     ArchiveRead = "archive.read",
@@ -8114,6 +8445,20 @@ export enum AssetJobName {
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
 }
+export enum Type5 {
+    Personal = "personal"
+}
+export enum Type6 {
+    Space = "space"
+}
+export enum Type7 {
+    Library = "library"
+}
+export enum Status {
+    Moved = "moved",
+    Noop = "noop",
+    Error = "error"
+}
 export enum AssetTypeEnum {
     Image = "IMAGE",
     Video = "VIDEO",
@@ -8265,6 +8610,8 @@ export enum JobName {
     SmartSearch = "SmartSearch",
     StorageTemplateMigration = "StorageTemplateMigration",
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
+    AssetRelocateQueueAll = "AssetRelocateQueueAll",
+    AssetRelocate = "AssetRelocate",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     OcrQueueAll = "OcrQueueAll",
@@ -8303,6 +8650,10 @@ export enum AssetIdErrorReason {
     Duplicate = "duplicate",
     NoPermission = "no_permission",
     NotFound = "not_found"
+}
+export enum SharedSpaceRole {
+    Owner = "owner",
+    Contributor = "contributor"
 }
 export enum SyncEntityType {
     AuthUserV1 = "AuthUserV1",

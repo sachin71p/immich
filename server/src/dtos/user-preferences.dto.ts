@@ -59,6 +59,21 @@ const SharedLinksUpdateSchema = z
   .optional()
   .meta({ id: 'SharedLinksUpdate' });
 
+// fork: shared-libraries
+const SharedLibrariesUpdateSchema = z
+  .object({
+    defaultUploadTarget: z
+      .discriminatedUnion('type', [
+        z.object({ type: z.literal('personal') }),
+        z.object({ type: z.literal('space'), spaceId: z.uuidv4() }),
+      ])
+      .optional(),
+    showPersonalInTimeline: z.boolean().optional(),
+    hiddenOwnedLibraryIds: z.array(z.uuidv4()).max(1000).optional(),
+  })
+  .optional()
+  .meta({ id: 'SharedLibrariesUpdate' });
+
 const TagsUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether tags are enabled'),
@@ -119,6 +134,7 @@ const UserPreferencesUpdateSchema = z
     purchase: PurchaseUpdateSchema,
     ratings: RatingsUpdateSchema,
     sharedLinks: SharedLinksUpdateSchema,
+    sharedLibraries: SharedLibrariesUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
   })
@@ -165,6 +181,18 @@ const SharedLinksResponseSchema = z
     sidebarWeb: z.boolean().describe('Whether shared links appear in web sidebar'),
   })
   .meta({ id: 'SharedLinksResponse' });
+
+// fork: shared-libraries
+const SharedLibrariesResponseSchema = z
+  .object({
+    defaultUploadTarget: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('personal') }),
+      z.object({ type: z.literal('space'), spaceId: z.uuidv4() }),
+    ]),
+    showPersonalInTimeline: z.boolean(),
+    hiddenOwnedLibraryIds: z.array(z.uuidv4()),
+  })
+  .meta({ id: 'SharedLibrariesResponse' });
 
 const TagsResponseSchema = z
   .object({
@@ -215,6 +243,7 @@ const UserPreferencesResponseSchema = z
     people: PeopleResponseSchema,
     ratings: RatingsResponseSchema,
     sharedLinks: SharedLinksResponseSchema,
+    sharedLibraries: SharedLibrariesResponseSchema,
     tags: TagsResponseSchema,
     emailNotifications: EmailNotificationsResponseSchema,
     download: DownloadResponseSchema,

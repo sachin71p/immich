@@ -14,6 +14,8 @@ import {
   AssetMetadataResponseDto,
   AssetMetadataRouteParams,
   AssetMetadataUpsertDto,
+  AssetMoveDto,
+  AssetMoveResponseDto,
   AssetStatsDto,
   AssetStatsResponseDto,
   UpdateAssetDto,
@@ -51,6 +53,14 @@ export class AssetController {
   })
   runAssetJobs(@Auth() auth: AuthDto, @Body() dto: AssetJobsDto): Promise<void> {
     return this.service.run(auth, dto);
+  }
+
+  // fork: shared-libraries
+  @Post('move')
+  @Authenticated({ permission: Permission.AssetMove })
+  @Endpoint({ summary: 'Move assets between personal and shared libraries', history: new HistoryBuilder().added('v3') })
+  moveAssets(@Auth() auth: AuthDto, @Body() dto: AssetMoveDto): Promise<AssetMoveResponseDto> {
+    return this.service.move(auth, dto);
   }
 
   @Put()

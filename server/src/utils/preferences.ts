@@ -28,6 +28,12 @@ const getDefaultPreferences = (): UserPreferences => {
       enabled: true,
       sidebarWeb: false,
     },
+    // fork: shared-libraries
+    sharedLibraries: {
+      defaultUploadTarget: { type: 'personal' },
+      showPersonalInTimeline: true,
+      hiddenOwnedLibraryIds: [],
+    },
     ratings: {
       enabled: false,
     },

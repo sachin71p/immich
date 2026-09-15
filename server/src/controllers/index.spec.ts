@@ -13,11 +13,13 @@ const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
 /** Admin-only routes that live outside `admin/`, i.e. `@Authenticated({ admin: true })` */
 const ADMIN_ROUTES = new Set([
   'DELETE libraries/:id',
+  'DELETE libraries/:id/members/:userId',
   'DELETE queues/:name/jobs',
   'DELETE server/license',
   'GET jobs',
   'GET libraries',
   'GET libraries/:id',
+  'GET libraries/:id/members',
   'GET libraries/:id/statistics',
   'GET queues',
   'GET queues/:name',
@@ -33,6 +35,7 @@ const ADMIN_ROUTES = new Set([
   'PATCH libraries/:id',
   'POST jobs',
   'POST libraries',
+  'POST libraries/:id/members',
   'POST libraries/:id/scan',
   'POST libraries/:id/validate',
   'POST system-metadata/admin-onboarding',

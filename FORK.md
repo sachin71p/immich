@@ -27,6 +27,7 @@ immediately.
 ## Patch list
 
 | upstream file | change | reason | phase |
+|---|---|---|---|
 | `server/src/{database,enum}.ts` | registers shared-library database schema and enums | shared schema support | S1 |
 | `server/src/dtos/asset-response.dto.ts` | exposes shared container fields in asset responses | shared schema support | S1 |
 | `server/src/schema/{index,enums,functions}.ts` | registers shared-library schema and audit hooks | shared schema support | S1 |
@@ -40,4 +41,10 @@ immediately.
 | `server/src/cores/storage.core.ts` | namespaces generated files by shared-space storage key | shared storage relocation | S3 |
 | `server/src/services/asset-relocation.service.ts` | resumes and performs crash-safe asset file relocations | shared storage relocation | S3 |
 | `server/src/{repositories/asset.repository.ts,services/library.service.ts}` | guards external scans/watchers while moves are pending | shared storage relocation | S3 |
-|---|---|---|---|
+| `server/src/{controllers,dtos}/shared-space.*` (new), `server/src/{repositories,services}/shared-space.*` (new) | shared-space CRUD, members, ownership transfer API | spaces & library-member API | S4 |
+| `server/src/controllers/library.controller.ts`, `server/src/dtos/library.dto.ts`, `server/src/services/library.service.ts` | external-library member endpoints, `uploadPath`, `GET /libraries/shared` | spaces & library-member API | S4 |
+| `server/src/{controllers/asset.controller.ts,dtos/asset.dto.ts,services/asset.service.ts,repositories/asset.repository.ts}` | `POST /assets/move` (live-pair/stack expansion, target rules, crash-safe relocation) | move API | S4 |
+| `server/src/{dtos/asset-media.dto.ts,services/asset-media.service.ts}` | upload target resolution (explicit spaceId → preference → personal) | upload target | S4 |
+| `server/src/{dtos/user-preferences.dto.ts,types.ts,utils/preferences.ts}` | `sharedLibraries` preference block (default upload target, timeline toggles) | preferences | S4 |
+| `server/src/services/user.service.ts` | user-deletion pre-step: transfer/delete owned spaces, reassign ownerId, inline relocation, re-queue face detection | lifecycle §8 | S4 |
+| `server/src/database.ts` | adds `uploadPath` to `Library` type | bugfix (type gap from S1) | S4 |

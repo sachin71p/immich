@@ -23,8 +23,39 @@ const UpdateLibrarySchema = z
     name: z.string().min(1).optional().describe('Library name'),
     importPaths: stringArrayMax128.optional().describe('Import paths (max 128)'),
     exclusionPatterns: stringArrayMax128.optional().describe('Exclusion patterns (max 128)'),
+    // fork: shared-libraries
+    uploadPath: z.string().nullable().optional().describe('Writable upload path inside an import path'),
   })
   .meta({ id: 'UpdateLibraryDto' });
+
+// fork: shared-libraries
+const LibraryMembersSchema = z
+  .object({
+    userIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length),
+  })
+  .meta({ id: 'LibraryMembersDto' });
+
+const LibraryTimelineSchema = z.object({ showInTimeline: z.boolean() }).meta({ id: 'LibraryTimelineDto' });
+
+const LibraryMemberResponseSchema = z
+  .object({ userId: z.uuidv4(), showInTimeline: z.boolean(), createdAt: isoDatetimeToDate })
+  .meta({ id: 'LibraryMemberResponseDto' });
+
+const SharedLibraryResponseSchema = z
+  .object({
+    id: z.uuidv4(),
+    name: z.string(),
+    ownerId: z.uuidv4(),
+    isOwner: z.boolean(),
+    showInTimeline: z.boolean(),
+    assetCount: z.int(),
+    hasUploadPath: z.boolean(),
+  })
+  .meta({ id: 'SharedLibraryResponseDto' });
 
 export interface CrawlOptionsDto {
   pathsToCrawl: string[];
@@ -85,6 +116,10 @@ const LibraryStatsResponseSchema = z
 
 export class CreateLibraryDto extends createZodDto(CreateLibrarySchema) {}
 export class UpdateLibraryDto extends createZodDto(UpdateLibrarySchema) {}
+export class LibraryMembersDto extends createZodDto(LibraryMembersSchema) {}
+export class LibraryTimelineDto extends createZodDto(LibraryTimelineSchema) {}
+export class LibraryMemberResponseDto extends createZodDto(LibraryMemberResponseSchema) {}
+export class SharedLibraryResponseDto extends createZodDto(SharedLibraryResponseSchema) {}
 export class ValidateLibraryDto extends createZodDto(ValidateLibrarySchema) {}
 export class ValidateLibraryResponseDto extends createZodDto(ValidateLibraryResponseSchema) {}
 export class ValidateLibraryImportPathResponseDto extends createZodDto(ValidateLibraryImportPathResponseSchema) {}

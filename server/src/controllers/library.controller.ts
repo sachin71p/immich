@@ -1,16 +1,21 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryMemberResponseDto,
+  LibraryMembersDto,
   LibraryResponseDto,
   LibraryStatsResponseDto,
+  LibraryTimelineDto,
+  SharedLibraryResponseDto,
   UpdateLibraryDto,
   ValidateLibraryDto,
   ValidateLibraryResponseDto,
 } from 'src/dtos/library.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -39,6 +44,14 @@ export class LibraryController {
   })
   createLibrary(@Body() dto: CreateLibraryDto): Promise<LibraryResponseDto> {
     return this.service.create(dto);
+  }
+
+  // fork: shared-libraries
+  @Get('shared')
+  @Authenticated({ permission: Permission.LibraryRead })
+  @Endpoint({ summary: 'List my shared external libraries', history: new HistoryBuilder().added('v3') })
+  getSharedLibraries(@Auth() auth: AuthDto): Promise<SharedLibraryResponseDto[]> {
+    return this.service.getShared(auth);
   }
 
   @Get(':id')
@@ -72,6 +85,45 @@ export class LibraryController {
   @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
   updateLibraryV3(@Param() { id }: UUIDParamDto, @Body() dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
     return this.service.update(id, dto);
+  }
+
+  // fork: shared-libraries
+  @Get(':id/members')
+  @Authenticated({ permission: Permission.LibraryMemberCreate, admin: true })
+  @Endpoint({ summary: 'List external-library members', history: new HistoryBuilder().added('v3') })
+  getMembers(@Param() { id }: UUIDParamDto): Promise<LibraryMemberResponseDto[]> {
+    return this.service.getMembers(id);
+  }
+
+  // fork: shared-libraries
+  @Post(':id/members')
+  @Authenticated({ permission: Permission.LibraryMemberCreate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Add external-library members', history: new HistoryBuilder().added('v3') })
+  addMembers(@Param() { id }: UUIDParamDto, @Body() dto: LibraryMembersDto): Promise<void> {
+    return this.service.addMembers(id, dto);
+  }
+
+  // fork: shared-libraries
+  @Delete(':id/members/:userId')
+  @Authenticated({ permission: Permission.LibraryMemberDelete, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Remove an external-library member', history: new HistoryBuilder().added('v3') })
+  removeMember(@Param() { id }: UUIDParamDto, @Param('userId') userId: string): Promise<void> {
+    return this.service.removeMember(id, userId);
+  }
+
+  // fork: shared-libraries
+  @Patch(':id/members/me')
+  @Authenticated({ permission: Permission.LibraryRead })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Update my external-library settings', history: new HistoryBuilder().added('v3') })
+  updateMyTimeline(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: LibraryTimelineDto,
+  ): Promise<void> {
+    return this.service.updateMyTimeline(auth, id, dto);
   }
 
   @Delete(':id')

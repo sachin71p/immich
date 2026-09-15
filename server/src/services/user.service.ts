@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Updateable } from 'kysely';
 import { DateTime } from 'luxon';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -13,9 +13,20 @@ import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js
 import { UserPreferencesResponseDto, UserPreferencesUpdateDto, mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { CacheControl, JobName, JobStatus, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
+import {
+  CacheControl,
+  JobName,
+  JobStatus,
+  Permission,
+  QueueName,
+  SharedSpaceRole,
+  StorageFolder,
+  UserMetadataKey,
+} from 'src/enum.js';
+import { SharedSpaceRepository } from 'src/repositories/shared-space.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
+import { AssetRelocationService } from 'src/services/asset-relocation.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
@@ -26,6 +37,11 @@ import { generateProfileImage } from 'src/utils/profile-image.js';
 
 @Injectable()
 export class UserService extends BaseService {
+  // fork: shared-libraries - not part of BaseService's fixed dependency list; resolved by property injection
+  // since every BaseService subclass currently shares BaseService's exact constructor signature.
+  @Inject() private sharedSpaceRepository!: SharedSpaceRepository;
+  @Inject() private assetRelocationService!: AssetRelocationService;
+
   async search(auth: AuthDto): Promise<UserResponseDto[]> {
     const config = await this.getConfig({ withCache: false });
 
@@ -85,6 +101,11 @@ export class UserService extends BaseService {
   }
 
   async updateMyPreferences(auth: AuthDto, dto: UserPreferencesUpdateDto) {
+    // fork: shared-libraries - preferences may only target a space the user still belongs to.
+    const target = dto.sharedLibraries?.defaultUploadTarget;
+    if (target?.type === 'space') {
+      await this.requireAccess({ auth, permission: Permission.SharedSpaceRead, ids: [target.spaceId] });
+    }
     const metadata = await this.userRepository.getMetadata(auth.user.id);
     const updated = mergePreferences(getPreferences(metadata), dto);
 
@@ -274,6 +295,32 @@ export class UserService extends BaseService {
     }
 
     this.logger.log(`Deleting user: ${user.id}`);
+
+    // fork: shared-libraries - lifecycle pre-step (DECISIONS §8): must complete before any upstream deletion.
+    for (const { spaceId } of await this.sharedSpaceRepository.getOwnedSpaces(user.id)) {
+      const members = await this.sharedSpaceRepository.getMembers(spaceId);
+      const nextOwner = members.find((member) => member.role === SharedSpaceRole.Contributor);
+      if (nextOwner) {
+        await this.sharedSpaceRepository.transferOwner(spaceId, user.id, nextOwner.userId);
+      } else {
+        let queueAfterCommit: (() => Promise<void>) | undefined;
+        await this.sharedSpaceRepository.deleteSpace(spaceId, async (assetIds, trx) => {
+          queueAfterCommit = await this.assetRelocationService.requestRelocation(assetIds, user.id, trx);
+        });
+        await queueAfterCommit?.();
+      }
+    }
+
+    // reassignments must be read after ownership transfers above, so a transferred space's new owner is used.
+    const reassignments = await this.assetRepository.getUserDeletionReassignments(user.id);
+    if (reassignments.length > 0) {
+      await this.assetRepository.reassignOwners(reassignments);
+    }
+    // let relocation failures throw: the job retries later and folder deletion must never run first.
+    await this.assetRelocationService.relocateInline(reassignments.map((reassignment) => reassignment.id));
+    await this.jobRepository.queueAll(
+      reassignments.map((reassignment) => ({ name: JobName.AssetDetectFaces, data: { id: reassignment.id } })),
+    );
 
     const folders = [
       StorageCore.getLibraryFolder(user),

@@ -5,10 +5,10 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 | Phase | Title | Depends on | Risk | Status | Commit | Note |
 |---|---|---|---|---|---|---|
 | S0 | Fork baseline, FORK.md, branch | — | low | ✅ | 3e0c08539 | base v3.1.0; server+web check/lint/test PASS after plugin-sdk bootstrap |
-| S1 | Schema & migrations | S0 | med | ✅ | bf208b0ab | targeted medium schema tests PASS; full unit suite blocked by sandbox socket policy |
-| S2 | Access control, favorites & album permissions | S1 (parallel-safe with S3) | **high** | ⬜ | | |
-| S3 | Storage keys & relocation engine | S1 (parallel-safe with S2) | **high** | ⬜ | | |
-| S4 | Spaces/library-member API, move API, upload target, lifecycle | S2, S3 | **high** | ⬜ | | |
+| S1 | Schema & migrations | S0 | med | ✅ | 06ec13fac | targeted medium schema tests PASS; full unit suite blocked by sandbox socket policy |
+| S2 | Access control, favorites & album permissions | S1 (parallel-safe with S3) | **high** | ✅ | f34f92116 | check/lint and focused suites PASS; full unit suite blocked by sandbox socket policy |
+| S3 | Storage keys & relocation engine | S1 (parallel-safe with S2) | **high** | ✅ | 83f80f33f | check/lint and focused suites PASS; full unit suite blocked by sandbox socket policy |
+| S4 | Spaces/library-member API, move API, upload target, lifecycle | S2, S3 | **high** | ✅ | 467e4ff5f | check/lint clean, full unit suite 2316+1 KNOWN PASS; medium PASS (2 pre-existing infra gaps: e2e/test-assets submodule, plugin-core wasm); Dart SDK regen deferred (needs Java) |
 | S5 | Visibility scope across queries | S4 | **high** | ⬜ | | |
 | S6 | Sync stream for spaces & shared libraries | S5 | **high** | ⬜ | | |
 | S7 | Full metadata endpoint & extended search filters | S5 | med | ⬜ | | |
@@ -17,7 +17,7 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 | S8c | Web: full metadata panel, search filters | S8a (parallel-safe with S8b) | low | ⬜ | | |
 | S9 | (optional) Space-scoped People | S6 | high | ⬜ | | |
 | S10 | Hardening: e2e, FORK.md, upstream-merge rehearsal | S8b, S8c | med | ⬜ | | |
-| A0 | Apple: workspace, shared core package skeleton, codegen | S0 | low | ⬜ | | |
+| A0 | Apple: workspace, shared core package skeleton, codegen | S0 | low | ✅ | 9d686e0b8 | host Xcode SDK/compiler mismatch prevents SwiftPM verification |
 | A1 | Apple core: auth, sync engine, local DB | A0, S6 | high | ⬜ | | |
 | A2 | Apple core: image pipeline + cache tiers | A1 | med | ⬜ | | |
 | A3 | iOS app: grid, viewer, libraries, albums, favorites, move | A2 | med | ⬜ | | |

@@ -52,6 +52,8 @@ const AssetMediaBaseSchema = z.object({
 });
 
 const AssetMediaCreateSchema = AssetMediaBaseSchema.extend({
+  // fork: shared-libraries
+  spaceId: z.uuidv4().optional().describe('Shared space upload target'),
   isFavorite: stringToBool.optional().describe('Mark as favorite'),
   visibility: AssetVisibilitySchema.optional(),
   livePhotoVideoId: z.uuidv4().optional().describe('Live photo video ID'),

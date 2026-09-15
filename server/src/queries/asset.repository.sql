@@ -530,6 +530,14 @@ where
   "isOffline" = $3
   and "isExternal" = $4
   and "libraryId" = $5::uuid
+  and not exists (
+    select
+      "assetId"
+    from
+      "asset_relocation"
+    where
+      "asset_relocation"."assetId" = "asset"."id"
+  )
   and (
     not "originalPath" like $6
     or "originalPath" ~ $7
@@ -541,15 +549,34 @@ select
 from
   unnest(array[$1]::text[]) as "path"
 where
-  not exists (
-    select
-      "originalPath"
-    from
-      "asset"
-    where
-      "asset"."originalPath" = "path"
-      and "libraryId" = $2::uuid
-      and "isExternal" = $3
+  (
+    not exists (
+      select
+        "originalPath"
+      from
+        "asset"
+      where
+        "asset"."originalPath" = "path"
+        and "libraryId" = $2::uuid
+        and "isExternal" = $3
+    )
+    and not exists (
+      select
+        "id"
+      from
+        "move_history"
+      where
+        "move_history"."newPath" = "path"
+    )
+    and not exists (
+      select
+        "asset"."id"
+      from
+        "asset"
+        inner join "asset_relocation" on "asset_relocation"."assetId" = "asset"."id"
+      where
+        "asset"."originalPath" = "path"
+    )
   )
 
 -- AssetRepository.getForOriginal

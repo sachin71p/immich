@@ -9,10 +9,15 @@ import type { JobOf } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   CreateLibraryDto,
+  LibraryMemberResponseDto,
+  LibraryMembersDto,
   LibraryResponseDto,
   LibraryStatsResponseDto,
+  LibraryTimelineDto,
+  SharedLibraryResponseDto,
   UpdateLibraryDto,
   ValidateLibraryDto,
   ValidateLibraryImportPathResponseDto,
@@ -29,12 +34,14 @@ import {
   JobName,
   JobStatus,
   QueueName,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { AssetSyncResult } from 'src/repositories/library.repository.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+import { getPreferences, getPreferencesPartial } from 'src/utils/preferences.js';
 
 @Injectable()
 export class LibraryService extends BaseService {
@@ -357,7 +364,7 @@ export class LibraryService extends BaseService {
   }
 
   async update(id: string, dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    await this.findOrFail(id);
+    const current = await this.findOrFail(id);
 
     if (dto.importPaths) {
       const validation = await this.validate(id, { importPaths: dto.importPaths });
@@ -370,8 +377,76 @@ export class LibraryService extends BaseService {
       }
     }
 
+    // fork: shared-libraries
+    if (dto.uploadPath) {
+      const message = await this.validateUploadPath(dto.uploadPath, dto.importPaths ?? current.importPaths);
+      if (message) throw new BadRequestException(`Invalid upload path: ${message}`);
+    }
+
     const library = await this.libraryRepository.update(id, dto);
     return mapLibrary(library);
+  }
+
+  // fork: shared-libraries
+  async getMembers(id: string): Promise<LibraryMemberResponseDto[]> {
+    await this.findOrFail(id);
+    return await this.libraryRepository.getMembers(id);
+  }
+
+  // fork: shared-libraries
+  async addMembers(id: string, dto: LibraryMembersDto): Promise<void> {
+    await this.findOrFail(id);
+    if (!(await this.libraryRepository.addMembers(id, dto.userIds))) {
+      throw new BadRequestException('Users must exist and not already be members');
+    }
+  }
+
+  // fork: shared-libraries
+  async removeMember(id: string, userId: string): Promise<void> {
+    await this.findOrFail(id);
+    await this.libraryRepository.removeMember(id, userId);
+  }
+
+  // fork: shared-libraries
+  async getShared(auth: AuthDto): Promise<SharedLibraryResponseDto[]> {
+    const preferences = getPreferences(await this.userRepository.getMetadata(auth.user.id));
+    const libraries = await this.libraryRepository.getShared(auth.user.id);
+    return libraries.map((library) => {
+      const isOwner = library.ownerId === auth.user.id;
+      return {
+        id: library.id,
+        name: library.name,
+        ownerId: library.ownerId,
+        isOwner,
+        showInTimeline: isOwner
+          ? !preferences.sharedLibraries.hiddenOwnedLibraryIds.includes(library.id)
+          : (library.showInTimeline ?? true),
+        assetCount: Number(library.assetCount),
+        hasUploadPath: !!library.uploadPath,
+      };
+    });
+  }
+
+  // fork: shared-libraries
+  async updateMyTimeline(auth: AuthDto, id: string, dto: LibraryTimelineDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    if (library.ownerId === auth.user.id) {
+      const preferences = getPreferences(await this.userRepository.getMetadata(auth.user.id));
+      const ids = new Set(preferences.sharedLibraries.hiddenOwnedLibraryIds);
+      if (dto.showInTimeline) ids.delete(id);
+      else ids.add(id);
+      preferences.sharedLibraries.hiddenOwnedLibraryIds = [...ids];
+      await this.userRepository.upsertMetadata(auth.user.id, {
+        key: UserMetadataKey.Preferences,
+        value: getPreferencesPartial(preferences),
+      });
+      return;
+    }
+    const access = await this.accessRepository.library.checkMemberAccess(auth.user.id, new Set([id]));
+    if (access.size === 0) {
+      throw new BadRequestException(`Library ${id} not found`);
+    }
+    await this.libraryRepository.updateMember(id, auth.user.id, dto.showInTimeline);
   }
 
   async delete(id: string) {

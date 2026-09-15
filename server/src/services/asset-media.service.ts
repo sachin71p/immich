@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import sanitize from 'sanitize-filename';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -35,6 +41,7 @@ import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -139,6 +146,27 @@ export class AssetMediaService extends BaseService {
 
       this.requireQuota(auth, file.size);
 
+      // fork: shared-libraries - an explicit non-member target is rejected outright, while a stale
+      // preference (no longer a membership) safely falls back to personal.
+      let spaceId = dto.spaceId;
+      if (spaceId) {
+        const allowed = await this.checkAccess({ auth, permission: Permission.SharedSpaceRead, ids: [spaceId] });
+        if (allowed.size === 0) {
+          throw new ForbiddenException('Not a member of the target shared space');
+        }
+      } else {
+        const preferences = getPreferences(await this.userRepository.getMetadata(auth.user.id));
+        if (preferences.sharedLibraries.defaultUploadTarget.type === 'space') {
+          const preferredSpaceId = preferences.sharedLibraries.defaultUploadTarget.spaceId;
+          const allowed = await this.checkAccess({
+            auth,
+            permission: Permission.SharedSpaceRead,
+            ids: [preferredSpaceId],
+          });
+          spaceId = allowed.size === 0 ? undefined : preferredSpaceId;
+        }
+      }
+
       if (dto.livePhotoVideoId) {
         await onBeforeLink(
           { asset: this.assetRepository, event: this.eventRepository },
@@ -149,6 +177,7 @@ export class AssetMediaService extends BaseService {
       asset = await this.assetRepository.create({
         ownerId: auth.user.id,
         libraryId: null,
+        spaceId: spaceId ?? null,
 
         checksum: file.checksum,
         checksumAlgorithm: ChecksumAlgorithm.sha1File,

@@ -720,6 +720,7 @@ where
 select
   "asset"."id",
   "asset"."ownerId",
+  "asset"."spaceId",
   "asset"."type",
   "asset"."checksum",
   "asset"."originalPath",
@@ -733,6 +734,7 @@ select
   "asset_exif"."make",
   "asset_exif"."model",
   "asset_exif"."lensModel",
+  "shared_space"."storageLabel" as "spaceStorageLabel",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -753,6 +755,7 @@ select
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+  left join "shared_space" on "asset"."spaceId" = "shared_space"."id"
 where
   "asset"."deletedAt" is null
   and "asset"."id" = $2
@@ -762,6 +765,7 @@ where
 select
   "asset"."id",
   "asset"."ownerId",
+  "asset"."spaceId",
   "asset"."type",
   "asset"."checksum",
   "asset"."originalPath",
@@ -775,6 +779,7 @@ select
   "asset_exif"."make",
   "asset_exif"."model",
   "asset_exif"."lensModel",
+  "shared_space"."storageLabel" as "spaceStorageLabel",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -795,6 +800,7 @@ select
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+  left join "shared_space" on "asset"."spaceId" = "shared_space"."id"
 where
   "asset"."deletedAt" is null
   and "asset"."visibility" != $2

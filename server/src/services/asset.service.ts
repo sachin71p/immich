@@ -17,6 +17,8 @@ import {
   AssetMetadataBulkUpsertDto,
   AssetMetadataResponseDto,
   AssetMetadataUpsertDto,
+  AssetMoveDto,
+  AssetMoveResponseDto,
   AssetStatsDto,
   UpdateAssetDto,
   mapStats,
@@ -55,6 +57,108 @@ import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 @Injectable()
 export class AssetService extends BaseService {
+  // fork: shared-libraries
+  async move(auth: AuthDto, dto: AssetMoveDto): Promise<AssetMoveResponseDto> {
+    const requested = await this.assetRepository.getByIds(dto.assetIds);
+    const byId = new Map(requested.map((asset) => [asset.id, asset]));
+    const results: Array<{ id: string; status: 'moved' | 'noop' | 'error'; reason?: string }> = [];
+
+    let target: { spaceId: string | null; libraryId: string | null; isExternal: boolean };
+    if (dto.target.type === 'personal') {
+      target = { spaceId: null, libraryId: null, isExternal: false };
+    } else if (dto.target.type === 'space') {
+      const spaceAccess = await this.accessRepository.space.checkMemberAccess(auth.user.id, new Set([dto.target.id]));
+      if (spaceAccess.size === 0) {
+        return { results: dto.assetIds.map((id) => ({ id, status: 'error', reason: 'target_access' })) };
+      }
+      target = { spaceId: dto.target.id, libraryId: null, isExternal: false };
+    } else {
+      const library = await this.libraryRepository.get(dto.target.id);
+      if (!library?.uploadPath) {
+        return { results: dto.assetIds.map((id) => ({ id, status: 'error', reason: 'target_access' })) };
+      }
+      const libraryAccess = await this.accessRepository.library.checkMemberAccess(
+        auth.user.id,
+        new Set([dto.target.id]),
+      );
+      if (libraryAccess.size === 0) {
+        return { results: dto.assetIds.map((id) => ({ id, status: 'error', reason: 'target_access' })) };
+      }
+      target = { spaceId: null, libraryId: dto.target.id, isExternal: true };
+    }
+
+    for (const id of dto.assetIds) {
+      const asset = byId.get(id);
+      if (!asset) {
+        results.push({ id, status: 'error', reason: 'not_found' });
+        continue;
+      }
+      if (asset.visibility === AssetVisibility.Locked) {
+        results.push({ id, status: 'error', reason: 'locked' });
+        continue;
+      }
+      if (dto.target.type === 'personal' && asset.ownerId !== auth.user.id) {
+        results.push({ id, status: 'error', reason: 'target_access' });
+        continue;
+      }
+      try {
+        await this.requireAccess({ auth, permission: Permission.AssetMove, ids: [id] });
+      } catch {
+        results.push({ id, status: 'error', reason: 'source_access' });
+        continue;
+      }
+      if (asset.spaceId === target.spaceId && asset.libraryId === target.libraryId) {
+        results.push({ id, status: 'noop' });
+        continue;
+      }
+      const group = await this.assetRepository.getMoveGroup([id]);
+      const groupIds = group.map((item) => item.id);
+      try {
+        await this.requireAccess({ auth, permission: Permission.AssetMove, ids: groupIds });
+      } catch {
+        results.push({ id, status: 'error', reason: 'source_access' });
+        continue;
+      }
+      if (group.some((item) => item.visibility === AssetVisibility.Locked)) {
+        results.push({ id, status: 'error', reason: 'locked' });
+        continue;
+      }
+      if (dto.target.type === 'personal' && group.some((item) => item.ownerId !== auth.user.id)) {
+        results.push({ id, status: 'error', reason: 'target_access' });
+        continue;
+      }
+      // fork: shared-libraries - the external-library unique index is per owner/library/checksum.
+      if (target.libraryId) {
+        const duplicate = await Promise.all(
+          group.map((item) =>
+            this.assetRepository.getByChecksum({
+              ownerId: item.ownerId,
+              libraryId: target.libraryId!,
+              checksum: item.checksum,
+            }),
+          ),
+        );
+        if (duplicate.some((item) => item && !groupIds.includes(item.id))) {
+          results.push({ id, status: 'error', reason: 'duplicate' });
+          continue;
+        }
+      }
+      await this.assetRepository.moveWithRelocation(groupIds, target, auth.user.id);
+      await Promise.all(
+        group.map((item) =>
+          this.eventRepository.emit('AssetMetadataExtracted', {
+            assetId: item.id,
+            userId: item.ownerId,
+            source: 'sidecar-write',
+          }),
+        ),
+      );
+      await this.jobRepository.queueAll(groupIds.map((id) => ({ name: JobName.AssetRelocate, data: { id } })));
+      results.push({ id, status: 'moved' });
+    }
+    return { results };
+  }
+
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);

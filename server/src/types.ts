@@ -580,6 +580,12 @@ export type UserPreferences = {
     enabled: boolean;
     sidebarWeb: boolean;
   };
+  // fork: shared-libraries
+  sharedLibraries: {
+    defaultUploadTarget: { type: 'personal' } | { type: 'space'; spaceId: string };
+    showPersonalInTimeline: boolean;
+    hiddenOwnedLibraryIds: string[];
+  };
   tags: {
     enabled: boolean;
     sidebarWeb: boolean;

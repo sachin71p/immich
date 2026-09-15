@@ -69,6 +69,79 @@ export class LibraryRepository {
       .executeTakeFirstOrThrow();
   }
 
+  // fork: shared-libraries
+  getMembers(libraryId: string) {
+    return this.db
+      .selectFrom('library_member')
+      .select(['userId', 'showInTimeline', 'createdAt'])
+      .where('libraryId', '=', libraryId)
+      .orderBy('createdAt', 'asc')
+      .execute();
+  }
+
+  // fork: shared-libraries
+  async addMembers(libraryId: string, userIds: string[]) {
+    const users = await this.db
+      .selectFrom('user')
+      .select('id')
+      .where('id', 'in', userIds)
+      .where('deletedAt', 'is', null)
+      .execute();
+    if (users.length !== userIds.length) return false;
+    const existing = await this.db
+      .selectFrom('library_member')
+      .select('userId')
+      .where('libraryId', '=', libraryId)
+      .where('userId', 'in', userIds)
+      .execute();
+    if (existing.length > 0) return false;
+    await this.db
+      .insertInto('library_member')
+      .values(userIds.map((userId) => ({ libraryId, userId })))
+      .execute();
+    return true;
+  }
+
+  // fork: shared-libraries
+  removeMember(libraryId: string, userId: string) {
+    return this.db
+      .deleteFrom('library_member')
+      .where('libraryId', '=', libraryId)
+      .where('userId', '=', userId)
+      .execute();
+  }
+
+  // fork: shared-libraries
+  updateMember(libraryId: string, userId: string, showInTimeline: boolean) {
+    return this.db
+      .updateTable('library_member')
+      .set({ showInTimeline })
+      .where('libraryId', '=', libraryId)
+      .where('userId', '=', userId)
+      .execute();
+  }
+
+  // fork: shared-libraries
+  getShared(userId: string) {
+    return this.db
+      .selectFrom('library')
+      .leftJoin('library_member', (join) =>
+        join.onRef('library_member.libraryId', '=', 'library.id').on('library_member.userId', '=', userId),
+      )
+      .select(['library.id', 'library.name', 'library.ownerId', 'library.uploadPath', 'library_member.showInTimeline'])
+      .select((eb) =>
+        eb
+          .selectFrom('asset')
+          .select((eb) => eb.fn.countAll<number>().as('count'))
+          .whereRef('asset.libraryId', '=', 'library.id')
+          .where('asset.deletedAt', 'is', null)
+          .as('assetCount'),
+      )
+      .where('library.deletedAt', 'is', null)
+      .where((eb) => eb.or([eb('library.ownerId', '=', userId), eb('library_member.userId', '=', userId)]))
+      .execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async getStatistics(id: string): Promise<LibraryStatsResponseDto | undefined> {
     const stats = await this.db

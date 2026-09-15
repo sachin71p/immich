@@ -189,6 +189,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'A session represents an authenticated login session for a user. Sessions also appear in the web application as "Authorized devices".',
   [ApiTag.SharedLinks]:
     'A shared link is a public url that provides access to a specific album, asset, or collection of assets. A shared link can be protected with a password, include a specific slug, allow or disallow downloads, and optionally include an expiration date.',
+  // fork: shared-libraries
+  [ApiTag.SharedSpaces]: 'A shared space is a member-managed library of assets with a shared storage location.',
   [ApiTag.Stacks]:
     'A stack is a group of related assets. One asset is the "primary" asset, and the rest are "child" assets. On the main timeline, stack parents are included by default, while child assets are hidden.',
   [ApiTag.Sync]: 'A collection of endpoints for the new mobile synchronization implementation.',

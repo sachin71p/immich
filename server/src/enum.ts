@@ -1269,6 +1269,8 @@ export enum ApiTag {
   Server = 'Server',
   Sessions = 'Sessions',
   SharedLinks = 'Shared links',
+  // fork: shared-libraries
+  SharedSpaces = 'Shared spaces',
   Stacks = 'Stacks',
   Sync = 'Sync',
   SystemConfig = 'System config',

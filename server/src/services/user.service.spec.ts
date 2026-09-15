@@ -1,6 +1,9 @@
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { Mocked, vitest } from 'vitest';
 import { UserAdmin } from 'src/database.js';
-import { CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
+import { CacheControl, JobName, SharedSpaceRole, UserMetadataKey } from 'src/enum.js';
+import { SharedSpaceRepository } from 'src/repositories/shared-space.repository.js';
+import { AssetRelocationService } from 'src/services/asset-relocation.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -16,12 +19,33 @@ const makeDeletedAt = (daysAgo: number) => {
   return deletedAt;
 };
 
+// fork: shared-libraries - SharedSpaceRepository/AssetRelocationService are resolved by property
+// injection (see user.service.ts), so newTestService cannot wire them; mock and attach manually.
+const newSharedSpaceRepositoryMock = (): Mocked<SharedSpaceRepository> =>
+  ({
+    getOwnedSpaces: vitest.fn().mockResolvedValue([]),
+    getMembers: vitest.fn().mockResolvedValue([]),
+    transferOwner: vitest.fn().mockResolvedValue(undefined),
+    deleteSpace: vitest.fn().mockResolvedValue(undefined),
+  }) as unknown as Mocked<SharedSpaceRepository>;
+
+const newAssetRelocationServiceMock = (): Mocked<AssetRelocationService> =>
+  ({
+    requestRelocation: vitest.fn().mockResolvedValue(undefined),
+    relocateInline: vitest.fn().mockResolvedValue(undefined),
+  }) as unknown as Mocked<AssetRelocationService>;
+
 describe(UserService.name, () => {
   let sut: UserService;
   let mocks: ServiceMocks;
+  let sharedSpaceMock: Mocked<SharedSpaceRepository>;
+  let relocationMock: Mocked<AssetRelocationService>;
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(UserService));
+    sharedSpaceMock = newSharedSpaceRepositoryMock();
+    relocationMock = newAssetRelocationServiceMock();
+    Object.assign(sut, { sharedSpaceRepository: sharedSpaceMock, assetRelocationService: relocationMock });
     mocks.user.get.mockImplementation((userId) =>
       Promise.resolve([userStub.admin, userStub.user1].find((user) => user.id === userId) ?? undefined),
     );
@@ -297,6 +321,85 @@ describe(UserService.name, () => {
       const options = { force: true, recursive: true };
 
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining('data/library/admin'), options);
+    });
+
+    // fork: shared-libraries - lifecycle pre-step (DECISIONS §8)
+    it('should transfer an owned space to the earliest-joined contributor', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      sharedSpaceMock.getOwnedSpaces.mockResolvedValue([{ spaceId: 'space-1' }]);
+      sharedSpaceMock.getMembers.mockResolvedValue([
+        { userId: user.id, role: SharedSpaceRole.Owner, showInTimeline: true, createdAt: makeDeletedAt(20) },
+        {
+          userId: 'contributor-1',
+          role: SharedSpaceRole.Contributor,
+          showInTimeline: true,
+          createdAt: makeDeletedAt(19),
+        },
+        {
+          userId: 'contributor-2',
+          role: SharedSpaceRole.Contributor,
+          showInTimeline: true,
+          createdAt: makeDeletedAt(18),
+        },
+      ]);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(sharedSpaceMock.transferOwner).toHaveBeenCalledWith('space-1', user.id, 'contributor-1');
+      expect(sharedSpaceMock.deleteSpace).not.toHaveBeenCalled();
+    });
+
+    it('should delete an owned space that has no other members', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      sharedSpaceMock.getOwnedSpaces.mockResolvedValue([{ spaceId: 'space-1' }]);
+      sharedSpaceMock.getMembers.mockResolvedValue([
+        { userId: user.id, role: SharedSpaceRole.Owner, showInTimeline: true, createdAt: makeDeletedAt(20) },
+      ]);
+      sharedSpaceMock.deleteSpace.mockImplementation(async (id, onAssets) => {
+        await onAssets(['asset-1'], {} as never);
+      });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(sharedSpaceMock.transferOwner).not.toHaveBeenCalled();
+      expect(sharedSpaceMock.deleteSpace).toHaveBeenCalledWith('space-1', expect.any(Function));
+      expect(relocationMock.requestRelocation).toHaveBeenCalledWith(['asset-1'], user.id, expect.anything());
+    });
+
+    it('should reassign ownerId for space/library assets and relocate them inline', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.asset.getUserDeletionReassignments.mockResolvedValue([
+        { id: 'asset-1', ownerId: 'new-owner' },
+        { id: 'asset-2', ownerId: 'new-owner' },
+      ]);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.asset.reassignOwners).toHaveBeenCalledWith([
+        { id: 'asset-1', ownerId: 'new-owner' },
+        { id: 'asset-2', ownerId: 'new-owner' },
+      ]);
+      expect(relocationMock.relocateInline).toHaveBeenCalledWith(['asset-1', 'asset-2']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetDetectFaces, data: { id: 'asset-1' } },
+        { name: JobName.AssetDetectFaces, data: { id: 'asset-2' } },
+      ]);
+      expect(mocks.storage.unlinkDir).toHaveBeenCalled();
+    });
+
+    it('should abort before removing folders when inline relocation fails', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.asset.getUserDeletionReassignments.mockResolvedValue([{ id: 'asset-1', ownerId: 'new-owner' }]);
+      relocationMock.relocateInline.mockRejectedValue(new Error('relocation failed'));
+
+      await expect(sut.handleUserDelete({ id: user.id })).rejects.toThrowError('relocation failed');
+
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
     });
   });
 

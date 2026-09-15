@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
+import { AssetJobName, AssetMoveDto, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
@@ -74,6 +74,218 @@ describe(AssetService.name, () => {
       mocks.asset.getStatistics.mockResolvedValue(stats);
       await expect(sut.getStatistics(auth, {})).resolves.toEqual(statResponse);
       expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, {});
+    });
+  });
+
+  // fork: shared-libraries - move rules (DECISIONS §6)
+  describe('move', () => {
+    it('should move a personal asset into a space', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: null, libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'moved' }] });
+      expect(mocks.asset.moveWithRelocation).toHaveBeenCalledWith(
+        [asset.id],
+        { spaceId: 'space-1', libraryId: null, isExternal: false },
+        auth.user.id,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetMetadataExtracted', {
+        assetId: asset.id,
+        userId: asset.ownerId,
+        source: 'sidecar-write',
+      });
+      expect(mocks.asset.moveWithRelocation.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.event.emit.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('should move own asset from a space back to personal', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'personal' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'moved' }] });
+    });
+
+    it("should reject moving another owner's space asset to personal", async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: newUuid(), spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'personal' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'target_access' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should reject moving into a space without target membership', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set());
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-2' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'target_access' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should reject moving out of a space the user is not a member of', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: newUuid(), spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-2']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkSpaceAccess.mockResolvedValue(new Set());
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-2' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'source_access' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should move between spaces when the user is a member of both', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: newUuid(), spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-2']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkSpaceAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-2' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'moved' }] });
+    });
+
+    it('should reject moving into an external library without an uploadPath', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: null, libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.library.get.mockResolvedValue(factory.library({ uploadPath: null }));
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'library', id: 'lib-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'target_access' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should move into an external library that has an uploadPath configured', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: null, libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.library.get.mockResolvedValue(factory.library({ id: 'lib-1', uploadPath: '/data/lib' }));
+      mocks.access.library.checkMemberAccess.mockResolvedValue(new Set(['lib-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'library', id: 'lib-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'moved' }] });
+      expect(mocks.asset.moveWithRelocation).toHaveBeenCalledWith(
+        [asset.id],
+        { spaceId: null, libraryId: 'lib-1', isExternal: true },
+        auth.user.id,
+      );
+    });
+
+    it('should reject a duplicate checksum in the target library', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: null, libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.library.get.mockResolvedValue(factory.library({ id: 'lib-1', uploadPath: '/data/lib' }));
+      mocks.access.library.checkMemberAccess.mockResolvedValue(new Set(['lib-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getMoveGroup.mockResolvedValue([asset]);
+      mocks.asset.getByChecksum.mockResolvedValue(AssetFactory.create({ id: newUuid() }));
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'library', id: 'lib-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'duplicate' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should expand the move to the whole live-photo pair', async () => {
+      const auth = AuthFactory.create();
+      const video = AssetFactory.create({ id: newUuid(), ownerId: auth.user.id, spaceId: null });
+      const still = AssetFactory.create({
+        ownerId: auth.user.id,
+        spaceId: null,
+        livePhotoVideoId: video.id,
+      });
+      mocks.asset.getByIds.mockResolvedValue([still]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+      const owned = new Set([still.id, video.id]);
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(ids.intersection(owned)),
+      );
+      mocks.asset.getMoveGroup.mockResolvedValue([still, video]);
+
+      const dto: AssetMoveDto = { assetIds: [still.id], target: { type: 'space', id: 'space-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: still.id, status: 'moved' }] });
+      expect(mocks.asset.moveWithRelocation).toHaveBeenCalledWith(
+        [still.id, video.id],
+        { spaceId: 'space-1', libraryId: null, isExternal: false },
+        auth.user.id,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetMetadataExtracted', {
+        assetId: still.id,
+        userId: still.ownerId,
+        source: 'sidecar-write',
+      });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetMetadataExtracted', {
+        assetId: video.id,
+        userId: video.ownerId,
+        source: 'sidecar-write',
+      });
+    });
+
+    it('should reject moving a Locked asset', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'error', reason: 'locked' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
+    });
+
+    it('should return noop when the asset is already in the target container', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1', libraryId: null });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+
+      const dto: AssetMoveDto = { assetIds: [asset.id], target: { type: 'space', id: 'space-1' } };
+      const result = await sut.move(auth, dto);
+
+      expect(result).toEqual({ results: [{ id: asset.id, status: 'noop' }] });
+      expect(mocks.asset.moveWithRelocation).not.toHaveBeenCalled();
     });
   });
 

@@ -52,6 +52,8 @@ export type Library = {
   deletedAt: Date | null;
   refreshedAt: Date | null;
   assets?: MapAsset[];
+  // fork: shared-libraries
+  uploadPath: string | null;
 };
 
 export type AuthApiKey = {

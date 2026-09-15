@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
@@ -10,7 +11,7 @@ import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility, CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
@@ -177,6 +178,8 @@ describe(AssetMediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AssetMediaService));
+    // fork: shared-libraries - uploadAsset resolves the target via user preferences; default to none set.
+    mocks.user.getMetadata.mockResolvedValue([]);
   });
 
   describe('getUploadAssetIdByChecksum', () => {
@@ -465,6 +468,67 @@ describe(AssetMediaService.name, () => {
         new Date(createDto.fileModifiedAt),
       );
       expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    // fork: shared-libraries - upload target resolution (DECISIONS §9)
+    it('should upload into an explicit space when the caller is a member', async () => {
+      const asset = AssetFactory.create({ spaceId: 'space-1' });
+      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+
+      await expect(
+        sut.uploadAsset(authStub.user1, { ...createDto, spaceId: 'space-1' }, fileStub.photo),
+      ).resolves.toEqual({ status: AssetMediaStatus.CREATED, id: asset.id });
+
+      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ spaceId: 'space-1' }));
+    });
+
+    it('should reject an explicit space the caller is not a member of', async () => {
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set());
+
+      await expect(
+        sut.uploadAsset(authStub.user1, { ...createDto, spaceId: 'space-1' }, fileStub.photo),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to the preference default upload target when spaceId is omitted', async () => {
+      const asset = AssetFactory.create({ spaceId: 'space-1' });
+      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.user.getMetadata.mockResolvedValue([
+        {
+          key: UserMetadataKey.Preferences,
+          value: { sharedLibraries: { defaultUploadTarget: { type: 'space', spaceId: 'space-1' } } },
+        },
+      ]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, fileStub.photo)).resolves.toEqual({
+        status: AssetMediaStatus.CREATED,
+        id: asset.id,
+      });
+
+      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ spaceId: 'space-1' }));
+    });
+
+    it('should fall back to personal when the preferred space is a stale membership', async () => {
+      const asset = AssetFactory.create({ spaceId: null });
+      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.user.getMetadata.mockResolvedValue([
+        {
+          key: UserMetadataKey.Preferences,
+          value: { sharedLibraries: { defaultUploadTarget: { type: 'space', spaceId: 'space-1' } } },
+        },
+      ]);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set());
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, fileStub.photo)).resolves.toEqual({
+        status: AssetMediaStatus.CREATED,
+        id: asset.id,
+      });
+
+      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ spaceId: null }));
     });
   });
 

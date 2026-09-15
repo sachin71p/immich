@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -40,6 +41,13 @@ export class AssetRelocationService extends BaseService {
     await this.jobRepository.queue({ name: JobName.AssetRelocateQueueAll });
   }
 
+  @OnEvent({ name: 'AssetMetadataExtracted', server: true })
+  async onAssetMetadataExtracted({ assetId, userId }: ArgOf<'AssetMetadataExtracted'>) {
+    // fork: shared-libraries - uploads stay in staging until metadata/template work is complete.
+    const asset = await this.assetRepository.getForRelocation(assetId);
+    if (asset?.spaceId) await this.requestRelocation([assetId], userId);
+  }
+
   // fork: shared-libraries - callers execute the returned callback only after their transaction commits.
   async requestRelocation(
     assetIds: string[],
@@ -70,6 +78,11 @@ export class AssetRelocationService extends BaseService {
       await this.assetRepository.failRelocation(id, error?.message || String(error));
       throw error;
     }
+  }
+
+  // fork: shared-libraries - user deletion must complete re-keying before upstream folder removal.
+  async relocateInline(assetIds: string[]): Promise<void> {
+    for (const id of assetIds) await this.relocate(id);
   }
 
   private async relocate(id: string, depth = 0): Promise<void> {

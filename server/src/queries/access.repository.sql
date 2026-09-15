@@ -97,6 +97,31 @@ where
   and "user"."id" = $2
   and "album"."deletedAt" is null
 
+-- AccessRepository.asset.checkSpaceAccess
+select
+  "asset"."id"
+from
+  "asset"
+  inner join "shared_space_member" on "shared_space_member"."spaceId" = "asset"."spaceId"
+  and "shared_space_member"."userId" = $1
+where
+  "asset"."id" in ($2)
+
+-- AccessRepository.asset.checkLibraryMemberAccess
+select
+  "asset"."id"
+from
+  "asset"
+  inner join "library" on "library"."id" = "asset"."libraryId"
+  left join "library_member" on "library_member"."libraryId" = "library"."id"
+  and "library_member"."userId" = $1
+where
+  "asset"."id" in ($2)
+  and (
+    "library"."ownerId" = $3
+    or "library_member"."userId" = $4
+  )
+
 -- AccessRepository.asset.checkOwnerAccess
 select
   "asset"."id"
@@ -105,7 +130,19 @@ from
 where
   "asset"."id" in ($1)
   and "asset"."ownerId" = $2
-  and "asset"."visibility" != $3
+  and (
+    "asset"."spaceId" is null
+    or exists (
+      select
+        "shared_space_member"."spaceId"
+      from
+        "shared_space_member"
+      where
+        "shared_space_member"."spaceId" = "asset"."spaceId"
+        and "shared_space_member"."userId" = $3
+    )
+  )
+  and "asset"."visibility" != $4
 
 -- AccessRepository.asset.checkPartnerAccess
 select
@@ -159,6 +196,47 @@ where
   "asset"."visibility" != $1
   and "asset"."ownerId" = $2
   and "asset_file"."id" in ($3)
+
+-- AccessRepository.assetFile.checkSpaceAccess
+select
+  "asset_file"."id"
+from
+  "asset_file"
+  inner join "asset" on "asset"."id" = "asset_file"."assetId"
+  inner join "shared_space_member" on "shared_space_member"."spaceId" = "asset"."spaceId"
+  and "shared_space_member"."userId" = $1
+where
+  "asset_file"."id" in ($2)
+
+-- AccessRepository.assetFile.checkLibraryMemberAccess
+select
+  "asset_file"."id"
+from
+  "asset_file"
+  inner join "asset" on "asset"."id" = "asset_file"."assetId"
+  inner join "library" on "library"."id" = "asset"."libraryId"
+  left join "library_member" on "library_member"."libraryId" = "library"."id"
+  and "library_member"."userId" = $1
+where
+  "asset_file"."id" in ($2)
+  and (
+    "library"."ownerId" = $3
+    or "library_member"."userId" = $4
+  )
+
+-- AccessRepository.library.checkMemberAccess
+select
+  "library"."id"
+from
+  "library"
+  left join "library_member" on "library_member"."libraryId" = "library"."id"
+  and "library_member"."userId" = $1
+where
+  "library"."id" in ($2)
+  and (
+    "library"."ownerId" = $3
+    or "library_member"."userId" = $4
+  )
 
 -- AccessRepository.authDevice.checkOwnerAccess
 select
@@ -287,6 +365,25 @@ from
 where
   "stack"."id" in ($1)
   and "stack"."ownerId" = $2
+
+-- AccessRepository.space.checkMemberAccess
+select
+  "shared_space_member"."spaceId"
+from
+  "shared_space_member"
+where
+  "shared_space_member"."spaceId" in ($1)
+  and "shared_space_member"."userId" = $2
+
+-- AccessRepository.space.checkOwnerAccess
+select
+  "shared_space_member"."spaceId"
+from
+  "shared_space_member"
+where
+  "shared_space_member"."spaceId" in ($1)
+  and "shared_space_member"."userId" = $2
+  and "shared_space_member"."role" = $3
 
 -- AccessRepository.tag.checkOwnerAccess
 select

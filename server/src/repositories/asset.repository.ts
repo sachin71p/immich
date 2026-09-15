@@ -25,6 +25,7 @@ import {
   AssetType,
   AssetVisibility,
   CalendarHeatmapType,
+  SharedSpaceRole,
 } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
@@ -514,6 +515,25 @@ export class AssetRepository {
     return this.db.selectFrom('asset').selectAll('asset').where('asset.id', '=', anyUuid(ids)).execute();
   }
 
+  // fork: shared-libraries - a move operates on an entire live-photo pair or stack.
+  getMoveGroup(ids: string[]) {
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .where((eb) =>
+        eb.or([
+          eb('asset.id', '=', anyUuid(ids)),
+          eb('asset.livePhotoVideoId', '=', anyUuid(ids)),
+          eb(
+            'asset.stackId',
+            'in',
+            eb.selectFrom('asset as selected').select('selected.stackId').where('selected.id', '=', anyUuid(ids)),
+          ),
+        ]),
+      )
+      .execute();
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray({ paramIndex: 0 })
   getByIdsWithAllRelationsButStacks(ids: string[], viewingUserId?: string) {
@@ -630,6 +650,47 @@ export class AssetRepository {
       return;
     }
     await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+  }
+
+  // fork: shared-libraries - persist container and recovery rows together; caller queues only after commit.
+  async moveWithRelocation(
+    ids: string[],
+    options: Pick<Updateable<AssetTable>, 'spaceId' | 'libraryId' | 'isExternal'>,
+    requestedById: string,
+  ): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await trx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+      await this.createRelocations(ids, requestedById, trx);
+    });
+  }
+
+  // fork: shared-libraries - assets whose owner would otherwise cascade on user deletion.
+  async getUserDeletionReassignments(ownerId: string): Promise<Array<{ id: string; ownerId: string }>> {
+    const assets = await this.db
+      .selectFrom('asset')
+      .leftJoin('shared_space_member as space_owner', (join) =>
+        join.onRef('space_owner.spaceId', '=', 'asset.spaceId').on('space_owner.role', '=', SharedSpaceRole.Owner),
+      )
+      .leftJoin('library', 'library.id', 'asset.libraryId')
+      .select(['asset.id', 'space_owner.userId as spaceOwnerId', 'library.ownerId as libraryOwnerId'])
+      .where('asset.ownerId', '=', ownerId)
+      .where((eb) =>
+        eb.or([
+          eb('asset.spaceId', 'is not', null),
+          eb.and([eb('asset.libraryId', 'is not', null), eb('library.ownerId', '!=', ownerId)]),
+        ]),
+      )
+      .execute();
+    return assets.map((asset) => ({ id: asset.id, ownerId: asset.spaceOwnerId ?? asset.libraryOwnerId! }));
+  }
+
+  // fork: shared-libraries
+  async reassignOwners(items: Array<{ id: string; ownerId: string }>): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      for (const item of items) {
+        await trx.updateTable('asset').set({ ownerId: item.ownerId }).where('id', '=', item.id).execute();
+      }
+    });
   }
 
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {

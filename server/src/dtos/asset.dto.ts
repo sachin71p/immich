@@ -63,6 +63,26 @@ export const AssetIdsSchema = z
   })
   .meta({ id: 'AssetIdsDto' });
 
+// fork: shared-libraries
+const AssetMoveSchema = z
+  .object({
+    assetIds: z.array(z.uuidv4()).min(1).max(1000),
+    target: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('personal') }),
+      z.object({ type: z.literal('space'), id: z.uuidv4() }),
+      z.object({ type: z.literal('library'), id: z.uuidv4() }),
+    ]),
+  })
+  .meta({ id: 'AssetMoveDto' });
+
+const AssetMoveResponseSchema = z
+  .object({
+    results: z.array(
+      z.object({ id: z.uuidv4(), status: z.enum(['moved', 'noop', 'error']), reason: z.string().optional() }),
+    ),
+  })
+  .meta({ id: 'AssetMoveResponseDto' });
+
 export enum AssetJobName {
   REFRESH_FACES = 'refresh-faces',
   REFRESH_METADATA = 'refresh-metadata',
@@ -180,6 +200,8 @@ export const mapStats = (stats: AssetStats): AssetStatsResponseDto => {
 export class AssetBulkUpdateDto extends createZodDto(AssetBulkUpdateSchema) {}
 export class UpdateAssetDto extends createZodDto(UpdateAssetSchema) {}
 export class AssetBulkDeleteDto extends createZodDto(AssetBulkDeleteSchema) {}
+export class AssetMoveDto extends createZodDto(AssetMoveSchema) {}
+export class AssetMoveResponseDto extends createZodDto(AssetMoveResponseSchema) {}
 export class AssetIdsDto extends createZodDto(AssetIdsSchema) {}
 export class AssetJobsDto extends createZodDto(AssetJobsSchema) {}
 export class AssetStatsDto extends createZodDto(AssetStatsSchema) {}
