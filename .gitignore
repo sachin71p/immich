@@ -27,3 +27,10 @@ vite.config.js.timestamp-*
 .devcontainer/.env*
 *.tsbuildinfo
 *.tsbuildInfo
+
+# fork: shared-libraries (T0) — personal fixtures, host media mirror, reports
+e2e/fork-assets/personal/*
+!e2e/fork-assets/personal/README.md
+e2e/.fork-data/
+e2e/.fork-report/
+server/.fork-ts-*/
