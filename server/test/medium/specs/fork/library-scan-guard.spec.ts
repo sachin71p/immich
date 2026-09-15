@@ -2,6 +2,7 @@ import { Kysely } from 'kysely';
 import { JobStatus } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
@@ -14,7 +15,7 @@ const setup = (db?: Kysely<DB>) => {
   return newMediumService(LibraryService, {
     database: db || defaultDatabase,
     real: [AssetRepository],
-    mock: [JobRepository],
+    mock: [JobRepository, LoggingRepository],
   });
 };
 

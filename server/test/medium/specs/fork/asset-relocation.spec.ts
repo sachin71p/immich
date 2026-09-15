@@ -6,6 +6,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -29,7 +30,7 @@ const setup = (db?: Kysely<DB>) => {
       PersonRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, StorageRepository],
+    mock: [JobRepository, LoggingRepository, StorageRepository],
   });
 };
 
