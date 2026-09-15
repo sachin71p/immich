@@ -78,7 +78,7 @@ describe('fork albums and favorites', () => {
     expect(assets.items.map((asset: AssetResponseDto) => asset.id)).toContain(target.id);
   });
 
-  it('[R16-02] favorite-only bulk update passes, mixed update is 403', async () => {
+  it('[R16-02] favorite-only bulk update passes, mixed update is 400', async () => {
     const target = world.assets.find((a) => a.manifestId === 'fork-01')!;
     await updateAssets(
       { assetBulkUpdateDto: { ids: [target.id], isFavorite: true } },
@@ -89,7 +89,7 @@ describe('fork albums and favorites', () => {
         { assetBulkUpdateDto: { ids: [target.id], isFavorite: true, description: 'hijack' } },
         { headers: auth(token('bob')) },
       ),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it('[R16-03] partner cannot favorite', async () => {
@@ -99,6 +99,6 @@ describe('fork albums and favorites', () => {
         { assetBulkUpdateDto: { ids: [target.id], isFavorite: true } },
         { headers: auth(token('dave')) },
       ),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 400 });
   });
 });

@@ -101,9 +101,15 @@ const manifestFile = (manifestId: string): string => {
   return entry.file;
 };
 
-export const requireAssetId = (asset: { id?: string }, label: string): string => {
+export const requireAssetId = (asset: { id?: string; statusCode?: number }, label: string): string => {
   if (!asset?.id) {
-    throw new Error(`upload failed for ${label}: ${JSON.stringify(asset)}`);
+    // fork: surface Nest's statusCode as .status so denial assertions (e.g. R3-02's 403)
+    // can match it; the message alone cannot distinguish 400/403/500.
+    const error = new Error(`upload failed for ${label}: ${JSON.stringify(asset)}`) as Error & { status?: number };
+    if (typeof asset?.statusCode === 'number') {
+      error.status = asset.statusCode;
+    }
+    throw error;
   }
   return asset.id;
 };

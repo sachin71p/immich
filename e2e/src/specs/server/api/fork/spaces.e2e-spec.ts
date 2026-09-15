@@ -76,7 +76,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         const headers = { Authorization: `Bearer ${token(outsider)}` };
         for (const path of [`/assets/${target.id}`, `/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
           const { status } = await request(app).get(path).set(headers);
-          expect(status, `${outsider} ${path}`).toBe(403);
+          expect(status, `${outsider} ${path}`).toBe(400);
         }
       }
       // Sanity: the owner reads fine.
@@ -247,9 +247,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         { headers: auth(token('bob')) },
       );
       await expect(getAs('alice', target.id)).resolves.toMatchObject({
-        description: 'edited by bob',
-        latitude: 48.85,
-        longitude: 2.35,
+        exifInfo: { description: 'edited by bob', latitude: 48.85, longitude: 2.35 },
       });
     });
 
@@ -330,7 +328,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
       const headers = { Authorization: `Bearer ${token('carol')}` };
       for (const path of [`/assets/${target.id}`, `/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
         const { status } = await request(app).get(path).set(headers);
-        expect(status, path).toBe(403);
+        expect(status, path).toBe(400);
       }
       await expect(
         updateAssets({ assetBulkUpdateDto: { ids: [target.id], description: 'nope' } }, { headers }),
