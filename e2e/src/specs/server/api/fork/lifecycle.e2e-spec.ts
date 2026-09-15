@@ -15,7 +15,7 @@ import {
   type AssetResponseDto,
 } from '@immich/sdk';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { app, utils } from 'src/utils.js';
@@ -92,7 +92,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         expect(after.spaceId).toBeNull();
         expect(existsSync(toHostPath(before.get(entry.id) as string) as string)).toBe(false);
         if (template === 'off') {
-          expect(existsSync(expectedUploadPath(storageKey(after), after.originalFileName))).toBe(true);
+          expect(existsSync(expectedUploadPath(storageKey(after), basename(after.originalPath)))).toBe(true);
         } else {
           const found = findUnder(forkDataDir, after.originalFileName);
           expect(found.length).toBeGreaterThan(0);

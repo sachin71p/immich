@@ -12,7 +12,7 @@ import {
   type AssetResponseDto,
 } from '@immich/sdk';
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 import { moveAssetsAs } from './as.js';
@@ -141,7 +141,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
       expect(info.spaceId).toBe(world.spaces.family.id);
       expect(info.originalPath.startsWith('/test-assets/')).toBe(false);
       if (template === 'off') {
-        expect(existsSync(expectedUploadPath(storageKey(info), info.originalFileName))).toBe(true);
+        expect(existsSync(expectedUploadPath(storageKey(info), basename(info.originalPath)))).toBe(true);
       } else {
         expectFilesAt(
           {

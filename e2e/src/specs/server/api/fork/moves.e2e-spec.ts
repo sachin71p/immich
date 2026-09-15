@@ -13,6 +13,7 @@ import {
   type AssetResponseDto,
 } from '@immich/sdk';
 import { existsSync } from 'node:fs';
+import { basename } from 'node:path';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { app, utils } from 'src/utils.js';
@@ -88,7 +89,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         const oldHost = toHostPath(before.originalPath) as string;
         expect(existsSync(oldHost)).toBe(false);
         if (template === 'off') {
-          expect(existsSync(expectedUploadPath(storageKey(after), after.originalFileName))).toBe(true);
+          expect(existsSync(expectedUploadPath(storageKey(after), basename(after.originalPath)))).toBe(true);
         } else {
           const { dirname } = await import('node:path');
           expectFilesAt(
@@ -128,7 +129,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
       expect(after.spaceId).toBeNull();
       expect(after.libraryId).toBeNull();
       if (template === 'off') {
-        expect(existsSync(expectedUploadPath(storageKey(after), after.originalFileName))).toBe(true);
+        expect(existsSync(expectedUploadPath(storageKey(after), basename(after.originalPath)))).toBe(true);
       } else {
         expect(personalOriginals(after.originalFileName).length).toBeGreaterThan(0);
       }
@@ -212,7 +213,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
       const motion = await getAs('alice', motionId);
       expect(motion.spaceId).toBe(world.spaces.family.id);
       if (template === 'off') {
-        expect(existsSync(expectedUploadPath(storageKey(motion), motion.originalFileName))).toBe(true);
+        expect(existsSync(expectedUploadPath(storageKey(motion), basename(motion.originalPath)))).toBe(true);
       }
     }, 300_000);
 

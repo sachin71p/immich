@@ -19,6 +19,7 @@ import {
   updateAssets,
   type AssetResponseDto,
 } from '@immich/sdk';
+import { basename } from 'node:path';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { app, utils } from 'src/utils.js';
@@ -60,7 +61,7 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
       expect(asset.libraryId).toBeNull();
       if (template === 'off') {
         const { existsSync } = await import('node:fs');
-        expect(existsSync(expectedUploadPath(storageKey(asset), asset.originalFileName))).toBe(true);
+        expect(existsSync(expectedUploadPath(storageKey(asset), basename(asset.originalPath)))).toBe(true);
       } else {
         // Personal tree, outside the shared tree.
         const found = findUnder(forkDataDir, asset.originalFileName);
