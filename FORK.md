@@ -51,3 +51,5 @@ immediately.
 | `server/src/{dtos/user-preferences.dto.ts,types.ts,utils/preferences.ts}` | `sharedLibraries` preference block (default upload target, timeline toggles) | preferences | S4 |
 | `server/src/services/user.service.ts` | user-deletion pre-step: transfer/delete owned spaces, reassign ownerId, inline relocation, re-queue face detection | lifecycle §8 | S4 |
 | `server/src/database.ts` | adds `uploadPath` to `Library` type | bugfix (type gap from S1) | S4 |
+| `server/src/{services,sync.repository}.ts` | shared-space/library sync streams, membership backfill, audit removals | sync I5, favorites §4 | S6 |
+| `server/src/{enum,dtos/sync,database}.ts` | additive sync types and `spaceId` asset DTO field | sync I5 | S6 |

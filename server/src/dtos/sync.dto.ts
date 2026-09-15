@@ -9,6 +9,7 @@ import {
   AssetTypeSchema,
   AssetVisibilitySchema,
   MemoryTypeSchema,
+  SharedSpaceRole,
   SyncEntityType,
   SyncEntityTypeSchema,
   SyncRequestTypeSchema,
@@ -16,6 +17,8 @@ import {
   UserMetadataKeySchema,
 } from 'src/enum.js';
 import { isoDatetimeToDate } from 'src/validation.js';
+
+const SharedSpaceRoleSchema = z.enum(SharedSpaceRole).meta({ id: 'SharedSpaceRole' });
 
 const SyncUserV1Schema = z
   .object({
@@ -76,6 +79,8 @@ const SyncAssetV1Schema = z
     livePhotoVideoId: z.string().nullable().describe('Live photo video ID'),
     stackId: z.string().nullable().describe('Stack ID'),
     libraryId: z.string().nullable().describe('Library ID'),
+    // fork: shared-libraries
+    spaceId: z.string().nullish().describe('Shared space ID'),
     width: z.int().nullable().describe('Asset width'),
     height: z.int().nullable().describe('Asset height'),
     isEdited: z.boolean().describe('Is edited'),
@@ -101,6 +106,8 @@ const SyncAssetV2Schema = z
     livePhotoVideoId: z.string().nullable().describe('Live photo video ID'),
     stackId: z.string().nullable().describe('Stack ID'),
     libraryId: z.string().nullable().describe('Library ID'),
+    // fork: shared-libraries
+    spaceId: z.string().nullish().describe('Shared space ID'),
     width: z.int().nullable().describe('Asset width'),
     height: z.int().nullable().describe('Asset height'),
     isEdited: z.boolean().describe('Is edited'),
@@ -258,6 +265,43 @@ const SyncAlbumToAssetDeleteV1Schema = z
   })
   .meta({ id: 'SyncAlbumToAssetDeleteV1' });
 
+// fork: shared-libraries
+const SyncSharedSpaceV1Schema = z
+  .object({
+    id: z.uuidv4().describe('Shared space ID'),
+    name: z.string().describe('Shared space name'),
+    description: z.string().describe('Shared space description'),
+    createdAt: isoDatetimeToDate.describe('Created at'),
+    updatedAt: isoDatetimeToDate.describe('Updated at'),
+  })
+  .meta({ id: 'SyncSharedSpaceV1' });
+const SyncSharedSpaceDeleteV1Schema = z
+  .object({ spaceId: z.uuidv4().describe('Shared space ID') })
+  .meta({ id: 'SyncSharedSpaceDeleteV1' });
+const SyncSharedSpaceMemberV1Schema = z
+  .object({
+    spaceId: z.uuidv4().describe('Shared space ID'),
+    userId: z.uuidv4().describe('Member user ID'),
+    role: SharedSpaceRoleSchema,
+    showInTimeline: z.boolean().describe('Show in timeline'),
+  })
+  .meta({ id: 'SyncSharedSpaceMemberV1' });
+const SyncSharedSpaceMemberDeleteV1Schema = z
+  .object({ spaceId: z.uuidv4().describe('Shared space ID'), userId: z.uuidv4().describe('Member user ID') })
+  .meta({ id: 'SyncSharedSpaceMemberDeleteV1' });
+const SyncSharedLibraryV1Schema = z
+  .object({
+    id: z.uuidv4().describe('Shared external library ID'),
+    name: z.string().describe('Library name'),
+    ownerId: z.uuidv4().describe('Library owner ID'),
+    createdAt: isoDatetimeToDate.describe('Created at'),
+    updatedAt: isoDatetimeToDate.describe('Updated at'),
+  })
+  .meta({ id: 'SyncSharedLibraryV1' });
+const SyncSharedLibraryDeleteV1Schema = z
+  .object({ libraryId: z.uuidv4().describe('Shared external library ID') })
+  .meta({ id: 'SyncSharedLibraryDeleteV1' });
+
 @ExtraModel()
 class SyncAlbumDeleteV1 extends createZodDto(SyncAlbumDeleteV1Schema) {}
 @ExtraModel()
@@ -272,6 +316,18 @@ class SyncAlbumV2 extends createZodDto(SyncAlbumV2Schema) {}
 class SyncAlbumToAssetV1 extends createZodDto(SyncAlbumToAssetV1Schema) {}
 @ExtraModel()
 class SyncAlbumToAssetDeleteV1 extends createZodDto(SyncAlbumToAssetDeleteV1Schema) {}
+@ExtraModel()
+class SyncSharedSpaceV1 extends createZodDto(SyncSharedSpaceV1Schema) {}
+@ExtraModel()
+class SyncSharedSpaceDeleteV1 extends createZodDto(SyncSharedSpaceDeleteV1Schema) {}
+@ExtraModel()
+class SyncSharedSpaceMemberV1 extends createZodDto(SyncSharedSpaceMemberV1Schema) {}
+@ExtraModel()
+class SyncSharedSpaceMemberDeleteV1 extends createZodDto(SyncSharedSpaceMemberDeleteV1Schema) {}
+@ExtraModel()
+class SyncSharedLibraryV1 extends createZodDto(SyncSharedLibraryV1Schema) {}
+@ExtraModel()
+class SyncSharedLibraryDeleteV1 extends createZodDto(SyncSharedLibraryDeleteV1Schema) {}
 
 export function syncAlbumV2ToV1(
   albumV2: SyncAlbumV2,
@@ -493,6 +549,27 @@ export type SyncItem = {
   [SyncEntityType.AlbumAssetExifCreateV1]: SyncAssetExifV1;
   [SyncEntityType.AlbumAssetExifUpdateV1]: SyncAssetExifV1;
   [SyncEntityType.AlbumAssetExifBackfillV1]: SyncAssetExifV1;
+  [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;
+  [SyncEntityType.SharedSpaceDeleteV1]: SyncSharedSpaceDeleteV1;
+  [SyncEntityType.SharedSpaceMemberV1]: SyncSharedSpaceMemberV1;
+  [SyncEntityType.SharedSpaceMemberBackfillV1]: SyncSharedSpaceMemberV1;
+  [SyncEntityType.SharedSpaceMemberDeleteV1]: SyncSharedSpaceMemberDeleteV1;
+  [SyncEntityType.SharedSpaceAssetCreateV1]: SyncAssetV2;
+  [SyncEntityType.SharedSpaceAssetUpdateV1]: SyncAssetV2;
+  [SyncEntityType.SharedSpaceAssetBackfillV1]: SyncAssetV2;
+  [SyncEntityType.SharedSpaceAssetRemoveV1]: SyncAssetDeleteV1;
+  [SyncEntityType.SharedSpaceAssetExifCreateV1]: SyncAssetExifV1;
+  [SyncEntityType.SharedSpaceAssetExifUpdateV1]: SyncAssetExifV1;
+  [SyncEntityType.SharedSpaceAssetExifBackfillV1]: SyncAssetExifV1;
+  [SyncEntityType.SharedLibraryV1]: SyncSharedLibraryV1;
+  [SyncEntityType.SharedLibraryDeleteV1]: SyncSharedLibraryDeleteV1;
+  [SyncEntityType.SharedLibraryAssetCreateV1]: SyncAssetV2;
+  [SyncEntityType.SharedLibraryAssetUpdateV1]: SyncAssetV2;
+  [SyncEntityType.SharedLibraryAssetBackfillV1]: SyncAssetV2;
+  [SyncEntityType.SharedLibraryAssetRemoveV1]: SyncAssetDeleteV1;
+  [SyncEntityType.SharedLibraryAssetExifCreateV1]: SyncAssetExifV1;
+  [SyncEntityType.SharedLibraryAssetExifUpdateV1]: SyncAssetExifV1;
+  [SyncEntityType.SharedLibraryAssetExifBackfillV1]: SyncAssetExifV1;
   [SyncEntityType.AlbumToAssetV1]: SyncAlbumToAssetV1;
   [SyncEntityType.AlbumToAssetBackfillV1]: SyncAlbumToAssetV1;
   [SyncEntityType.AlbumToAssetDeleteV1]: SyncAlbumToAssetDeleteV1;

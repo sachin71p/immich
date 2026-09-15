@@ -425,6 +425,8 @@ export const columns = {
     'asset.livePhotoVideoId',
     'asset.stackId',
     'asset.libraryId',
+    // fork: shared-libraries
+    'asset.spaceId',
     'asset.width',
     'asset.height',
     'asset.isEdited',
@@ -446,6 +448,8 @@ export const columns = {
     'asset.livePhotoVideoId',
     'asset.stackId',
     'asset.libraryId',
+    // fork: shared-libraries
+    'asset.spaceId',
     'asset.width',
     'asset.height',
     'asset.isEdited',

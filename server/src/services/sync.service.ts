@@ -79,6 +79,14 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.AlbumToAssetsV1,
   SyncRequestType.AssetExifsV1,
   SyncRequestType.AlbumAssetExifsV1,
+  // fork: shared-libraries
+  SyncRequestType.SharedSpacesV1,
+  SyncRequestType.SharedSpaceMembersV1,
+  SyncRequestType.SharedSpaceAssetsV1,
+  SyncRequestType.SharedSpaceAssetExifsV1,
+  SyncRequestType.SharedLibrariesV1,
+  SyncRequestType.SharedLibraryAssetsV1,
+  SyncRequestType.SharedLibraryAssetExifsV1,
   SyncRequestType.AssetOcrV1,
   SyncRequestType.PartnerAssetExifsV1,
   SyncRequestType.MemoriesV1,
@@ -206,6 +214,19 @@ export class SyncService extends BaseService {
       [SyncRequestType.AlbumToAssetsV1]: () => this.syncAlbumToAssetsV1(options, response, checkpointMap, session.id),
       [SyncRequestType.AlbumAssetExifsV1]: () =>
         this.syncAlbumAssetExifsV1(options, response, checkpointMap, session.id),
+      // fork: shared-libraries
+      [SyncRequestType.SharedSpacesV1]: () => this.syncSharedSpacesV1(options, response, checkpointMap),
+      [SyncRequestType.SharedSpaceMembersV1]: () =>
+        this.syncSharedSpaceMembersV1(options, response, checkpointMap, session.id),
+      [SyncRequestType.SharedSpaceAssetsV1]: () =>
+        this.syncSharedSpaceAssetsV1(options, response, checkpointMap, session.id),
+      [SyncRequestType.SharedSpaceAssetExifsV1]: () =>
+        this.syncSharedSpaceAssetExifsV1(options, response, checkpointMap, session.id),
+      [SyncRequestType.SharedLibrariesV1]: () => this.syncSharedLibrariesV1(options, response, checkpointMap),
+      [SyncRequestType.SharedLibraryAssetsV1]: () =>
+        this.syncSharedLibraryAssetsV1(options, response, checkpointMap, session.id),
+      [SyncRequestType.SharedLibraryAssetExifsV1]: () =>
+        this.syncSharedLibraryAssetExifsV1(options, response, checkpointMap, session.id),
       [SyncRequestType.MemoriesV1]: () => this.syncMemoriesV1(options, response, checkpointMap),
       [SyncRequestType.MemoryToAssetsV1]: () => this.syncMemoryAssetsV1(options, response, checkpointMap),
       [SyncRequestType.StacksV1]: () => this.syncStackV1(options, response, checkpointMap),
@@ -567,6 +588,305 @@ export class SyncService extends BaseService {
     throw new BadRequestException(
       'SyncRequestType.AlbumAssetsV1 is deprecated, use SyncRequestType.AlbumAssetsV2 instead',
     );
+  }
+
+  // fork: shared-libraries
+  private async syncSharedSpacesV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const deleteType = SyncEntityType.SharedSpaceDeleteV1;
+    const deletes = this.syncRepository.sharedSpace.getDeletes({ ...options, ack: checkpointMap[deleteType] });
+    for await (const { id, ...data } of deletes) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+
+    const upsertType = SyncEntityType.SharedSpaceV1;
+    const upserts = this.syncRepository.sharedSpace.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    for await (const { updateId, ...data } of upserts) {
+      await send(response, { type: upsertType, ids: [updateId], data });
+    }
+  }
+
+  // fork: shared-libraries
+  private async syncSharedSpaceMembersV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    sessionId: string,
+  ) {
+    const backfillType = SyncEntityType.SharedSpaceMemberBackfillV1;
+    const backfillCheckpoint = checkpointMap[backfillType];
+    const spaces = await this.syncRepository.sharedSpaceMember.getCreatedAfter({
+      ...options,
+      afterCreateId: backfillCheckpoint?.updateId,
+    });
+    const upsertType = SyncEntityType.SharedSpaceMemberV1;
+    const upsertCheckpoint = checkpointMap[upsertType];
+    if (upsertCheckpoint) {
+      const endId = upsertCheckpoint.updateId;
+      for (const space of spaces) {
+        const createId = space.createId;
+        if (isEntityBackfillComplete(createId, backfillCheckpoint)) continue;
+        const backfill = this.syncRepository.sharedSpaceMember.getBackfill(
+          { ...options, afterUpdateId: getStartId(createId, backfillCheckpoint), beforeUpdateId: endId },
+          space.id,
+        );
+        for await (const { updateId, ...data } of backfill) {
+          await send(response, { type: backfillType, ids: [createId, updateId], data });
+        }
+        await sendEntityBackfillCompleteAck(response, backfillType, createId);
+      }
+    } else if (spaces.length > 0) {
+      await this.upsertBackfillCheckpoint({ type: backfillType, sessionId, createId: spaces.at(-1)!.createId });
+    }
+
+    const deleteType = SyncEntityType.SharedSpaceMemberDeleteV1;
+    const deletes = this.syncRepository.sharedSpaceMember.getDeletes({ ...options, ack: checkpointMap[deleteType] });
+    for await (const { id, ...data } of deletes) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+    const upserts = this.syncRepository.sharedSpaceMember.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    for await (const { updateId, ...data } of upserts) {
+      await send(response, { type: upsertType, ids: [updateId], data });
+    }
+  }
+
+  // fork: shared-libraries
+  private async syncSharedSpaceAssetsV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    sessionId: string,
+  ) {
+    const removeType = SyncEntityType.SharedSpaceAssetRemoveV1;
+    const removes = this.syncRepository.sharedSpaceAsset.getRemoves({ ...options, ack: checkpointMap[removeType] });
+    for await (const { id, ...data } of removes) await send(response, { type: removeType, ids: [id], data });
+
+    const backfillType = SyncEntityType.SharedSpaceAssetBackfillV1;
+    const backfillCheckpoint = checkpointMap[backfillType];
+    const spaces = await this.syncRepository.sharedSpaceMember.getCreatedAfter({
+      ...options,
+      afterCreateId: backfillCheckpoint?.updateId,
+    });
+    const updateType = SyncEntityType.SharedSpaceAssetUpdateV1;
+    const createType = SyncEntityType.SharedSpaceAssetCreateV1;
+    const updateCheckpoint = checkpointMap[updateType];
+    const createCheckpoint = checkpointMap[createType];
+    if (createCheckpoint) {
+      for (const space of spaces) {
+        const createId = space.createId;
+        if (isEntityBackfillComplete(createId, backfillCheckpoint)) continue;
+        const backfill = this.syncRepository.sharedSpaceAsset.getBackfill(
+          {
+            ...options,
+            afterUpdateId: getStartId(createId, backfillCheckpoint),
+            beforeUpdateId: createCheckpoint.updateId,
+          },
+          space.id,
+          options.userId,
+        );
+        for await (const { updateId, ...data } of backfill) {
+          await send(response, { type: backfillType, ids: [createId, updateId], data: mapSyncAssetV2(data) });
+        }
+        await sendEntityBackfillCompleteAck(response, backfillType, createId);
+      }
+    } else if (spaces.length > 0) {
+      await this.upsertBackfillCheckpoint({ type: backfillType, sessionId, createId: spaces.at(-1)!.createId });
+    }
+    if (createCheckpoint) {
+      const updates = this.syncRepository.sharedSpaceAsset.getUpdates(
+        { ...options, ack: updateCheckpoint },
+        createCheckpoint,
+      );
+      for await (const { updateId, ...data } of updates) {
+        await send(response, { type: updateType, ids: [updateId], data: mapSyncAssetV2(data) });
+      }
+    }
+    if (!createCheckpoint) {
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: updateType, ids: [options.nowId] });
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: createType, ids: [options.nowId] });
+    }
+    const creates = this.syncRepository.sharedSpaceAsset.getCreates({ ...options, ack: createCheckpoint });
+    for await (const { updateId, ...data } of creates) {
+      await send(response, { type: createType, ids: [updateId], data: mapSyncAssetV2(data) });
+    }
+  }
+
+  // fork: shared-libraries
+  private async syncSharedSpaceAssetExifsV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    sessionId: string,
+  ) {
+    const backfillType = SyncEntityType.SharedSpaceAssetExifBackfillV1;
+    const backfillCheckpoint = checkpointMap[backfillType];
+    const spaces = await this.syncRepository.sharedSpaceMember.getCreatedAfter({
+      ...options,
+      afterCreateId: backfillCheckpoint?.updateId,
+    });
+    const updateType = SyncEntityType.SharedSpaceAssetExifUpdateV1;
+    const createType = SyncEntityType.SharedSpaceAssetExifCreateV1;
+    const updateCheckpoint = checkpointMap[updateType];
+    const createCheckpoint = checkpointMap[createType];
+    if (createCheckpoint) {
+      for (const space of spaces) {
+        const createId = space.createId;
+        if (isEntityBackfillComplete(createId, backfillCheckpoint)) continue;
+        const backfill = this.syncRepository.sharedSpaceAsset.getExifBackfill(
+          {
+            ...options,
+            afterUpdateId: getStartId(createId, backfillCheckpoint),
+            beforeUpdateId: createCheckpoint.updateId,
+          },
+          space.id,
+          options.userId,
+        );
+        for await (const { updateId, ...data } of backfill)
+          await send(response, { type: backfillType, ids: [createId, updateId], data });
+        await sendEntityBackfillCompleteAck(response, backfillType, createId);
+      }
+    } else if (spaces.length > 0) {
+      await this.upsertBackfillCheckpoint({ type: backfillType, sessionId, createId: spaces.at(-1)!.createId });
+    }
+    if (createCheckpoint) {
+      const updates = this.syncRepository.sharedSpaceAsset.getExifUpdates(
+        { ...options, ack: updateCheckpoint },
+        createCheckpoint,
+      );
+      for await (const { updateId, ...data } of updates)
+        await send(response, { type: updateType, ids: [updateId], data });
+    }
+    if (!createCheckpoint) {
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: updateType, ids: [options.nowId] });
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: createType, ids: [options.nowId] });
+    }
+    const creates = this.syncRepository.sharedSpaceAsset.getExifCreates({ ...options, ack: createCheckpoint });
+    for await (const { updateId, ...data } of creates) {
+      await send(response, { type: createType, ids: [updateId], data });
+    }
+  }
+
+  // fork: shared-libraries
+  private async syncSharedLibrariesV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const deleteType = SyncEntityType.SharedLibraryDeleteV1;
+    const deletes = this.syncRepository.libraryAsset.getLibraryDeletes({ ...options, ack: checkpointMap[deleteType] });
+    for await (const { id, ...data } of deletes) await send(response, { type: deleteType, ids: [id], data });
+    const upsertType = SyncEntityType.SharedLibraryV1;
+    const upserts = this.syncRepository.libraryAsset.getLibraries({ ...options, ack: checkpointMap[upsertType] });
+    for await (const { updateId, ...data } of upserts)
+      await send(response, { type: upsertType, ids: [updateId], data });
+  }
+
+  // fork: shared-libraries
+  private async syncSharedLibraryAssetsV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    sessionId: string,
+  ) {
+    const removeType = SyncEntityType.SharedLibraryAssetRemoveV1;
+    const removes = this.syncRepository.libraryAsset.getRemoves({ ...options, ack: checkpointMap[removeType] });
+    for await (const { id, ...data } of removes) await send(response, { type: removeType, ids: [id], data });
+    const backfillType = SyncEntityType.SharedLibraryAssetBackfillV1;
+    const backfillCheckpoint = checkpointMap[backfillType];
+    const libraries = await this.syncRepository.libraryMember.getCreatedAfter({
+      ...options,
+      afterCreateId: backfillCheckpoint?.updateId,
+    });
+    const updateType = SyncEntityType.SharedLibraryAssetUpdateV1;
+    const createType = SyncEntityType.SharedLibraryAssetCreateV1;
+    const updateCheckpoint = checkpointMap[updateType];
+    const createCheckpoint = checkpointMap[createType];
+    if (createCheckpoint) {
+      for (const library of libraries) {
+        const createId = library.createId;
+        if (isEntityBackfillComplete(createId, backfillCheckpoint)) continue;
+        const backfill = this.syncRepository.libraryAsset.getBackfill(
+          {
+            ...options,
+            afterUpdateId: getStartId(createId, backfillCheckpoint),
+            beforeUpdateId: createCheckpoint.updateId,
+          },
+          library.id,
+          options.userId,
+        );
+        for await (const { updateId, ...data } of backfill)
+          await send(response, { type: backfillType, ids: [createId, updateId], data: mapSyncAssetV2(data) });
+        await sendEntityBackfillCompleteAck(response, backfillType, createId);
+      }
+    } else if (libraries.length > 0) {
+      await this.upsertBackfillCheckpoint({ type: backfillType, sessionId, createId: libraries.at(-1)!.createId });
+    }
+    if (createCheckpoint) {
+      const updates = this.syncRepository.libraryAsset.getUpdates(
+        { ...options, ack: updateCheckpoint },
+        createCheckpoint,
+      );
+      for await (const { updateId, ...data } of updates)
+        await send(response, { type: updateType, ids: [updateId], data: mapSyncAssetV2(data) });
+    }
+    if (!createCheckpoint) {
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: updateType, ids: [options.nowId] });
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: createType, ids: [options.nowId] });
+    }
+    const creates = this.syncRepository.libraryAsset.getCreates({ ...options, ack: createCheckpoint });
+    for await (const { updateId, ...data } of creates) {
+      await send(response, { type: createType, ids: [updateId], data: mapSyncAssetV2(data) });
+    }
+  }
+
+  // fork: shared-libraries
+  private async syncSharedLibraryAssetExifsV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    sessionId: string,
+  ) {
+    const backfillType = SyncEntityType.SharedLibraryAssetExifBackfillV1;
+    const backfillCheckpoint = checkpointMap[backfillType];
+    const libraries = await this.syncRepository.libraryMember.getCreatedAfter({
+      ...options,
+      afterCreateId: backfillCheckpoint?.updateId,
+    });
+    const updateType = SyncEntityType.SharedLibraryAssetExifUpdateV1;
+    const createType = SyncEntityType.SharedLibraryAssetExifCreateV1;
+    const updateCheckpoint = checkpointMap[updateType];
+    const createCheckpoint = checkpointMap[createType];
+    if (createCheckpoint) {
+      for (const library of libraries) {
+        const createId = library.createId;
+        if (isEntityBackfillComplete(createId, backfillCheckpoint)) continue;
+        const backfill = this.syncRepository.libraryAsset.getExifBackfill(
+          {
+            ...options,
+            afterUpdateId: getStartId(createId, backfillCheckpoint),
+            beforeUpdateId: createCheckpoint.updateId,
+          },
+          library.id,
+          options.userId,
+        );
+        for await (const { updateId, ...data } of backfill)
+          await send(response, { type: backfillType, ids: [createId, updateId], data });
+        await sendEntityBackfillCompleteAck(response, backfillType, createId);
+      }
+    } else if (libraries.length > 0) {
+      await this.upsertBackfillCheckpoint({ type: backfillType, sessionId, createId: libraries.at(-1)!.createId });
+    }
+    if (createCheckpoint) {
+      const updates = this.syncRepository.libraryAsset.getExifUpdates(
+        { ...options, ack: updateCheckpoint },
+        createCheckpoint,
+      );
+      for await (const { updateId, ...data } of updates)
+        await send(response, { type: updateType, ids: [updateId], data });
+    }
+    if (!createCheckpoint) {
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: updateType, ids: [options.nowId] });
+      await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: createType, ids: [options.nowId] });
+    }
+    const creates = this.syncRepository.libraryAsset.getExifCreates({ ...options, ack: createCheckpoint });
+    for await (const { updateId, ...data } of creates) {
+      await send(response, { type: createType, ids: [updateId], data });
+    }
   }
 
   private async syncAlbumAssetsV2(

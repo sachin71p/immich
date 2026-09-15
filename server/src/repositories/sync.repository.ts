@@ -853,9 +853,24 @@ class AssetOcrSync extends BaseSync {
 }
 
 // fork: shared-libraries
-// full sync entity support (getUpserts/getDeletes) lands in a later phase; these classes exist only
-// so the new audit tables can be pruned by the existing AuditTableCleanup job.
 class SharedSpaceSync extends BaseSync {
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getDeletes(options: SyncQueryOptions) {
+    return this.auditQuery('shared_space_audit', options)
+      .select(['id', 'spaceId'])
+      .where('userId', '=', options.userId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getUpserts(options: SyncQueryOptions) {
+    return this.upsertQuery('shared_space', options)
+      .innerJoin('shared_space_member', 'shared_space_member.spaceId', 'shared_space.id')
+      .select(['shared_space.id', 'name', 'description', 'createdAt', 'updatedAt', 'shared_space.updateId'])
+      .where('shared_space_member.userId', '=', options.userId)
+      .stream();
+  }
+
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('shared_space_audit', daysAgo);
   }
@@ -863,6 +878,58 @@ class SharedSpaceSync extends BaseSync {
 
 // fork: shared-libraries
 class SharedSpaceMemberSync extends BaseSync {
+  @GenerateSql({ params: [dummyCreateAfterOptions] })
+  getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
+    return this.db
+      .selectFrom('shared_space_member')
+      .select(['spaceId as id', 'createId'])
+      .where('userId', '=', userId)
+      .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
+      .where('createId', '<', nowId)
+      .orderBy('createId', 'asc')
+      .execute();
+  }
+
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, spaceId: string) {
+    return this.backfillQuery('shared_space_member', options)
+      .select(['spaceId', 'userId', 'role', 'showInTimeline', 'updateId'])
+      .where('spaceId', '=', spaceId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getDeletes(options: SyncQueryOptions) {
+    return this.auditQuery('shared_space_member_audit', options)
+      .select(['id', 'spaceId', 'userId'])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('shared_space_member as current_member')
+            .select('current_member.userId')
+            .whereRef('current_member.spaceId', '=', 'shared_space_member_audit.spaceId')
+            .where('current_member.userId', '=', options.userId),
+        ),
+      )
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getUpserts(options: SyncQueryOptions) {
+    return this.upsertQuery('shared_space_member', options)
+      .select(['spaceId', 'userId', 'role', 'showInTimeline', 'updateId'])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('shared_space_member as current_member')
+            .select('current_member.userId')
+            .whereRef('current_member.spaceId', '=', 'shared_space_member.spaceId')
+            .where('current_member.userId', '=', options.userId),
+        ),
+      )
+      .stream();
+  }
+
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('shared_space_member_audit', daysAgo);
   }
@@ -870,6 +937,92 @@ class SharedSpaceMemberSync extends BaseSync {
 
 // fork: shared-libraries
 class SharedSpaceAssetSync extends BaseSync {
+  private visibleAssets(query: any, userId: string) {
+    return query
+      .innerJoin('shared_space_member', 'shared_space_member.spaceId', 'asset.spaceId')
+      .where('shared_space_member.userId', '=', userId)
+      .whereRef('asset.ownerId', '!=', 'shared_space_member.userId');
+  }
+
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, spaceId: string, userId: string) {
+    return this.visibleAssets(this.backfillQuery('asset', options), userId)
+      .select(columns.syncAsset)
+      .select('asset.updateId')
+      .where('asset.spaceId', '=', spaceId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getRemoves(options: SyncQueryOptions) {
+    return this.auditQuery('shared_space_asset_audit', options)
+      .select(['id', 'assetId'])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('shared_space_member')
+            .select('shared_space_member.userId')
+            .whereRef('shared_space_member.spaceId', '=', 'shared_space_asset_audit.spaceId')
+            .where('shared_space_member.userId', '=', options.userId),
+        ),
+      )
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
+  getUpdates(options: SyncQueryOptions, createAck: SyncAck) {
+    return this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+      .select(columns.syncAsset)
+      .select('asset.updateId')
+      .where('asset.id', '<=', createAck.updateId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getCreates(options: SyncQueryOptions) {
+    let query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+      .select(columns.syncAsset)
+      .select('asset.updateId');
+    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
+    return query.stream();
+  }
+
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getExifBackfill(options: SyncBackfillOptions, spaceId: string, userId: string) {
+    return this.visibleAssets(
+      this.backfillQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
+      userId,
+    )
+      .select(columns.syncAssetExif)
+      .select('asset_exif.updateId')
+      .where('asset.spaceId', '=', spaceId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
+  getExifUpdates(options: SyncQueryOptions, createAck: SyncAck) {
+    return this.visibleAssets(
+      this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
+      options.userId,
+    )
+      .select(columns.syncAssetExif)
+      .select('asset_exif.updateId')
+      .where('asset.id', '<=', createAck.updateId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getExifCreates(options: SyncQueryOptions) {
+    let query = this.visibleAssets(
+      this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
+      options.userId,
+    )
+      .select(columns.syncAssetExif)
+      .select('asset_exif.updateId');
+    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
+    return query.stream();
+  }
+
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('shared_space_asset_audit', daysAgo);
   }
@@ -877,6 +1030,18 @@ class SharedSpaceAssetSync extends BaseSync {
 
 // fork: shared-libraries
 class LibraryMemberSync extends BaseSync {
+  @GenerateSql({ params: [dummyCreateAfterOptions] })
+  getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
+    return this.db
+      .selectFrom('library_member')
+      .select(['libraryId as id', 'createId'])
+      .where('userId', '=', userId)
+      .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
+      .where('createId', '<', nowId)
+      .orderBy('createId', 'asc')
+      .execute();
+  }
+
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('library_member_audit', daysAgo);
   }
@@ -884,6 +1049,116 @@ class LibraryMemberSync extends BaseSync {
 
 // fork: shared-libraries
 class LibraryAssetSync extends BaseSync {
+  private visibleAssets(query: any, userId: string) {
+    return query
+      .innerJoin('library_member', 'library_member.libraryId', 'asset.libraryId')
+      .where('library_member.userId', '=', userId)
+      .whereRef('asset.ownerId', '!=', 'library_member.userId');
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getLibraries(options: SyncQueryOptions) {
+    return this.upsertQuery('library', options)
+      .innerJoin('library_member', 'library_member.libraryId', 'library.id')
+      .select([
+        'library.id',
+        'library.name',
+        'library.ownerId',
+        'library.createdAt',
+        'library.updatedAt',
+        'library.updateId',
+      ])
+      .where('library_member.userId', '=', options.userId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getLibraryDeletes(options: SyncQueryOptions) {
+    return this.auditQuery('library_member_audit', options)
+      .select(['id', 'libraryId'])
+      .where('userId', '=', options.userId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, libraryId: string, userId: string) {
+    return this.visibleAssets(this.backfillQuery('asset', options), userId)
+      .select(columns.syncAsset)
+      .select('asset.updateId')
+      .where('asset.libraryId', '=', libraryId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getRemoves(options: SyncQueryOptions) {
+    return this.auditQuery('library_asset_audit', options)
+      .select(['id', 'assetId'])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('library_member')
+            .select('library_member.userId')
+            .whereRef('library_member.libraryId', '=', 'library_asset_audit.libraryId')
+            .where('library_member.userId', '=', options.userId),
+        ),
+      )
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
+  getUpdates(options: SyncQueryOptions, createAck: SyncAck) {
+    return this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+      .select(columns.syncAsset)
+      .select('asset.updateId')
+      .where('asset.id', '<=', createAck.updateId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getCreates(options: SyncQueryOptions) {
+    let query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+      .select(columns.syncAsset)
+      .select('asset.updateId');
+    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
+    return query.stream();
+  }
+
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getExifBackfill(options: SyncBackfillOptions, libraryId: string, userId: string) {
+    return this.visibleAssets(
+      this.backfillQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
+      userId,
+    )
+      .select(columns.syncAssetExif)
+      .select('asset_exif.updateId')
+      .where('asset.libraryId', '=', libraryId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
+  getExifUpdates(options: SyncQueryOptions, createAck: SyncAck) {
+    return this.visibleAssets(
+      this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
+      options.userId,
+    )
+      .select(columns.syncAssetExif)
+      .select('asset_exif.updateId')
+      .where('asset.id', '<=', createAck.updateId)
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getExifCreates(options: SyncQueryOptions) {
+    let query = this.visibleAssets(
+      this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
+      options.userId,
+    )
+      .select(columns.syncAssetExif)
+      .select('asset_exif.updateId');
+    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
+    return query.stream();
+  }
+
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('library_asset_audit', daysAgo);
   }
