@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import ChangePinCodeSettings from './PinCodeSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
+  import LibrarySettings from './LibrarySettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
   import UserPurchaseSettings from './UserPurchaseSettings.svelte';
@@ -22,6 +23,7 @@
     mdiFormTextboxPassword,
     mdiKeyOutline,
     mdiLockSmart,
+    mdiLibraryOutline,
     mdiServerOutline,
     mdiTwoFactorAuthentication,
   } from '@mdi/js';
@@ -53,6 +55,10 @@
   subtitle={$t('manage_the_app_settings')}
 >
   <AppSettings />
+</SettingAccordion>
+
+<SettingAccordion icon={mdiLibraryOutline} key="libraries" title={$t('libraries')} subtitle={$t('libraries_settings_description')}>
+  <LibrarySettings />
 </SettingAccordion>
 
 <SettingAccordion icon={mdiAccountOutline} key="account" title={$t('account')} subtitle={$t('manage_your_account')}>

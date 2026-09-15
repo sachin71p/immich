@@ -56,3 +56,7 @@ immediately.
 | `server/src/controllers/asset.controller.ts` | full EXIF endpoint | R12 | S7 |
 | `server/src/repositories/metadata.repository.ts` | group-aware full exiftool reader | R12 | S7 |
 | `server/src/{dtos/search.dto.ts,utils/database.ts,repositories/search.repository.ts,services/search.service.ts}` | scoped rich metadata filters and extension suggestions | R13 | S7 |
+| `web/src/{routes/(user)/shared-libraries,lib/stores/shared-spaces.svelte.ts}` (new), `web/src/lib/modals/{SharedSpaceCreateModal,SharedSpaceMembersModal,LibraryMembersModal}.svelte` (new), `web/src/routes/(user)/user-settings/LibrarySettings.svelte` (new) | shared-library pages, scoped timeline, cache | R2,R7,R8 | S8a |
+| `web/src/{lib/components/shared-components/side-bar/UserSidebar.svelte,lib/route.ts,routes/(user)/user-settings/UserSettingsList.svelte,routes/admin/library-management/[id]/+layout.svelte,test-data/factories/preferences-factory.ts,i18n/en.json}` | sidebar entry, routes, settings registration, admin library members/uploadPath UI | R3,R8,R9 | S8a |
+| `web/src/{routes/(user)/shared-libraries,lib/stores/shared-spaces.svelte.ts}` | shared-library pages, scoped timeline, cache | R2,R7,R8 | S8a |
+| `web/src/{lib/modals,routes/(user)/user-settings,routes/admin/library-management}` | shared-space and external-library management UI | R3,R8,R9 | S8a |

@@ -113,6 +113,8 @@ export const Route = {
 
   // shared links
   sharedLinks: (params?: { filter?: SharedLinkTab }) => '/shared-links' + asQueryString(params),
+  sharedLibraries: () => '/shared-libraries',
+  sharedLibrary: ({ id }: { id: string }) => `/shared-libraries/${id}`,
   editSharedLink: ({ id }: { id: string }) => `/shared-links/${id}/edit`,
   viewSharedLink: ({ slug, key }: { slug?: string | null; key: string }) =>
     slug ? `/s/${encodeURIComponent(slug)}` : `/share/${key}`,

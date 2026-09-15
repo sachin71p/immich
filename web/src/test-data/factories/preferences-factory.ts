@@ -1,4 +1,4 @@
-import { AssetOrder, type UserPreferencesResponseDto } from '@immich/sdk';
+import { AssetOrder, Type, type UserPreferencesResponseDto } from '@immich/sdk';
 import { Sync } from 'factory.ts';
 
 export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
@@ -40,6 +40,11 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   sharedLinks: {
     enabled: false,
     sidebarWeb: false,
+  },
+  sharedLibraries: {
+    defaultUploadTarget: { type: Type.Personal },
+    hiddenOwnedLibraryIds: [],
+    showPersonalInTimeline: true,
   },
   tags: {
     enabled: false,

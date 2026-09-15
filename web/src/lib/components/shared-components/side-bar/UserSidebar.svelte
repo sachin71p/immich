@@ -6,6 +6,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { recentAlbumsDropdown } from '$lib/stores/preferences.store';
+  import { sharedSpaces } from '$lib/stores/shared-spaces.svelte';
   import { NavbarGroup, NavbarItem } from '@immich/ui';
   import {
     mdiAccount,
@@ -22,6 +23,7 @@
     mdiImageAlbum,
     mdiImageMultiple,
     mdiImageMultipleOutline,
+    mdiLibraryOutline,
     mdiLink,
     mdiLock,
     mdiLockOutline,
@@ -37,6 +39,9 @@
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
+  import { onMount } from 'svelte';
+
+  onMount(() => sharedSpaces.ensureLoaded());
 </script>
 
 <Sidebar ariaLabel={$t('primary')}>
@@ -85,6 +90,12 @@
       </span>
     {/snippet}
   </NavbarItem>
+
+  <NavbarGroup title={$t('shared_libraries')} size="tiny" />
+  {#each sharedSpaces.spaces as space (space.id)}
+    <NavbarItem title={space.name} href={Route.sharedLibrary(space)} icon={mdiLibraryOutline} variant="compact" />
+  {/each}
+  <NavbarItem title={$t('new_shared_library')} href={Route.sharedLibraries()} icon={mdiAccountMultipleOutline} variant="compact" />
 
   {#if authManager.preferences.tags.enabled && authManager.preferences.tags.sidebarWeb}
     <NavbarItem title={$t('tags')} href={Route.tags()} icon={{ icon: mdiTagMultipleOutline, flipped: true }} />

@@ -8,6 +8,7 @@
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import TableButton from '$lib/components/TableButton.svelte';
   import LibraryFolderAddModal from '$lib/modals/LibraryFolderAddModal.svelte';
+  import LibraryMembersModal from '$lib/modals/LibraryMembersModal.svelte';
   import { Route } from '$lib/route';
   import {
     getLibraryActions,
@@ -15,8 +16,9 @@
     getLibraryFolderActions,
   } from '$lib/services/library.service';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
-  import { Code, CommandPaletteDefaultProvider, Container, Heading, modalManager } from '@immich/ui';
-  import { mdiCameraIris, mdiChartPie, mdiFilterMinusOutline, mdiFolderOutline, mdiPlayCircle } from '@mdi/js';
+  import { handleUpdateLibrary } from '$lib/services/library.service';
+  import { Button, Code, CommandPaletteDefaultProvider, Container, Field, Heading, Input, modalManager } from '@immich/ui';
+  import { mdiAccountMultipleOutline, mdiCameraIris, mdiChartPie, mdiFilterMinusOutline, mdiFolderOutline, mdiPlayCircle } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { LayoutData } from './$types';
@@ -50,6 +52,12 @@
   };
 
   const { Edit, Delete, AddFolder, AddExclusionPattern, Scan } = $derived(getLibraryActions($t, library));
+  let uploadPath = $state('');
+  const saveUploadPath = async () => {
+    if (await handleUpdateLibrary(library, { uploadPath: uploadPath.trim() || null })) {
+      await invalidate('app:library');
+    }
+  };
 </script>
 
 <OnEvents {onLibraryUpdate} {onLibraryDelete} />
@@ -114,6 +122,15 @@
             {/each}
           </tbody>
         </table>
+      </AdminCard>
+
+      <AdminCard icon={mdiAccountMultipleOutline} title={$t('shared_library_members')}>
+        <div class="flex items-center justify-between gap-4"><p class="text-sm text-gray-500">{$t('external_library_members_description')}</p><Button size="small" onclick={() => modalManager.show(LibraryMembersModal, { libraryId: library.id })}>{$t('add')}</Button></div>
+      </AdminCard>
+
+      <AdminCard icon={mdiFolderOutline} title={$t('upload_path')}>
+        <div class="flex gap-2"><Field label={$t('upload_path')} class="grow"><Input bind:value={uploadPath} placeholder="/library/import/upload" /></Field><Button class="self-end" size="small" onclick={saveUploadPath}>{$t('save')}</Button></div>
+        <p class="mt-2 text-xs text-gray-500">{$t('upload_path_description')}</p>
       </AdminCard>
     </div>
     {@render children?.()}
