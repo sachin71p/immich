@@ -8,16 +8,18 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 | S1 | Schema & migrations | S0 | med | ✅ | 06ec13fac | targeted medium schema tests PASS; full unit suite blocked by sandbox socket policy |
 | S2 | Access control, favorites & album permissions | S1 (parallel-safe with S3) | **high** | ✅ | f34f92116 | check/lint and focused suites PASS; full unit suite blocked by sandbox socket policy |
 | S3 | Storage keys & relocation engine | S1 (parallel-safe with S2) | **high** | ✅ | 83f80f33f | check/lint and focused suites PASS; full unit suite blocked by sandbox socket policy |
-| S4 | Spaces/library-member API, move API, upload target, lifecycle | S2, S3 | **high** | ✅ | 467e4ff5f | check/lint clean, full unit suite 2316+1 KNOWN PASS; medium PASS (2 pre-existing infra gaps: e2e/test-assets submodule, plugin-core wasm); Dart SDK regen deferred (needs Java) |
-| S5 | Visibility scope across queries | S4 | **high** | ⬜ | | |
-| S6 | Sync stream for spaces & shared libraries | S5 | **high** | ⬜ | | |
-| S7 | Full metadata endpoint & extended search filters | S5 | med | ⬜ | | |
-| S8a | Web: spaces management, settings, admin library members | S6, S7 | med | ⬜ | | |
+| S4 | Spaces/library-member API, move API, upload target, lifecycle | S2, S3 | **high** | ✅ | 19cce54f5 | typecheck/lint and focused suites PASS; full unit suite blocked by sandbox socket policy; Dart SDK regen needs Java |
+| S5 | Visibility scope across queries | S4 | **high** | ✅ | 98f0179d9 | check/lint and 181 focused tests PASS; full/medium suites blocked by sandbox/socket and no Docker |
+| T0 | Test harness: fixtures, world, disk oracle, runner, coverage | S0 (parallel-safe with S6/S7) | med | ⬜ | | see TESTING.md |
+| T1 | Regression backfill for S1–S5 (host run with Docker) | T0 | **high** | ⬜ | | S1–S5 were ✅ without medium/e2e runs |
+| S6 | Sync stream for spaces & shared libraries | S5 | **high** | ✅ | 41822db64 | check/lint pass; focused sync tests pass; full suite blocked by sandbox socket policy; medium needs container runtime |
+| S7 | Full metadata endpoint & extended search filters | S5 | med | ✅ | 231211358 | check/lint and 241 configured focused tests pass; bare plan Vitest command lacks alias config; full/medium suites constrained by sandbox/container |
+| S8a | Web: spaces management, settings, admin library members | S6, S7 | med | ✅ | 0d317e4ee | check:typescript/lint clean (fixed 5 lint errors + 2 tailwind warnings); check:svelte and vitest blocked by host toolchain (pre-existing TS 6.0.3 crash, localStorage-in-vitest gap), not phase defects |
 | S8b | Web: timeline switcher, move action, favorites/album UI, upload target | S8a | med | ⬜ | | |
 | S8c | Web: full metadata panel, search filters | S8a (parallel-safe with S8b) | low | ⬜ | | |
 | S9 | (optional) Space-scoped People | S6 | high | ⬜ | | |
-| S10 | Hardening: e2e, FORK.md, upstream-merge rehearsal | S8b, S8c | med | ⬜ | | |
-| A0 | Apple: workspace, shared core package skeleton, codegen | S0 | low | ✅ | 9d686e0b8 | host Xcode SDK/compiler mismatch prevents SwiftPM verification |
+| S10 | Hardening: upgrade gate, FORK.md, upstream-merge rehearsal | S8b, S8c, T1 | med | ⬜ | | |
+| A0 | Apple: workspace, shared core package skeleton, codegen | S0 | low | ✅ | 9d686e0b8 | host now has a full Xcode toolchain; `swift build && swift test` verified clean (1 fixed `Operations.Login`→`Operations.login` naming bug, applied in A1) |
 | A1 | Apple core: auth, sync engine, local DB | A0, S6 | high | ⬜ | | |
 | A2 | Apple core: image pipeline + cache tiers | A1 | med | ⬜ | | |
 | A3 | iOS app: grid, viewer, libraries, albums, favorites, move | A2 | med | ⬜ | | |
