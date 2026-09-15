@@ -7,3 +7,41 @@ filter:
   operations:
     - pingServer
     - login
+    # sync
+    - getSyncStream
+    - sendSyncAck
+    - getSyncAck
+    - deleteSyncAck
+    # assets
+    - moveAssets
+    - deleteAssets
+    - updateAssets
+    - restoreAssets
+    - restoreTrash
+    - emptyTrash
+    # albums
+    - createAlbum
+    - updateAlbumInfo
+    - deleteAlbum
+    - addAssetsToAlbum
+    - removeAssetFromAlbum
+    # shared spaces
+    - getAll
+    - create
+    - update
+    - delete
+    - transferOwner
+    # preferences
+    - updateMyPreferences
+    # identity: SyncEngine needs to know "who am I" for `apply(_:currentUserId:)` (DECISIONS §8
+    # membership-loss handling) and Rules' AccessContext/TimelineContext.
+    - getMyUser
+  # Shared-spaces member endpoints reuse the same bare operationIds (getMembers,
+  # addMembers, updateMyTimeline, removeMember) as /libraries/{id}/members. The generator
+  # validates operationId uniqueness on the *filtered* document, so both the library and
+  # shared-space variants of these ids can never be included together (regardless of
+  # operations-by-id vs paths-by-path filtering) — A1 only needs the shared-spaces ones.
+  paths:
+    - /shared-spaces/{id}/members
+    - /shared-spaces/{id}/members/me
+    - /shared-spaces/{id}/members/{userId}

@@ -1,0 +1,2 @@
+{"type": "SharedSpaceAssetRemoveV1", "data": {"assetId": "a2"}, "ack": "SharedSpaceAssetsV1|ack-12"}
+{"type": "SyncCompleteV1", "data": {}, "ack": "SyncCompleteV1|ack-13"}

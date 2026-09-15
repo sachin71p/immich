@@ -1,0 +1,2 @@
+{"type": "SharedSpaceMemberDeleteV1", "data": {"spaceId": "s1", "userId": "u1"}, "ack": "SharedSpaceMembersV1|ack-14"}
+{"type": "SyncCompleteV1", "data": {}, "ack": "SyncCompleteV1|ack-15"}

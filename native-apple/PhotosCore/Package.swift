@@ -33,12 +33,16 @@ let package = Package(
     ),
     .target(name: "CoreModel"),
     .target(name: "Rules", dependencies: ["CoreModel"]),
-    .target(name: "LocalStore", dependencies: ["CoreModel", .product(name: "GRDB", package: "GRDB.swift")]),
-    .target(name: "SyncEngine", dependencies: ["CoreModel", "ImmichAPI", "LocalStore"]),
+    .target(name: "LocalStore", dependencies: ["CoreModel", "Rules", .product(name: "GRDB", package: "GRDB.swift")]),
+    .target(name: "SyncEngine", dependencies: ["CoreModel", "Rules", "ImmichAPI", "LocalStore"]),
     .target(name: "Media", dependencies: ["CoreModel", .product(name: "Nuke", package: "Nuke")]),
     .target(name: "Upload", dependencies: ["CoreModel", "ImmichAPI", "LocalStore"]),
     .target(name: "Editing", dependencies: ["CoreModel"]),
     .target(name: "Search", dependencies: ["CoreModel", "LocalStore"]),
-    .testTarget(name: "PhotosCoreTests", dependencies: ["CoreModel", "Rules"]),
+    .testTarget(
+      name: "PhotosCoreTests",
+      dependencies: ["CoreModel", "Rules", "LocalStore", "SyncEngine", "ImmichAPI"],
+      resources: [.copy("Fixtures")]
+    ),
   ]
 )
