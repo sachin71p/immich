@@ -925,7 +925,14 @@ class SharedSpaceSync extends BaseSync {
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('shared_space', options)
       .innerJoin('shared_space_member', 'shared_space_member.spaceId', 'shared_space.id')
-      .select(['shared_space.id', 'name', 'description', 'createdAt', 'updatedAt', 'shared_space.updateId'])
+      .select([
+        'shared_space.id',
+        'shared_space.name',
+        'shared_space.description',
+        'shared_space.createdAt',
+        'shared_space.updatedAt',
+        'shared_space.updateId',
+      ])
       .where('shared_space_member.userId', '=', options.userId)
       .stream();
   }
@@ -1033,16 +1040,15 @@ class SharedSpaceAssetSync extends BaseSync {
     return this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId')
-      .where('asset.id', '<=', createAck.updateId)
+      .where('asset.updateId', '<=', createAck.updateId)
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getCreates(options: SyncQueryOptions) {
-    let query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+    const query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId');
-    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
     return query.stream();
   }
 
@@ -1066,19 +1072,18 @@ class SharedSpaceAssetSync extends BaseSync {
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
-      .where('asset.id', '<=', createAck.updateId)
+      .where('asset.updateId', '<=', createAck.updateId)
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getExifCreates(options: SyncQueryOptions) {
-    let query = this.visibleAssets(
+    const query = this.visibleAssets(
       this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
       options.userId,
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId');
-    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
     return query.stream();
   }
 
@@ -1169,16 +1174,15 @@ class LibraryAssetSync extends BaseSync {
     return this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId')
-      .where('asset.id', '<=', createAck.updateId)
+      .where('asset.updateId', '<=', createAck.updateId)
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getCreates(options: SyncQueryOptions) {
-    let query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
+    const query = this.visibleAssets(this.upsertQuery('asset', options), options.userId)
       .select(columns.syncAsset)
       .select('asset.updateId');
-    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
     return query.stream();
   }
 
@@ -1202,19 +1206,18 @@ class LibraryAssetSync extends BaseSync {
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
-      .where('asset.id', '<=', createAck.updateId)
+      .where('asset.updateId', '<=', createAck.updateId)
       .stream();
   }
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getExifCreates(options: SyncQueryOptions) {
-    let query = this.visibleAssets(
+    const query = this.visibleAssets(
       this.upsertQuery('asset_exif', options).innerJoin('asset', 'asset.id', 'asset_exif.assetId'),
       options.userId,
     )
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId');
-    if (options.ack) query = query.where('asset.id', '>', options.ack.updateId);
     return query.stream();
   }
 
