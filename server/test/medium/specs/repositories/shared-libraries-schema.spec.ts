@@ -36,7 +36,7 @@ beforeAll(async () => {
 
 describe('shared-libraries schema (S1)', () => {
   describe('asset_space_library_exclusive check', () => {
-    it('rejects an asset with both spaceId and libraryId set', async () => {
+    it('[INV-01] rejects an asset with both spaceId and libraryId set', async () => {
       const { ctx } = setup();
       const { user } = await ctx.newUser();
       const space = await newSharedSpace(ctx.database);
