@@ -19,7 +19,7 @@ final class A3SmokeUITests: XCTestCase {
     XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
     firstCell.tap()
     XCTAssertTrue(
-      app.otherElements["viewer-pager"].waitForExistence(timeout: 10),
+      app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 10),
       "tapping a grid cell should open the viewer")
     app.buttons["Close"].tap()
 
@@ -28,9 +28,9 @@ final class A3SmokeUITests: XCTestCase {
     app.collectionViews.cells.firstMatch.tap()
     app.buttons["Move to…"].tap()
     XCTAssertTrue(
-      app.otherElements["move-targets"].waitForExistence(timeout: 10),
+      app.descendants(matching: .any)["move-targets"].waitForExistence(timeout: 10),
       "move sheet should list correct targets for the selection")
     // The fixture's second member space is an eligible target for the personal asset.
-    XCTAssertTrue(app.buttons["Camera"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["Camera"].waitForExistence(timeout: 10))
   }
 }

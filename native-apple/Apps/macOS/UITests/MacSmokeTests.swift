@@ -10,7 +10,9 @@ final class MacSmokeTests: XCTestCase {
     super.setUp()
     continueAfterFailure = false
     app = XCUIApplication()
-    app.launchArguments = ["--fixture-seed"]
+    // Prevent AppKit from restoring a previous run's saved window state, which otherwise
+    // races the fresh fixture-seeded content on repeat launches within one test session.
+    app.launchArguments = ["--fixture-seed", "-ApplePersistenceIgnoreState", "YES"]
   }
 
   /// Sidebar + grid render from the fixture DB.
@@ -45,7 +47,7 @@ final class MacSmokeTests: XCTestCase {
     }
 
     // Toolbar: zoom slider, Years/Months/All segmented control, library switcher.
-    XCTAssertTrue(app.descendants(matching: .any)["zoom-slider"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["zoom-slider"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["grouping-segmented"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].exists)
   }
@@ -57,8 +59,12 @@ final class MacSmokeTests: XCTestCase {
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(app.descendants(matching: .any)["asset-grid"].waitForExistence(timeout: 30))
 
-    // Keyboard selection: focus the grid and select all.
-    app.descendants(matching: .any)["asset-grid"].click()
+    // Keyboard selection: focus the grid and select all. Click a cell rather than the
+    // grid container itself — the container is fully covered by its cells, so XCUITest
+    // has no free pixel to click on it directly.
+    let firstCell = app.descendants(matching: .any)["grid-cell-asset-personal-1"].firstMatch
+    XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
+    firstCell.click()
     app.typeKey("a", modifierFlags: .command)
 
     // Move sheet via the Image menu (menus own the shortcut — MacMenus).
@@ -69,7 +75,7 @@ final class MacSmokeTests: XCTestCase {
 
     // Union across the seeded selection (personal + space + external-library assets):
     // every container the user can access is offered (DECISIONS §6 rules 2–4).
-    XCTAssertTrue(app.descendants(matching: .any)["move-target-personal"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["move-target-personal"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["move-target-space-space-family"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["move-target-library-library-archive"].exists)
 

@@ -40,11 +40,8 @@ final class MacAppState {
   var viewerContext: [String] = []
 
   private init(serverURL: URL, token: String?, store: PhotosLocalStore) throws {
-    self.serverURL = serverURL
-    self.store = store
-    connection = try ImmichConnection(serverURL: serverURL, accessToken: token)
-    sync = SyncCoordinator(connection: connection, localStore: store)
-    diskCache = TieredMediaCache(
+    let connection = try ImmichConnection(serverURL: serverURL, accessToken: token)
+    let diskCache = TieredMediaCache(
       rootDirectory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("PhotosFork/Media", isDirectory: true)
     )
@@ -53,6 +50,12 @@ final class MacAppState {
       baseURL: serverURL,
       tokenProvider: { @Sendable in await tokenStore.get() }
     )
+
+    self.serverURL = serverURL
+    self.store = store
+    self.connection = connection
+    sync = SyncCoordinator(connection: connection, localStore: store)
+    self.diskCache = diskCache
     pipeline = MediaPipeline.makeDefault(diskCache: diskCache, server: server)
   }
 

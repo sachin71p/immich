@@ -196,11 +196,24 @@ final class MacGridCell: NSCollectionViewItem {
 }
 
 final class MacKeyCollectionView: NSCollectionView {
-  var onKeyDown: ((NSEvent) -> Bool)?
+  var onKeyDown: (@MainActor (NSEvent) -> Bool)?
+  var onSelectAllAction: (@MainActor () -> Void)?
 
   override func keyDown(with event: NSEvent) {
     if onKeyDown?(event) == true { return }
     super.keyDown(with: event)
+  }
+
+  // SwiftUI's default Edit menu already binds ⌘A to the standard `selectAll:` responder
+  // action; MacMenus' custom View > Select All binds the same shortcut via notification.
+  // Whichever menu item AppKit routes the physical keystroke to, this override makes sure
+  // the real selection logic runs either way.
+  override func selectAll(_ sender: Any?) {
+    if let onSelectAllAction {
+      onSelectAllAction()
+    } else {
+      super.selectAll(sender)
+    }
   }
 }
 
@@ -232,6 +245,9 @@ struct MacCollectionGridView: NSViewRepresentable {
     collectionView.delegate = context.coordinator
     collectionView.onKeyDown = { [weak coordinator = context.coordinator] event in
       coordinator?.handleKey(event) ?? false
+    }
+    collectionView.onSelectAllAction = { [weak coordinator = context.coordinator] in
+      coordinator?.selectAll()
     }
     context.coordinator.collectionView = collectionView
     let scrollView = NSScrollView()
@@ -267,7 +283,10 @@ struct MacCollectionGridView: NSViewRepresentable {
     Coordinator(parent: self)
   }
 
-  final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegateFlowLayout {
+  @MainActor
+  final class Coordinator: NSObject, @MainActor NSCollectionViewDataSource,
+    @MainActor NSCollectionViewDelegateFlowLayout
+  {
     var parent: MacCollectionGridView
     weak var collectionView: MacKeyCollectionView?
     private var flatIds: [String] = []
@@ -279,69 +298,59 @@ struct MacCollectionGridView: NSViewRepresentable {
     init(parent: MacCollectionGridView) {
       self.parent = parent
       weakSelf = WeakCoordinatorBox(nil)
+      super.init()
       weakSelf.value = self
     }
 
     private let weakSelf: WeakCoordinatorBox
 
-    @MainActor
     fileprivate func clearTypedBuffer() {
       typedBuffer = ""
     }
 
     // MARK: data
 
-    // AppKit delegates and SwiftUI updates always run on the main thread; funneling
-    // every touchpoint through the MainActor keeps the SDK's MainActor inference quiet.
     func reloadIfNeeded(sections: [MacGridSection]) {
-      MainActor.assumeIsolated {
-        let ids = sections.flatMap { $0.rows.map(\.id) }
-        guard ids != flatIds else { return }
-        flatIds = ids
-        sectionOffsets = []
-        var offset = 0
-        for section in sections {
-          sectionOffsets.append(offset)
-          offset += section.rows.count
-        }
-        collectionView?.reloadData()
+      let ids = sections.flatMap { $0.rows.map(\.id) }
+      guard ids != flatIds else { return }
+      flatIds = ids
+      sectionOffsets = []
+      var offset = 0
+      for section in sections {
+        sectionOffsets.append(offset)
+        offset += section.rows.count
       }
+      collectionView?.reloadData()
     }
 
     func applyItemSize(_ size: CGFloat) {
-      MainActor.assumeIsolated {
-        guard let layout = collectionView?.collectionViewLayout as? NSCollectionViewFlowLayout,
-          layout.itemSize.width != size
-        else { return }
-        layout.itemSize = NSSize(width: size, height: size)
-        layout.invalidateLayout()
-      }
+      guard let layout = collectionView?.collectionViewLayout as? NSCollectionViewFlowLayout,
+        layout.itemSize.width != size
+      else { return }
+      layout.itemSize = NSSize(width: size, height: size)
+      layout.invalidateLayout()
     }
 
     /// Edit > Select All: extend the native selection, then push ids back out.
     func selectAll() {
-      MainActor.assumeIsolated {
-        guard let collectionView, !flatIds.isEmpty else { return }
-        collectionView.selectionIndexPaths = Set(
-          flatIds.indices.map { IndexPath(item: $0, section: 0) })
-        pushSelection()
-      }
+      guard let collectionView, !flatIds.isEmpty else { return }
+      collectionView.selectionIndexPaths = Set(
+        flatIds.indices.map { IndexPath(item: $0, section: 0) })
+      pushSelection()
     }
 
     var selectAllObserver: NSObjectProtocol?
 
     func syncSelection(selectedIds: Set<String>) {
-      MainActor.assumeIsolated {
-        guard let collectionView else { return }
-        let wanted = Set(flatIds.indices.filter { selectedIds.contains(flatIds[$0]) }.map {
-          IndexPath(item: $0, section: 0)
-        })
-        let current = collectionView.selectionIndexPaths
-        guard wanted != current else { return }
-        suppressSelectionCallback = true
-        defer { suppressSelectionCallback = false }
-        collectionView.selectionIndexPaths = wanted
-      }
+      guard let collectionView else { return }
+      let wanted = Set(flatIds.indices.filter { selectedIds.contains(flatIds[$0]) }.map {
+        IndexPath(item: $0, section: 0)
+      })
+      let current = collectionView.selectionIndexPaths
+      guard wanted != current else { return }
+      suppressSelectionCallback = true
+      defer { suppressSelectionCallback = false }
+      collectionView.selectionIndexPaths = wanted
     }
 
     // MARK: NSCollectionViewDataSource
@@ -355,36 +364,34 @@ struct MacCollectionGridView: NSViewRepresentable {
     func collectionView(
       _ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath
     ) -> NSCollectionViewItem {
-      MainActor.assumeIsolated {
-        let item = collectionView.makeItem(withIdentifier: MacGridCell.identifier, for: indexPath)
-        guard let cell = item as? MacGridCell else { return item }
-        let id = flatIds[indexPath.item]
-        cell.representedObject = id
-        cell.view.setAccessibilityIdentifier("grid-cell-\(id)")
-        cell.view.setAccessibilityLabel("Photo \(id)")
-        if let asset = parent.assetsById[id] {
-          cell.photoView.image = nil
-          cell.loadTask?.cancel()
-          let pipeline = parent.pipeline
-          let box = WeakCellBox(cell)
-          cell.loadTask = Task {
-            do {
-              for try await step in await pipeline.stream(asset: asset, tier: .thumbnail) {
-                let image: NSImage?
-                switch step.content {
-                case .placeholder(let placeholder): image = placeholder
-                case .tier(_, let loaded, _): image = loaded
-                }
-                await MainActor.run {
-                  box.setImage(image, ifRepresentedObjectIs: id)
-                }
-                if Task.isCancelled { return }
+      let item = collectionView.makeItem(withIdentifier: MacGridCell.identifier, for: indexPath)
+      guard let cell = item as? MacGridCell else { return item }
+      let id = flatIds[indexPath.item]
+      cell.representedObject = id
+      cell.view.setAccessibilityIdentifier("grid-cell-\(id)")
+      cell.view.setAccessibilityLabel("Photo \(id)")
+      if let asset = parent.assetsById[id] {
+        cell.photoView.image = nil
+        cell.loadTask?.cancel()
+        let pipeline = parent.pipeline
+        let box = WeakCellBox(cell)
+        cell.loadTask = Task {
+          do {
+            for try await step in await pipeline.stream(asset: asset, tier: .thumbnail) {
+              let image: NSImage?
+              switch step.content {
+              case .placeholder(let placeholder): image = placeholder
+              case .tier(_, let loaded, _): image = loaded
               }
-            } catch {}
-          }
+              await MainActor.run {
+                box.setImage(image, ifRepresentedObjectIs: id)
+              }
+              if Task.isCancelled { return }
+            }
+          } catch {}
         }
-        return cell
       }
+      return cell
     }
 
     // MARK: delegate
@@ -402,20 +409,16 @@ struct MacCollectionGridView: NSViewRepresentable {
     }
 
     private func pushSelection() {
-      MainActor.assumeIsolated {
-        guard !suppressSelectionCallback, let collectionView else { return }
-        let ids = collectionView.selectionIndexPaths.compactMap { flatIds[safe: $0.item] }
-        parent.onSelectionChange(ids)
-      }
+      guard !suppressSelectionCallback, let collectionView else { return }
+      let ids = collectionView.selectionIndexPaths.compactMap { flatIds[safe: $0.item] }
+      parent.onSelectionChange(ids)
     }
 
     func collectionView(
       _ collectionView: NSCollectionView, layout collectionViewLayout: NSCollectionViewLayout,
       sizeForItemAt indexPath: IndexPath
     ) -> NSSize {
-      MainActor.assumeIsolated {
-        NSSize(width: parent.itemSize, height: parent.itemSize)
-      }
+      NSSize(width: parent.itemSize, height: parent.itemSize)
     }
 
     // MARK: drag out (brief task 5: export originals to Finder via file promises)
@@ -437,16 +440,14 @@ struct MacCollectionGridView: NSViewRepresentable {
       _ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
       willBeginAt screenPoint: NSPoint, forItemsAt indexPaths: Set<IndexPath>
     ) {
-      MainActor.assumeIsolated {
-        guard let exporter = parent.exporter else { return }
-        let box = dragState
-        box.reset()
-        for indexPath in indexPaths {
-          guard let id = flatIds[safe: indexPath.item],
-            let asset = parent.assetsById[id]
-          else { continue }
-          box.prefetch(asset: asset, with: exporter)
-        }
+      guard let exporter = parent.exporter else { return }
+      let box = dragState
+      box.reset()
+      for indexPath in indexPaths {
+        guard let id = flatIds[safe: indexPath.item],
+          let asset = parent.assetsById[id]
+        else { continue }
+        box.prefetch(asset: asset, with: exporter)
       }
     }
 
@@ -457,33 +458,31 @@ struct MacCollectionGridView: NSViewRepresentable {
       namesOfPromisedFilesDroppedAtDestination dropURL: URL,
       forDraggedItemsAt indexPaths: Set<IndexPath>
     ) -> [String] {
-      MainActor.assumeIsolated {
-        var names: [String] = []
-        for indexPath in indexPaths {
-          guard let id = flatIds[safe: indexPath.item],
-            let asset = parent.assetsById[id]
-          else { continue }
-          names.append(asset.originalFileName)
-          let destination = dropURL.appendingPathComponent(asset.originalFileName)
-          if let temp = dragState.stagedFile(for: id) {
-            try? FileManager.default.copyItem(at: temp, to: destination)
-          } else if let exporter = parent.exporter {
-            // Drag outran the prefetch: bounded synchronous fallback (30s per file).
-            let box = LockBox<Data?>(nil)
-            let semaphore = DispatchSemaphore(value: 0)
-            let task = Task {
-              box.value = try? await exporter.downloadOriginal(asset: asset)
-              semaphore.signal()
-            }
-            if semaphore.wait(timeout: .now() + 30) == .success, let downloaded = box.value {
-              try? downloaded.write(to: destination, options: .atomic)
-            } else {
-              task.cancel()
-            }
+      var names: [String] = []
+      for indexPath in indexPaths {
+        guard let id = flatIds[safe: indexPath.item],
+          let asset = parent.assetsById[id]
+        else { continue }
+        names.append(asset.originalFileName)
+        let destination = dropURL.appendingPathComponent(asset.originalFileName)
+        if let temp = dragState.stagedFile(for: id) {
+          try? FileManager.default.copyItem(at: temp, to: destination)
+        } else if let exporter = parent.exporter {
+          // Drag outran the prefetch: bounded synchronous fallback (30s per file).
+          let box = LockBox<Data?>(nil)
+          let semaphore = DispatchSemaphore(value: 0)
+          let task = Task {
+            box.value = try? await exporter.downloadOriginal(asset: asset)
+            semaphore.signal()
+          }
+          if semaphore.wait(timeout: .now() + 30) == .success, let downloaded = box.value {
+            try? downloaded.write(to: destination, options: .atomic)
+          } else {
+            task.cancel()
           }
         }
-        return names
       }
+      return names
     }
 
     private let dragState = MacDragPrefetchState()
@@ -505,55 +504,51 @@ struct MacCollectionGridView: NSViewRepresentable {
     // (favorite/rotate/delete/move/info) live in the menus and route through the focused
     // value, so there is exactly one shortcut owner and no double-fire with the viewer.
     func handleKey(_ event: NSEvent) -> Bool {
-      MainActor.assumeIsolated {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        let currentId: String? = {
-          guard let collectionView else { return nil }
-          let sorted = collectionView.selectionIndexPaths.sorted { $0.item < $1.item }
-          return sorted.last.flatMap { flatIds[safe: $0.item] }
-        }()
+      let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+      let currentId: String? = {
+        guard let collectionView else { return nil }
+        let sorted = collectionView.selectionIndexPaths.sorted { $0.item < $1.item }
+        return sorted.last.flatMap { flatIds[safe: $0.item] }
+      }()
 
-        switch event.keyCode {
-        case 36:  // return = open
-          if let currentId { parent.onOpen(currentId); return true }
-          return false
-        case 49:  // space = Quick Look-style preview
-          if flags.isEmpty, let currentId { parent.onPreview(currentId); return true }
-          return false
-        default:
-          break
-        }
-
-        guard let chars = event.charactersIgnoringModifiers, !chars.isEmpty else { return false }
-        // Type-to-jump by date: accumulate digits and dashes, jump to the first row whose
-        // capture date starts with the buffer (e.g. "2024" or "2024-06").
-        if flags.isEmpty, chars.allSatisfy({ $0.isNumber || $0 == "-" }) {
-          typedBuffer += chars
-          typedReset?.cancel()
-          let selfBox = weakSelf
-          typedReset = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            selfBox.clearTypedBuffer()
-          }
-          jumpToDate(prefix: typedBuffer)
-          return true
-        }
+      switch event.keyCode {
+      case 36:  // return = open
+        if let currentId { parent.onOpen(currentId); return true }
         return false
+      case 49:  // space = Quick Look-style preview
+        if flags.isEmpty, let currentId { parent.onPreview(currentId); return true }
+        return false
+      default:
+        break
       }
+
+      guard let chars = event.charactersIgnoringModifiers, !chars.isEmpty else { return false }
+      // Type-to-jump by date: accumulate digits and dashes, jump to the first row whose
+      // capture date starts with the buffer (e.g. "2024" or "2024-06").
+      if flags.isEmpty, chars.allSatisfy({ $0.isNumber || $0 == "-" }) {
+        typedBuffer += chars
+        typedReset?.cancel()
+        let selfBox = weakSelf
+        typedReset = Task { @MainActor in
+          try? await Task.sleep(for: .seconds(1))
+          selfBox.clearTypedBuffer()
+        }
+        jumpToDate(prefix: typedBuffer)
+        return true
+      }
+      return false
     }
 
     private func jumpToDate(prefix: String) {
-      MainActor.assumeIsolated {
-        guard let collectionView, !prefix.isEmpty else { return }
-        let dates = parent.rowDates
-        guard dates.count == flatIds.count,
-          let index = dates.firstIndex(where: { !$0.isEmpty && $0.hasPrefix(prefix) })
-        else { return }
-        let indexPath = IndexPath(item: index, section: 0)
-        collectionView.selectionIndexPaths = [indexPath]
-        collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
-        pushSelection()
-      }
+      guard let collectionView, !prefix.isEmpty else { return }
+      let dates = parent.rowDates
+      guard dates.count == flatIds.count,
+        let index = dates.firstIndex(where: { !$0.isEmpty && $0.hasPrefix(prefix) })
+      else { return }
+      let indexPath = IndexPath(item: index, section: 0)
+      collectionView.selectionIndexPaths = [indexPath]
+      collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
+      pushSelection()
     }
   }
 }

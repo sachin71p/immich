@@ -30,6 +30,11 @@ targets:
         product: SyncEngine
       - package: PhotosCore
         product: Media
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.ios
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
   PhotosFork-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS

@@ -12,6 +12,16 @@ enum MacWindow: Hashable, Codable {
   case viewer(String)
 }
 
+/// `.sheet(item:)` payload for the move/add-to-album sheets. Bundling the selection with the
+/// presentation trigger (rather than a separate `Bool` flag + sibling `[String]` state) avoids a
+/// real SwiftUI race: a `.sheet(isPresented:)` content closure can capture the *previous* render's
+/// value of a sibling `@State` var even when both are set in the same action, presenting with a
+/// stale (here, empty) selection.
+private struct AssetIdsSheetItem: Identifiable {
+  let id = UUID()
+  let ids: [String]
+}
+
 struct MacMainView: View {
   @Bindable var state: MacAppState
   var window: MacWindow
@@ -36,10 +46,8 @@ struct MacLibraryBrowser: View {
   @State private var loader = MacGridLoader()
   @State private var selectionModel = GridSelectionModel()
   @State private var toast: String?
-  @State private var showingMoveSheet = false
-  @State private var moveIds: [String] = []
-  @State private var showingAddToAlbum = false
-  @State private var addIds: [String] = []
+  @State private var moveSheetIds: AssetIdsSheetItem?
+  @State private var addToAlbumIds: AssetIdsSheetItem?
   @State private var showingNewSpace = false
   @State private var showingNewAlbum = false
   @State private var managingSpace: Space?
@@ -82,16 +90,16 @@ struct MacLibraryBrowser: View {
         selection = SidebarDestination(restorableID: restoredSelection)
       }
     }
-    .sheet(isPresented: $showingMoveSheet) {
-      MacMoveSheet(state: state, assetIds: moveIds) { results in
-        showingMoveSheet = false
+    .sheet(item: $moveSheetIds) { item in
+      MacMoveSheet(state: state, assetIds: item.ids) { results in
+        moveSheetIds = nil
         showToast(Self.moveSummary(results))
         Task { await reload() }
       }
     }
-    .sheet(isPresented: $showingAddToAlbum) {
-      MacAddToAlbumSheet(state: state, assetIds: addIds) {
-        showingAddToAlbum = false
+    .sheet(item: $addToAlbumIds) { item in
+      MacAddToAlbumSheet(state: state, assetIds: item.ids) {
+        addToAlbumIds = nil
         showToast("Added to album.")
       }
     }
@@ -287,12 +295,10 @@ struct MacLibraryBrowser: View {
       rotate: {},
       trash: { trash(ids: ids) },
       move: {
-        moveIds = ids
-        showingMoveSheet = !ids.isEmpty
+        moveSheetIds = ids.isEmpty ? nil : AssetIdsSheetItem(ids: ids)
       },
       addToAlbum: {
-        addIds = ids
-        showingAddToAlbum = !ids.isEmpty
+        addToAlbumIds = ids.isEmpty ? nil : AssetIdsSheetItem(ids: ids)
       },
       toggleInspector: {
         if let first = ids.first { openViewer(id: first) }
@@ -517,6 +523,7 @@ enum MacPreviewPanel {
 }
 
 extension NSItemProvider {
+  @MainActor
   func loadFileURL() async throws -> URL {
     try await withCheckedThrowingContinuation { continuation in
       _ = loadObject(ofClass: NSURL.self) { object, error in

@@ -115,6 +115,7 @@ struct MacSidebarView: View {
 }
 
 extension NSItemProvider {
+  @MainActor
   func loadText() async throws -> String {
     try await withCheckedThrowingContinuation { continuation in
       _ = loadObject(ofClass: NSString.self) { object, error in
