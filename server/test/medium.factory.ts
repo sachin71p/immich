@@ -55,6 +55,7 @@ import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { SharedSpaceRepository } from 'src/repositories/shared-space.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -84,6 +85,7 @@ import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.servic
 import { MetadataService } from 'src/services/metadata.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
@@ -120,6 +122,17 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   ) {
     this.sutDeps = this.makeDeps(options);
     this.sut = new Service(...this.sutDeps) as InstanceType<S>;
+    // fork: shared-libraries - services take ContainerScopeService via Nest
+    // property injection, which never runs here; wire the real provider so
+    // medium tests exercise production scoping instead of crashing on undefined.
+    Object.assign(this.sut, {
+      containerScopeService: new ContainerScopeService(
+        this.get(UserRepository),
+        this.get(PartnerRepository),
+        new SharedSpaceRepository(options.database),
+        this.get(LibraryRepository),
+      ),
+    });
     this.database = options.database;
   }
 

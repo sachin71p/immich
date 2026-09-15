@@ -83,6 +83,7 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
           livePhotoVideoId: asset.livePhotoVideoId,
           stackId: asset.stackId,
           libraryId: asset.libraryId,
+          spaceId: null,
           width: asset.width,
           height: asset.height,
           isEdited: asset.isEdited,

@@ -64,6 +64,7 @@ describe(SyncEntityType.AssetV2, () => {
           stackId: null,
           livePhotoVideoId: null,
           libraryId: asset.libraryId,
+          spaceId: null,
           width: asset.width,
           height: asset.height,
           isEdited: asset.isEdited,

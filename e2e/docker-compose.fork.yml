@@ -1,17 +1,17 @@
-// Fork e2e compose override (shared-libraries, T0).
-//
-// Usage:
-//   docker compose -f e2e/docker-compose.yml -f e2e/docker-compose.fork.yml up -d --build
-//
-// What it does:
-// - Points the server media root at /fork-data (via IMMICH_MEDIA_LOCATION)
-//   and bind-mounts it to e2e/.fork-data (gitignored) so fork tests can
-//   assert real on-disk file locations from the host.
-// - Keeps ./test-assets mounted read-write (external-library import paths
-//   live under ./test-assets/temp/fork/...) — same as upstream, stated here
-//   so the read-write requirement is explicit.
-// - Storage-template on/off is toggled through the system-config API inside
-//   tests (world.buildWorld({ storageTemplate })), not via env.
+# Fork e2e compose override (shared-libraries, T0).
+#
+# Usage:
+#   docker compose -f e2e/docker-compose.yml -f e2e/docker-compose.fork.yml up -d --build
+#
+# What it does:
+# - Points the server media root at /fork-data (via IMMICH_MEDIA_LOCATION)
+#   and bind-mounts it to e2e/.fork-data (gitignored) so fork tests can
+#   assert real on-disk file locations from the host.
+# - Keeps ./test-assets mounted read-write (external-library import paths
+#   live under ./test-assets/temp/fork/...) — same as upstream, stated here
+#   so the read-write requirement is explicit.
+# - Storage-template on/off is toggled through the system-config API inside
+#   tests (world.buildWorld({ storageTemplate })), not via env.
 
 services:
   immich-server:
