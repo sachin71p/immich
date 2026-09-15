@@ -87,7 +87,9 @@ const main = (): void => {
 
   const specRoots = [
     join(root, 'server', 'src'),
-    join(root, 'server', 'test', 'medium', 'specs', 'fork'),
+    // fork: shared-libraries - fork-tagged tests also live in the existing medium suites (S6),
+    // not only the future T1 fork dir.
+    join(root, 'server', 'test', 'medium', 'specs'),
     join(root, 'e2e', 'src', 'specs'),
     join(root, 'web', 'src'),
     join(root, 'native-apple'),

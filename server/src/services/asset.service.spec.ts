@@ -379,7 +379,7 @@ describe(AssetService.name, () => {
   });
 
   describe('getFullExif', () => {
-    it('should allow the owner and merge sidecar tags while stripping binary values', async () => {
+    it('[R12-01] should allow the owner and merge sidecar tags while stripping binary values', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar, path: '/data/upload/asset.xmp' }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
@@ -400,7 +400,7 @@ describe(AssetService.name, () => {
       expect(mocks.metadata.readFullTags).toHaveBeenNthCalledWith(2, '/data/upload/asset.xmp');
     });
 
-    it('should allow a shared-space member', async () => {
+    it('[R12-02] should allow a shared-space member', async () => {
       const asset = AssetFactory.create({ ownerId: newUuid(), spaceId: newUuid() });
       mocks.access.asset.checkSpaceAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
@@ -409,7 +409,7 @@ describe(AssetService.name, () => {
       await expect(sut.getFullExif(authStub.user1, asset.id)).resolves.toEqual({ groups: {} });
     });
 
-    it('should allow a shared-album member', async () => {
+    it('[R12-02] should allow a shared-album member', async () => {
       const asset = AssetFactory.create({ ownerId: newUuid() });
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
@@ -418,7 +418,7 @@ describe(AssetService.name, () => {
       await expect(sut.getFullExif(authStub.user1, asset.id)).resolves.toEqual({ groups: {} });
     });
 
-    it('should deny a stranger before reading file metadata', async () => {
+    it('[R12-02] should deny a stranger before reading file metadata', async () => {
       const asset = AssetFactory.create({ ownerId: newUuid() });
 
       await expect(sut.getFullExif(authStub.user1, asset.id)).rejects.toBeInstanceOf(BadRequestException);

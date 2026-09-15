@@ -218,7 +218,7 @@ describe(SearchService.name, () => {
   });
 
   describe('new shape routing', () => {
-    it('should combine rich filters and pass the resolved container scope to legacy metadata search', async () => {
+    it('[R13-01] [R13-02] [R13-03] should combine rich filters and pass the resolved container scope to legacy metadata search', async () => {
       const auth = AuthFactory.create();
       const scope = { personalUserIds: [], spaceIds: [newUuid()], libraryIds: [] };
       const resolve = (sut as unknown as { containerScopeService: { resolve: ReturnType<typeof vitest.fn> } })
@@ -259,7 +259,7 @@ describe(SearchService.name, () => {
       );
     });
 
-    it('should combine rich filters and pass the resolved container scope to V3 metadata search', async () => {
+    it('[R13-01] [R13-02] [R13-03] should combine rich filters and pass the resolved container scope to V3 metadata search', async () => {
       const auth = AuthFactory.create();
       const scope = { personalUserIds: [], spaceIds: [newUuid()], libraryIds: [] };
       const resolve = (sut as unknown as { containerScopeService: { resolve: ReturnType<typeof vitest.fn> } })

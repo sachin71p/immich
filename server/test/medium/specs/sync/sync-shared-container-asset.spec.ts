@@ -49,7 +49,7 @@ beforeAll(async () => {
 });
 
 describe('shared container asset sync (S6)', () => {
-  it('syncs space create/update favorite, move-out removal, and excludes own contributions', async () => {
+  it('[SY-01] [SY-02] [R16-04] syncs space create/update favorite, move-out removal, and excludes own contributions', async () => {
     const { auth, user, ctx } = await setup();
     const { user: contributor } = await ctx.newUser();
     const space = await newSpace(ctx, contributor.id, user.id);
@@ -96,7 +96,7 @@ describe('shared container asset sync (S6)', () => {
     );
   });
 
-  it('backfills a newly joined space and emits a container delete on leave', async () => {
+  it('[SY-03] [SY-04] backfills a newly joined space and emits a container delete on leave', async () => {
     const { auth, user, ctx } = await setup();
     const { user: owner } = await ctx.newUser();
     const space = await newSpace(ctx, owner.id);
@@ -135,7 +135,7 @@ describe('shared container asset sync (S6)', () => {
     );
   });
 
-  it('syncs external-library assets and emits removal/deletion for membership loss', async () => {
+  it('[SY-05] [R16-04] syncs external-library assets and emits removal/deletion for membership loss', async () => {
     const { auth, user, ctx } = await setup();
     const { user: owner } = await ctx.newUser();
     const library = await newLibrary(ctx, owner.id, user.id);
