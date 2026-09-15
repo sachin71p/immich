@@ -251,10 +251,8 @@
       !assetViewerManager.isViewing &&
       (album.isActivityEnabled || activityManager.commentCount > 0),
   );
-  const isEditor = $derived(
-    album.albumUsers.find(({ user: { id } }) => id === authManager.user.id)?.role === AlbumUserRole.Editor || isOwned,
-  );
-
+  // fork: shared-libraries — DECISIONS §4 R11: any album member (regardless of role) may add/remove assets
+  const isAlbumMember = $derived(album.albumUsers.some(({ user }) => user.id === authManager.user.id) || isOwned);
   let albumHasViewers = $derived(album.albumUsers.some(({ role }) => role === AlbumUserRole.Viewer));
   const isSelectionMode = $derived(
     viewMode === AlbumPageViewMode.SELECT_ASSETS ? true : viewMode === AlbumPageViewMode.SELECT_THUMBNAIL,
@@ -497,7 +495,7 @@
             <TagAction menuItem />
           {/if}
 
-          {#if isOwned || assetMultiSelectManager.isAllUserOwned}
+          {#if isAlbumMember}
             <RemoveFromAlbum menuItem bind:album onRemove={handleRemoveAssets} />
           {/if}
           {#if assetMultiSelectManager.isAllUserOwned}
@@ -511,7 +509,7 @@
           {#snippet trailing()}
             <ActionButton action={Cast} />
 
-            {#if isEditor}
+            {#if isAlbumMember}
               <IconButton
                 variant="ghost"
                 shape="round"

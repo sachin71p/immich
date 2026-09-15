@@ -11,7 +11,11 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  // fork: shared-libraries
+  import { sharedSpaces } from '$lib/stores/shared-spaces.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
+  // fork: shared-libraries
+  import { canEditAsset } from '$lib/utils/asset-permissions';
   import { delay, getDimensions } from '$lib/utils/asset-utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
@@ -24,7 +28,15 @@
     type AssetResponseDto,
   } from '@immich/sdk';
   import { Icon, IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
-  import { mdiCamera, mdiCameraIris, mdiClose, mdiImageOutline, mdiInformationOutline } from '@mdi/js';
+  import {
+    mdiCamera,
+    mdiCameraIris,
+    mdiClose,
+    mdiImageOutline,
+    mdiInformationOutline,
+    // fork: shared-libraries
+    mdiLibraryOutline,
+  } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { slide } from 'svelte/transition';
@@ -42,7 +54,24 @@
 
   let { asset, currentAlbum = null }: Props = $props();
 
-  let isOwner = $derived(authManager.authenticated && authManager.user.id === asset.ownerId);
+  // fork: shared-libraries — isOwner now also covers space and library membership (DECISIONS §4)
+  let isOwner = $derived(
+    authManager.authenticated &&
+      canEditAsset(asset, {
+        userId: authManager.user.id,
+        spaceIds: new Set(sharedSpaces.spaces.map(({ id }) => id)),
+        libraryIds: new Set(sharedSpaces.libraries.map(({ id }) => id)),
+      }),
+  );
+  // fork: shared-libraries — container badge name (viewer only; the bulk timeline grid does not
+  // receive spaceId/libraryId per asset, see S8b handoff)
+  let containerName = $derived(
+    asset.spaceId
+      ? sharedSpaces.spaces.find((space) => space.id === asset.spaceId)?.name
+      : asset.libraryId
+        ? sharedSpaces.libraries.find((library) => library.id === asset.libraryId)?.name
+        : undefined,
+  );
   let latlng = $derived(
     (() => {
       const lat = asset.exifInfo?.latitude;
@@ -171,6 +200,12 @@
         <div>
           <p class="flex place-items-center gap-2 break-all whitespace-pre-wrap">
             {asset.originalFileName}
+            {#if containerName}
+              <!-- fork: shared-libraries — container badge -->
+              <span title={containerName} aria-label={containerName} class="inline-flex shrink-0 items-center">
+                <Icon icon={mdiLibraryOutline} size="16" />
+              </span>
+            {/if}
             {#if isOwner}
               <IconButton
                 icon={mdiInformationOutline}

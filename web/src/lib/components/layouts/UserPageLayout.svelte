@@ -22,6 +22,8 @@
     sidebar?: Snippet;
     buttons?: Snippet;
     children?: Snippet;
+    // fork: shared-libraries — upload target for the navbar upload button
+    uploadSpaceId?: string;
   }
 
   let {
@@ -34,6 +36,7 @@
     sidebar,
     buttons,
     children,
+    uploadSpaceId = undefined,
   }: Props = $props();
 
   const enabledActions = $derived(
@@ -48,7 +51,7 @@
 
 <header>
   {#if !hideNavbar}
-    <NavigationBar onUploadClick={() => openFileUploadDialog()} />
+    <NavigationBar onUploadClick={() => openFileUploadDialog({ spaceId: uploadSpaceId })} />
   {/if}
 </header>
 <div

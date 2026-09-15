@@ -5,6 +5,8 @@
   import ArchiveAction from '$lib/components/asset-viewer/actions/ArchiveAction.svelte';
   import DeleteAction from '$lib/components/asset-viewer/actions/DeleteAction.svelte';
   import KeepThisDeleteOthersAction from '$lib/components/asset-viewer/actions/KeepThisDeleteOthers.svelte';
+  // fork: shared-libraries
+  import MoveToLibraryAction from '$lib/components/asset-viewer/actions/MoveToLibraryAction.svelte';
   import RatingAction from '$lib/components/asset-viewer/actions/RatingAction.svelte';
   import RemoveAssetFromStack from '$lib/components/asset-viewer/actions/RemoveAssetFromStack.svelte';
   import RestoreAction from '$lib/components/asset-viewer/actions/RestoreAction.svelte';
@@ -21,8 +23,12 @@
   import { getAlbumAssetActions } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
+  // fork: shared-libraries
+  import { sharedSpaces } from '$lib/stores/shared-spaces.svelte';
   import { getSharedLink, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
+  // fork: shared-libraries
+  import { canEditAsset } from '$lib/utils/asset-permissions';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetTypeEnum,
@@ -64,8 +70,19 @@
     setPlayOriginalVideo,
   }: Props = $props();
 
-  const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
-  const isAlbumOwner = $derived(authManager.authenticated && album?.albumUsers[0].user.id === authManager.user.id);
+  // fork: shared-libraries — isOwner now also covers space and library membership (DECISIONS §4)
+  const isOwner = $derived(
+    authManager.authenticated &&
+      canEditAsset(asset, {
+        userId: authManager.user.id,
+        spaceIds: new Set(sharedSpaces.spaces.map(({ id }) => id)),
+        libraryIds: new Set(sharedSpaces.libraries.map(({ id }) => id)),
+      }),
+  );
+  // fork: shared-libraries — DECISIONS §4 R11: any album member (regardless of role) may add/remove assets
+  const isAlbumMember = $derived(
+    authManager.authenticated && !!album?.albumUsers.some(({ user }) => user.id === authManager.user.id),
+  );
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
 
   const { Cast } = $derived(getGlobalActions($t));
@@ -85,7 +102,9 @@
     onAction: () => setPlayOriginalVideo(!isPlayingOriginalVideo),
   });
 
-  const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }));
+  const Actions = $derived(
+    getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }, { isAlbumMember }),
+  );
   const sharedLink = getSharedLink();
 </script>
 
@@ -146,11 +165,13 @@
         {/if}
 
         <ActionMenuItem action={Actions.AddToAlbum} />
-        {#if album && (isOwner || isAlbumOwner)}
+        {#if album && isAlbumMember}
           <RemoveFromAlbumAction {album} onRemove={onRemoveFromAlbum} assetIds={[asset.id]} menuItem />
         {/if}
 
         {#if isOwner}
+          <!-- fork: shared-libraries -->
+          <MoveToLibraryAction {asset} {preAction} />
           <AddToStackAction {asset} {stack} {onAction} />
           {#if stack}
             <UnstackAction {stack} {onAction} />

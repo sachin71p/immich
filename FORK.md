@@ -18,6 +18,17 @@ for the full product/design spec.
 4. Regenerate generated files instead of hand-merging them: `mise //server:sync-open-api`,
    `mise :open-api-typescript`, `mise :open-api-dart`, `mise //server:sql`.
 5. Run the S10 verify list.
+6. Run the regression gate below — the merge is not accepted with any
+   failing fork case or INV-02/INV-03 failure.
+
+## Regression gate (TESTING.md §7)
+
+- During development: `scripts/fork-test/run.sh unit` (+ `medium` when Docker exists).
+- Before committing a phase that touches server behaviour:
+  `scripts/fork-test/run.sh unit medium e2e-api coverage`.
+- After every upstream merge: `scripts/fork-test/run.sh all upgrade`.
+- CI (`.github/workflows/fork-tests.yml`) runs `unit`, `medium`, `e2e-api`,
+  `e2e-web`, `coverage` on pushes to `feat/**` and `main`.
 
 ## Cadence
 
@@ -60,3 +71,8 @@ immediately.
 | `web/src/{lib/components/shared-components/side-bar/UserSidebar.svelte,lib/route.ts,routes/(user)/user-settings/UserSettingsList.svelte,routes/admin/library-management/[id]/+layout.svelte,test-data/factories/preferences-factory.ts,i18n/en.json}` | sidebar entry, routes, settings registration, admin library members/uploadPath UI | R3,R8,R9 | S8a |
 | `web/src/{routes/(user)/shared-libraries,lib/stores/shared-spaces.svelte.ts}` | shared-library pages, scoped timeline, cache | R2,R7,R8 | S8a |
 | `web/src/{lib/modals,routes/(user)/user-settings,routes/admin/library-management}` | shared-space and external-library management UI | R3,R8,R9 | S8a |
+| `packages/sdk/src/fetch-client.ts` | hand-patched pending SDK regen (also carries S8c type additions, committed here) | R7,R8 | S8b |
+| `web/src/lib/{modals/MoveToLibraryModal.svelte,components/timeline/{LibrarySourceSwitcher,actions/MoveToLibraryAction}.svelte,components/asset-viewer/actions/MoveToLibraryAction.svelte,utils/{library-source,move-targets,asset-permissions}.ts}` (new) | switcher, move action, permission helper | R4,R5,R7,R9,R10 | S8b |
+| `web/src/lib/{services/asset.service.ts,components/asset-viewer/{AssetViewerNavBar,DetailPanel}.svelte,components/timeline/TimelineAssetViewer.svelte,constants.ts,utils/actions.ts}` | permission gates + move wiring | R4 | S8b |
+| `web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte` | any album member may add/remove | R11 | S8b |
+| `web/src/lib/{layouts/UserPageLayout.svelte,utils/file-uploader.ts,managers/user-preferences-manager.svelte.ts},routes,i18n/en.json` | upload target; switcher pref | R3,R8,R9 | S8b |

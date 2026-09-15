@@ -12,11 +12,15 @@
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
   import LinkLivePhotoAction from '$lib/components/timeline/actions/LinkLivePhotoAction.svelte';
+  // fork: shared-libraries
+  import MoveToLibraryAction from '$lib/components/timeline/actions/MoveToLibraryAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
   import StackAction from '$lib/components/timeline/actions/StackAction.svelte';
   import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
+  // fork: shared-libraries
+  import LibrarySourceSwitcher from '$lib/components/timeline/LibrarySourceSwitcher.svelte';
   import Timeline from '$lib/components/timeline/Timeline.svelte';
   import { AssetAction } from '$lib/constants';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
@@ -24,6 +28,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { memoryManager } from '$lib/managers/memory-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  // fork: shared-libraries
+  import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
   import { Route } from '$lib/route';
   import { getAssetBulkActions } from '$lib/services/asset.service';
   import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
@@ -34,6 +40,8 @@
     type OnUnlink,
   } from '$lib/utils/actions';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
+  // fork: shared-libraries
+  import { parseLibrarySource } from '$lib/utils/library-source';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { AssetVisibility } from '@immich/sdk';
@@ -43,7 +51,13 @@
   import { t } from 'svelte-i18n';
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
-  const options = { visibility: AssetVisibility.Timeline, withStacked: true, withPartners: true };
+  // fork: shared-libraries — the library switcher selects personalOnly/spaceId/libraryId
+  const options = $derived({
+    visibility: AssetVisibility.Timeline,
+    withStacked: true,
+    withPartners: true,
+    ...parseLibrarySource(userPreferencesManager.timelineLibrarySource),
+  });
 
   let selectedAssets = $derived(assetMultiSelectManager.assets);
   let isAssetStackSelected = $derived(selectedAssets.length === 1 && !!selectedAssets[0].stack);
@@ -82,6 +96,11 @@
     assetMultiSelectManager.clear();
   };
 
+  // fork: shared-libraries — moved assets may no longer match the current library-switcher filter
+  const handleMove = (assetIds: string[]) => {
+    timelineManager.removeAssets(assetIds);
+  };
+
   const items = $derived(
     memoryManager.memories.map((memory) => ({
       id: memory.id,
@@ -96,6 +115,10 @@
 </script>
 
 <UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
+  {#snippet buttons()}
+    <!-- fork: shared-libraries -->
+    <LibrarySourceSwitcher />
+  {/snippet}
   <Timeline
     enableRouting={true}
     bind:timelineManager
@@ -149,6 +172,8 @@
         <ChangeDate menuItem />
         <ChangeDescription menuItem />
         <ChangeLocation menuItem />
+        <!-- fork: shared-libraries -->
+        <MoveToLibraryAction menuItem onMove={handleMove} />
         <ArchiveAction
           menuItem
           onArchive={(ids, visibility) => timelineManager.update(ids, (asset) => (asset.visibility = visibility))}

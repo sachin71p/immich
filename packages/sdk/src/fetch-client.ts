@@ -1349,6 +1349,9 @@ export type AssetResponseDto = {
     people?: PersonResponseDto[];
     /** Is resized */
     resized?: boolean;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    /** Shared space ID */
+    spaceId?: string | null;
     stack?: (AssetStackResponseDto) | null;
     tags?: TagResponseDto[];
     /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
@@ -1415,6 +1418,14 @@ export type AssetEditActionItemDto = {
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply (crop, rotate, or mirror) */
     edits: AssetEditActionItemDto[];
+};
+export type AssetFullExifResponseDto = {
+    /** Full exiftool output by family-1 group */
+    groups: {
+        [key: string]: {
+            [key: string]: any;
+        };
+    };
 };
 export type AssetMetadataResponseDto = {
     /** Metadata key */
@@ -2400,7 +2411,29 @@ export type MetadataSearchDto = {
     description?: string;
     /** Filter by encoded video file path */
     encodedVideoPath?: string;
+    /** Maximum f-number */
+    fNumberMax?: number;
+    /** Minimum f-number */
+    fNumberMin?: number;
+    /** File extensions to include */
+    fileExtensions?: string[];
+    /** Maximum file size in bytes */
+    fileSizeMax?: number;
+    /** Minimum file size in bytes */
+    fileSizeMin?: number;
     filter?: SearchFilter;
+    /** Maximum focal length in mm */
+    focalLengthMax?: number;
+    /** Minimum focal length in mm */
+    focalLengthMin?: number;
+    /** Maximum frames per second */
+    fpsMax?: number;
+    /** Minimum frames per second */
+    fpsMin?: number;
+    /** Whether the asset has GPS coordinates */
+    hasLocation?: boolean;
+    /** Minimum image height */
+    heightMin?: number;
     /** Filter by asset ID */
     id?: string;
     /** Filter by encoded status */
@@ -2413,12 +2446,18 @@ export type MetadataSearchDto = {
     isNotInAlbum?: boolean;
     /** Filter by offline status */
     isOffline?: boolean;
+    /** Maximum ISO value */
+    isoMax?: number;
+    /** Minimum ISO value */
+    isoMin?: number;
     /** Filter by lens model */
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
     /** Filter by camera make */
     make?: string | null;
+    /** MIME types to include */
+    mimeTypes?: string[];
     /** Filter by camera model */
     model?: string | null;
     /** Filter by OCR text content */
@@ -2434,12 +2473,18 @@ export type MetadataSearchDto = {
     page?: number;
     /** Filter by person IDs */
     personIds?: string[];
+    /** Only include personal assets */
+    personalOnly?: boolean;
     /** Filter by preview file path */
     previewPath?: string;
+    /** Projection type */
+    projectionType?: string;
     /** Filter by rating [1-5], or null for unrated */
     rating?: number | null;
     /** Number of results to return */
     size?: number;
+    /** Filter assets by a shared space */
+    spaceId?: string;
     /** Filter by state/province name */
     state?: string | null;
     /** Filter by tag IDs */
@@ -2460,6 +2505,8 @@ export type MetadataSearchDto = {
     /** Filter by update date (before) */
     updatedBefore?: string;
     visibility?: AssetVisibility;
+    /** Minimum image width */
+    widthMin?: number;
     /** Include deleted assets */
     withDeleted?: boolean;
     /** Include EXIF data in response */
@@ -2592,7 +2639,29 @@ export type SmartSearchDto = {
     createdAfter?: string;
     /** Filter by creation date (before) */
     createdBefore?: string;
+    /** Maximum f-number */
+    fNumberMax?: number;
+    /** Minimum f-number */
+    fNumberMin?: number;
+    /** File extensions to include */
+    fileExtensions?: string[];
+    /** Maximum file size in bytes */
+    fileSizeMax?: number;
+    /** Minimum file size in bytes */
+    fileSizeMin?: number;
     filter?: SearchFilter;
+    /** Maximum focal length in mm */
+    focalLengthMax?: number;
+    /** Minimum focal length in mm */
+    focalLengthMin?: number;
+    /** Maximum frames per second */
+    fpsMax?: number;
+    /** Minimum frames per second */
+    fpsMin?: number;
+    /** Whether the asset has GPS coordinates */
+    hasLocation?: boolean;
+    /** Minimum image height */
+    heightMin?: number;
     /** Filter by encoded status */
     isEncoded?: boolean;
     /** Filter by favorite status */
@@ -2603,6 +2672,10 @@ export type SmartSearchDto = {
     isNotInAlbum?: boolean;
     /** Filter by offline status */
     isOffline?: boolean;
+    /** Maximum ISO value */
+    isoMax?: number;
+    /** Minimum ISO value */
+    isoMin?: number;
     /** Search language code */
     language?: string;
     /** Filter by lens model */
@@ -2611,6 +2684,8 @@ export type SmartSearchDto = {
     libraryId?: string | null;
     /** Filter by camera make */
     make?: string | null;
+    /** MIME types to include */
+    mimeTypes?: string[];
     /** Filter by camera model */
     model?: string | null;
     /** Filter by OCR text content */
@@ -2619,6 +2694,10 @@ export type SmartSearchDto = {
     page?: number;
     /** Filter by person IDs */
     personIds?: string[];
+    /** Only include personal assets */
+    personalOnly?: boolean;
+    /** Projection type */
+    projectionType?: string;
     /** Natural language search query */
     query?: string;
     /** Asset ID to use as search reference */
@@ -2627,6 +2706,8 @@ export type SmartSearchDto = {
     rating?: number | null;
     /** Number of results to return */
     size?: number;
+    /** Filter assets by a shared space */
+    spaceId?: string;
     /** Filter by state/province name */
     state?: string | null;
     /** Filter by tag IDs */
@@ -2645,6 +2726,8 @@ export type SmartSearchDto = {
     /** Filter by update date (before) */
     updatedBefore?: string;
     visibility?: AssetVisibility;
+    /** Minimum image width */
+    widthMin?: number;
     /** Include deleted assets */
     withDeleted?: boolean;
     /** Include EXIF data in response */
@@ -4966,6 +5049,19 @@ export function getAssetMetadataByKey({ id, key }: {
     }));
 }
 /**
+ * Get full asset EXIF metadata
+ */
+export function getAssetFullExif({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFullExifResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/exif/full`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve asset OCR data
  */
 export function getAssetOcr({ id }: {
@@ -6701,12 +6797,15 @@ export function searchAssetStatistics({ statisticsSearchDto }: {
 /**
  * Retrieve search suggestions
  */
-export function getSearchSuggestions({ country, includeNull, lensModel, make, model, state, $type }: {
+export function getSearchSuggestions({ country, includeNull, lensModel, libraryId, make, model, personalOnly, spaceId, state, $type }: {
     country?: string;
     includeNull?: boolean;
     lensModel?: string;
+    libraryId?: string;
     make?: string;
     model?: string;
+    personalOnly?: boolean;
+    spaceId?: string;
     state?: string;
     $type: SearchSuggestionType;
 }, opts?: Oazapfts.RequestOpts) {
@@ -6717,8 +6816,11 @@ export function getSearchSuggestions({ country, includeNull, lensModel, make, mo
         country,
         includeNull,
         lensModel,
+        libraryId,
         make,
         model,
+        personalOnly,
+        spaceId,
         state,
         "type": $type
     }))}`, {
@@ -7592,16 +7694,22 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, libraryId, order, orderBy, personId, personalOnly, slug, spaceId, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    libraryId?: string;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    personalOnly?: boolean;
     slug?: string;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    spaceId?: string;
     tagId?: string;
     timeBucket: string;
     userId?: string;
@@ -7619,10 +7727,13 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
         isFavorite,
         isTrashed,
         key,
+        libraryId,
         order,
         orderBy,
         personId,
+        personalOnly,
         slug,
+        spaceId,
         tagId,
         timeBucket,
         userId,
@@ -7637,16 +7748,22 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, libraryId, order, orderBy, personId, personalOnly, slug, spaceId, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    libraryId?: string;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    personalOnly?: boolean;
     slug?: string;
+    // fork: shared-libraries — hand-patched pending full SDK regen (see S8b handoff)
+    spaceId?: string;
     tagId?: string;
     userId?: string;
     visibility?: AssetVisibility;
@@ -7663,10 +7780,13 @@ export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, orde
         isFavorite,
         isTrashed,
         key,
+        libraryId,
         order,
         orderBy,
         personId,
+        personalOnly,
         slug,
+        spaceId,
         tagId,
         userId,
         visibility,
@@ -8640,7 +8760,8 @@ export enum SearchSuggestionType {
     City = "city",
     CameraMake = "camera-make",
     CameraModel = "camera-model",
-    CameraLensModel = "camera-lens-model"
+    CameraLensModel = "camera-lens-model",
+    FileExtension = "file-extension"
 }
 export enum SharedLinkType {
     Album = "ALBUM",

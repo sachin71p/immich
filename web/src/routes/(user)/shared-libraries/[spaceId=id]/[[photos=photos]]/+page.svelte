@@ -8,6 +8,7 @@
   import SharedSpaceMembersModal from '$lib/modals/SharedSpaceMembersModal.svelte';
   import { Route } from '$lib/route';
   import { sharedSpaces } from '$lib/stores/shared-spaces.svelte';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import * as sdk from '@immich/sdk';
   import { Button, ContextMenuButton, Field, Input, modalManager } from '@immich/ui';
@@ -51,7 +52,8 @@
   };
 </script>
 
-<UserPageLayout title={space.name} scrollbar={false}>
+<!-- fork: shared-libraries — uploads from this page target the space -->
+<UserPageLayout title={space.name} scrollbar={false} uploadSpaceId={space.id}>
   {#snippet buttons()}<Button size="small" leadingIcon={mdiAccountMultiplePlusOutline} onclick={() => modalManager.show(SharedSpaceMembersModal, { space })}>{$t('shared_library_members')}</Button>{/snippet}
   <section class="mx-auto max-w-5xl px-4 pt-6">
     {#if editing}<div class="flex max-w-xl flex-col gap-3"><Field label={$t('name')}><Input bind:value={name} /></Field><Field label={$t('description')}><Input bind:value={description} /></Field><div><Button size="small" onclick={save}>{$t('save')}</Button></div></div>
@@ -60,5 +62,5 @@
       <ContextMenuButton aria-label={$t('menu')} icon={mdiDotsVertical} items={[{ title: $t('edit'), icon: mdiPencilOutline, onAction: () => (editing = true) }, ...(isOwner ? [{ title: $t('delete_shared_library'), icon: mdiDeleteOutline, onAction: remove }] : [{ title: $t('leave_shared_library'), icon: mdiLogout, onAction: leave }])]} />
     </div>
   </section>
-  <Timeline enableRouting bind:timelineManager={manager} {options} assetInteraction={assetMultiSelectManager} withStacked><div class="pt-8"></div>{#snippet empty()}<EmptyPlaceholder text={$t('no_assets_message')} class="mx-auto mt-10" />{/snippet}</Timeline>
+  <Timeline enableRouting bind:timelineManager={manager} {options} assetInteraction={assetMultiSelectManager} withStacked><div class="pt-8"></div>{#snippet empty()}<EmptyPlaceholder text={$t('no_assets_message')} onClick={() => openFileUploadDialog({ spaceId: space.id })} class="mx-auto mt-10" />{/snippet}</Timeline>
 </UserPageLayout>

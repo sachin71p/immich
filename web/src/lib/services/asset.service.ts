@@ -49,9 +49,13 @@ import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
+// fork: shared-libraries
+import { sharedSpaces } from '$lib/stores/shared-spaces.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
 import { downloadUrl } from '$lib/utils';
+// fork: shared-libraries
+import { canEditAsset, canFavoriteAsset } from '$lib/utils/asset-permissions';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -99,11 +103,38 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
   return { AddToAlbum, RefreshFacesJob, RefreshMetadataJob, RegenerateThumbnailJob, TranscodeVideoJob };
 };
 
-export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & { stackPrimaryAssetId?: string }) => {
+export const getAssetActions = (
+  $t: MessageFormatter,
+  asset: AssetResponseDto & { stackPrimaryAssetId?: string },
+  // fork: shared-libraries — album membership, for the favorite permission (DECISIONS §4)
+  context: { isAlbumMember?: boolean } = {},
+) => {
   const sharedLink = getSharedLink();
   const authUser = authManager.authenticated ? authManager.user : undefined;
   const isOwner = !!(authUser && authUser.id === asset.ownerId);
   const smartSearchEnabled = featureFlagsManager.value.smartSearch;
+
+  // fork: shared-libraries — extend owner-only edit/favorite gates to space and library members
+  const canEdit = !!(
+    authUser &&
+    canEditAsset(asset, {
+      userId: authUser.id,
+      spaceIds: new Set(sharedSpaces.spaces.map(({ id }) => id)),
+      libraryIds: new Set(sharedSpaces.libraries.map(({ id }) => id)),
+    })
+  );
+  const canFavorite = !!(
+    authUser &&
+    canFavoriteAsset(
+      asset,
+      {
+        userId: authUser.id,
+        spaceIds: new Set(sharedSpaces.spaces.map(({ id }) => id)),
+        libraryIds: new Set(sharedSpaces.libraries.map(({ id }) => id)),
+      },
+      context,
+    )
+  );
 
   const Share: ActionItem = {
     title: $t('share'),
@@ -160,7 +191,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   const Favorite: ActionItem = {
     title: $t('to_favorite'),
     icon: mdiHeartOutline,
-    $if: () => isOwner && !asset.isFavorite,
+    $if: () => canFavorite && !asset.isFavorite,
     onAction: () => handleFavorite(asset),
     shortcuts: [{ key: 'f' }],
   };
@@ -168,7 +199,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   const Unfavorite: ActionItem = {
     title: $t('unfavorite'),
     icon: mdiHeart,
-    $if: () => isOwner && asset.isFavorite,
+    $if: () => canFavorite && asset.isFavorite,
     onAction: () => handleUnfavorite(asset),
     shortcuts: [{ key: 'f' }],
   };
@@ -229,7 +260,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   const TagPeople: ActionItem = {
     title: $t('tag_people'),
     icon: mdiFaceRecognition,
-    $if: () => isOwner && asset.type === AssetTypeEnum.Image && !asset.isTrashed,
+    $if: () => canEdit && asset.type === AssetTypeEnum.Image && !asset.isTrashed,
     onAction: () => assetViewerManager.toggleFaceEditMode(),
     shortcuts: { key: 'p' },
   };
@@ -239,7 +270,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     icon: mdiTune,
     $if: () =>
       !sharedLink &&
-      isOwner &&
+      canEdit &&
       asset.type === AssetTypeEnum.Image &&
       !asset.livePhotoVideoId &&
       asset.exifInfo?.projectionType !== ProjectionType.EQUIRECTANGULAR &&

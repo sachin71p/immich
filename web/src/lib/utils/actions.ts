@@ -17,6 +17,8 @@ export type OnFavorite = (ids: string[], favorite: boolean) => void;
 export type OnStack = (result: StackResponse) => void;
 export type OnUnstack = (assets: TimelineAsset[]) => void;
 export type OnSetVisibility = (ids: string[]) => void;
+// fork: shared-libraries
+export type OnMove = (assetIds: string[]) => void;
 
 export const deleteAssets = async (
   force: boolean,

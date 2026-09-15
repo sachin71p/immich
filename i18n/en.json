@@ -2376,5 +2376,13 @@
   "upload_path": "Upload path",
   "upload_path_description": "Must be a writable absolute path inside an import path.",
   "no_users_available": "No users are available",
-  "shared_library_members": "Members"
+  "shared_library_members": "Members",
+  "all_timeline_sources": "All (my timeline sources)",
+  "personal": "Personal",
+  "move_to_library": "Move to…",
+  "move_assets_moved": "{count, plural, one {# asset moved} other {# assets moved}}",
+  "move_assets_partial": "{moved, plural, one {# moved} other {# moved}}, {noop, plural, one {# unchanged} other {# unchanged}}, {failed, plural, one {# failed} other {# failed}}",
+  "move_assets_failed": "Unable to move assets",
+  "move_to_personal": "Personal",
+  "move_target_empty": "No available destinations for the selected assets"
 }

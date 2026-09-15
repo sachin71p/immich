@@ -128,8 +128,10 @@
       case AssetAction.DELETE:
       case AssetAction.ARCHIVE:
       case AssetAction.SET_VISIBILITY_LOCKED:
-      case AssetAction.SET_VISIBILITY_TIMELINE: {
+      case AssetAction.SET_VISIBILITY_TIMELINE:
+      case AssetAction.MOVE: {
         // must update manager before performing any navigation
+        // fork: shared-libraries — a moved asset (AssetAction.MOVE) may no longer match the current view
         timelineManager.removeAssets([action.asset.id]);
 
         // find the next asset to show or close the viewer

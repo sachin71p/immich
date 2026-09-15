@@ -23,7 +23,8 @@ import { handleError } from './handle-error';
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
 
 type FilePickerParam = { multiple?: boolean; extensions?: string[] };
-type FileUploadParam = { multiple?: boolean; albumId?: string };
+// fork: shared-libraries — optional upload target space
+type FileUploadParam = { multiple?: boolean; albumId?: string; spaceId?: string };
 
 export const openFilePicker = async (options: FilePickerParam = {}) => {
   const { multiple = true, extensions } = options;
@@ -69,14 +70,14 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
 };
 
 export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
-  const { albumId, multiple = true } = options;
+  const { albumId, spaceId, multiple = true } = options;
   const extensions = uploadManager.getExtensions();
   const files = await openFilePicker({
     multiple,
     extensions,
   });
 
-  return fileUploadHandler({ files, albumId });
+  return fileUploadHandler({ files, albumId, spaceId });
 };
 
 type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile'> & {
@@ -86,6 +87,7 @@ type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'asset
 export const fileUploadHandler = async ({
   files,
   albumId,
+  spaceId,
   isLockedAssets = false,
 }: FileUploadHandlerParams): Promise<string[]> => {
   const extensions = uploadManager.getExtensions();
@@ -96,7 +98,9 @@ export const fileUploadHandler = async ({
       const deviceAssetId = getDeviceAssetId(file);
       uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId });
       promises.push(
-        uploadExecutionQueue.addTask(() => fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets })),
+        uploadExecutionQueue.addTask(() =>
+          fileUploader({ deviceAssetId, assetFile: file, albumId, spaceId, isLockedAssets }),
+        ),
       );
     } else {
       toastManager.warning(get(t)('unsupported_file_type', { values: { file: file.name, type: file.type } }), {
@@ -140,6 +144,8 @@ function hashFile(file: File): Promise<string> {
 type FileUploaderParams = {
   assetFile: File;
   albumId?: string;
+  // fork: shared-libraries — optional upload target space
+  spaceId?: string;
   replaceAssetId?: string;
   isLockedAssets?: boolean;
   // TODO rework the asset uploader and remove this
@@ -151,6 +157,7 @@ async function fileUploader({
   assetFile,
   deviceAssetId,
   albumId,
+  spaceId,
   isLockedAssets = false,
 }: FileUploaderParams): Promise<string | undefined> {
   const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
@@ -172,6 +179,11 @@ async function fileUploader({
 
     if (isLockedAssets) {
       formData.append('visibility', AssetVisibility.Locked);
+    }
+
+    // fork: shared-libraries — upload directly into a shared space when uploading from a space page
+    if (spaceId) {
+      formData.append('spaceId', spaceId);
     }
 
     let responseData: { id: string; status: AssetMediaStatus; isTrashed?: boolean } | undefined;

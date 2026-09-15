@@ -16,6 +16,8 @@ type ActionMap = {
   [AssetAction.SET_VISIBILITY_TIMELINE]: { asset: TimelineAsset };
   [AssetAction.SET_PERSON_FEATURED_PHOTO]: { asset: AssetResponseDto; person: PersonResponseDto };
   [AssetAction.RATING]: { asset: TimelineAsset; rating: number | null };
+  // fork: shared-libraries
+  [AssetAction.MOVE]: { asset: TimelineAsset };
 };
 
 export type Action = {
