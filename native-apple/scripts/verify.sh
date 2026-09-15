@@ -24,7 +24,7 @@ ios() {
 mac() {
   cd "$root"
   xcodegen generate
-  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-macOS -destination 'platform=macOS' -skipPackagePluginValidation build test
+  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-macOS -destination 'platform=macOS' -skipPackagePluginValidation CODE_SIGN_IDENTITY="-" build test
 }
 
 case "$mode" in
