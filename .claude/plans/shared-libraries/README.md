@@ -12,6 +12,8 @@ rules: `DECISIONS.md`. Verified code facts: `CODEMAP.md`.
 | `STATUS.md` | orchestrator | Phase checklist + commits. The only file the orchestrator updates each phase |
 | `DECISIONS.md` | all agents (only sections named in the phase) | What to build, rules, invariants |
 | `CODEMAP.md` | implementers (only sections named in the phase) | Where things are |
+| `TESTING.md` | all agents (§1, §8 + matrix rows for their phase) | Test tiers, fixtures, world, case matrix, runner, regression gate |
+| `phases/T*.md` | one implementer per phase | Test harness (T0) and regression backfill (T1) |
 | `phases/S*.md` | one implementer per phase | Server/web phase brief |
 | `phases/A*.md` | one implementer per phase | Apple (iOS + macOS) phase brief |
 | `handoff/<phase>.md` | written by implementer, read by orchestrator + next phase | ≤40-line summary |
@@ -56,8 +58,9 @@ Rules:
     (single directory, specific identifier). Never dump whole large files or run repo-wide greps without a path.
   - Follow existing code patterns in neighbouring files. Keep upstream-file edits minimal and additive; put new
     logic in new files. Mark each upstream hook with a `// fork: shared-libraries` comment.
-  - Write the tests the brief lists. Run the brief's "self-check" commands before finishing; do not run e2e
-    unless the brief says so.
+  - Write the tests the brief lists AND every row of .claude/plans/shared-libraries/TESTING.md §5 whose Phase
+    column names your phase. Every fork test title starts with its case id, e.g. `[R6-02] …`.
+    Run the brief's "self-check" commands before finishing; do not run e2e unless the brief says so.
   - If CODEMAP is wrong, note `CODEMAP-FIX:` and continue. If a DECISIONS rule is ambiguous or impossible,
     stop and write `BLOCKED: <question>`.
   - Do not commit. Finish by writing .claude/plans/shared-libraries/handoff/<ID>.md (≤40 lines):
@@ -72,8 +75,16 @@ Verify phase <ID> of the Immich fork. Repo: <abs path>. Run exactly the commands
 says continue). Write .claude/plans/shared-libraries/handoff/<ID>-verify.md (≤30 lines): each command →
 PASS/FAIL, and for failures the failing test names + the first relevant error lines (≤10 lines each).
 Pre-existing failures recorded in handoff/S0-verify.md are not regressions — mark them KNOWN.
-Reply with only: PASS or FAIL, plus the path.
+Tiers that need Docker/sockets (medium, e2e, upgrade) cannot run in the sandbox: run them with the sandbox
+disabled on a host with Docker running, otherwise report them as NOT RUN (never PASS) — TESTING.md §8.
+Also run `scripts/fork-test/run.sh coverage` once it exists (T0) and report missing case ids.
+Reply with only: PASS, FAIL, or PARTIAL (something NOT RUN), plus the path.
 ```
+
+## Definition of done for server-behaviour phases
+A phase is ✅ only when its TESTING.md rows pass on a host with Docker (`scripts/fork-test/run.sh unit medium
+e2e-api coverage`). If the verifier reports PARTIAL, mark the phase 🟨 "awaiting host run", tell the user the exact
+command to run, and continue with phases that don't depend on it.
 
 ## Token rules (all agents)
 - Pass paths, not content. Handoffs ≤40 lines. Verify reports ≤30 lines.
@@ -87,5 +98,7 @@ Reply with only: PASS or FAIL, plus the path.
 S0 → S1 ─┬→ S2 ─┐
          └→ S3 ─┴→ S4 → S5 → S6 → S7 → S8a → S8b → S8c → S10
                                    └──────────────→ (S9 optional, after S6)
+Tests: T0 (after S0; parallel-safe with S6/S7) → T1 (backfills S1–S5 cases) → every later phase ships its own
+       TESTING.md rows; S10 runs the upgrade gate.
 Apple: A0 (can start after S0; mocks API) → A1 needs S6 → A2 … A9 (see phases/A0-apple-overview.md)
 ```

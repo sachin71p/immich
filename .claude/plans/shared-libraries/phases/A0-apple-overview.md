@@ -56,6 +56,8 @@ native-apple/
 - Snapshot/UI tests: at most a handful per phase (launch, grid renders fixture DB, viewer opens). Core logic is
   covered by `swift test`.
 - Fixtures: `PhotosCore/Tests/Fixtures/` holds recorded JSON-lines sync streams and API responses; tests never hit a real server.
+  World sync fixtures are recorded from the e2e world by `record-sync.ts` (TESTING.md §4); `e2e/fork-assets/rules-cases.json`
+  must pass in Swift `Rules` tests (AP-02). Apple case ids: TESTING.md §5 "Apple" rows.
 
 ## A0 task — scaffold (depends on S0; can run before the server phases finish)
 1. Create the tree above with empty-but-compiling modules, `project.yml` (iOS app, macOS app, extension targets
