@@ -73,10 +73,10 @@ struct SettingsView: View {
   }
 
   private func setPrefs(_ edit: (inout SharedLibraryPrefs) -> Void) {
+    var prefs = session.prefs
+    edit(&prefs)
     Task {
       do {
-        var prefs = session.prefs
-        edit(&prefs)
         try await session.prefsMutations?.update(prefs, for: session.userId)
         try await session.refresh()
       } catch {
@@ -211,10 +211,10 @@ struct TimelineSourcesSheet: View {
   }
 
   private func setPrefs(_ edit: (inout SharedLibraryPrefs) -> Void) {
+    var prefs = session.prefs
+    edit(&prefs)
     Task {
       do {
-        var prefs = session.prefs
-        edit(&prefs)
         try await session.prefsMutations?.update(prefs, for: session.userId)
         try await session.refresh()
       } catch {
