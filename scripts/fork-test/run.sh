@@ -54,12 +54,12 @@ stack_down() {
 }
 
 run_unit() {
-  (cd "$ROOT/server" && pnpm run test) && record unit PASS "" || record unit FAIL "server suite"
+  (cd "$ROOT/server" && CI=true pnpm run test) && record unit PASS "" || record unit FAIL "server suite"
   (cd "$ROOT/web" && pnpm run test --run) && record unit-web PASS "" || record unit-web FAIL "web suite"
 }
 
 run_medium() {
-  (cd "$ROOT/server" && pnpm run test:medium -- test/medium/specs/fork) \
+  (cd "$ROOT/server" && CI=true pnpm run test:medium -- test/medium/specs/fork) \
     && record medium PASS "" || record medium FAIL "see output"
 }
 
@@ -88,7 +88,7 @@ run_apple() {
 }
 
 run_upstream() {
-  (cd "$ROOT/server" && pnpm run test:medium) && record upstream-medium PASS "" || record upstream-medium FAIL ""
+  (cd "$ROOT/server" && CI=true pnpm run test:medium) && record upstream-medium PASS "" || record upstream-medium FAIL ""
   (cd "$ROOT/e2e" && VITEST_DISABLE_DOCKER_SETUP=true pnpm test -- src/specs/server/api) \
     && record upstream-e2e PASS "" || record upstream-e2e FAIL ""
 }
