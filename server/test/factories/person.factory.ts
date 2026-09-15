@@ -21,6 +21,8 @@ export class PersonFactory {
       isHidden: false,
       name: 'person',
       ownerId: newUuid(),
+      // fork: shared-libraries - space-scoped person (S9); null = personal (upstream).
+      spaceId: null,
       thumbnailPath: '/data/thumbs/person-thumbnail.jpg',
       updatedAt: newDate(),
       updateId: newUuidV7(),

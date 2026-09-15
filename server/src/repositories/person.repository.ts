@@ -16,10 +16,14 @@ import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.j
 export interface PersonSearchOptions {
   withHidden: boolean;
   closestFaceAssetId?: string;
+  // fork: shared-libraries - include space-scoped people of these member spaces (S9).
+  memberSpaceIds?: string[];
 }
 
 export interface PersonNameSearchOptions {
   withHidden?: boolean;
+  // fork: shared-libraries - include space-scoped people of these member spaces (S9).
+  memberSpaceIds?: string[];
 }
 
 export interface PersonNameResponse {
@@ -36,6 +40,8 @@ export interface UpdateFacesData {
   oldPersonGroupId?: string;
   faceIds?: string[];
   ownerId?: string;
+  // fork: shared-libraries - scope a merge/reassign to one space's assets instead of one owner's (S9).
+  spaceId?: string;
   newPersonGroupId: string;
 }
 
@@ -75,6 +81,8 @@ export type WithPersonOptions = {
   viewingUserId: string;
 };
 
+// fork: shared-libraries - members also see the space-scoped person row (S9).
+// The viewer's own row wins when both exist (upstream behavior preserved).
 const withPerson = ({ viewingUserId }: WithPersonOptions) => {
   return (eb: ExpressionBuilder<DB, 'asset_face'>) =>
     jsonObjectFrom(
@@ -82,7 +90,19 @@ const withPerson = ({ viewingUserId }: WithPersonOptions) => {
         .selectFrom('person')
         .selectAll('person')
         .whereRef('person.personGroupId', '=', 'asset_face.personGroupId')
-        .where('person.ownerId', '=', viewingUserId),
+        .where((eb) =>
+          eb.or([
+            eb('person.ownerId', '=', viewingUserId),
+            eb('person.spaceId', 'in', (sub) =>
+              sub
+                .selectFrom('shared_space_member')
+                .select('shared_space_member.spaceId')
+                .where('shared_space_member.userId', '=', viewingUserId),
+            ),
+          ]),
+        )
+        .orderBy(sql`person."ownerId" = ${viewingUserId}`, 'desc')
+        .limit(1),
     ).as('person');
 };
 
@@ -97,7 +117,13 @@ export class PersonRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })
-  async reassignFaces({ oldPersonGroupId, faceIds, ownerId, newPersonGroupId }: UpdateFacesData): Promise<number> {
+  async reassignFaces({
+    oldPersonGroupId,
+    faceIds,
+    ownerId,
+    spaceId,
+    newPersonGroupId,
+  }: UpdateFacesData): Promise<number> {
     const result = await this.db
       .updateTable('asset_face')
       .from('asset')
@@ -106,6 +132,8 @@ export class PersonRepository {
       .$if(!!oldPersonGroupId, (qb) => qb.where('asset_face.personGroupId', '=', oldPersonGroupId!))
       .$if(!!faceIds, (qb) => qb.where('asset_face.id', 'in', faceIds!))
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
+      // fork: shared-libraries - space merge/reassign touches only that space's faces (S9).
+      .$if(!!spaceId, (qb) => qb.where('asset.spaceId', '=', spaceId!))
       .executeTakeFirst();
 
     return Number(result.numUpdatedRows ?? 0);
@@ -127,7 +155,8 @@ export class PersonRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
   @Chunked()
-  async delete(personGroupIds: string[], ownerId?: string) {
+  // fork: shared-libraries - spaceId targets the space-scoped row when merging/deleting space people (S9).
+  async delete(personGroupIds: string[], ownerId?: string, spaceId?: string) {
     if (personGroupIds.length === 0) {
       return [];
     }
@@ -135,6 +164,7 @@ export class PersonRepository {
     return this.db
       .deleteFrom('person')
       .$if(!!ownerId, (qb) => qb.where('ownerId', '=', ownerId!))
+      .$if(!!spaceId, (qb) => qb.where('spaceId', '=', spaceId!))
       .where('person.personGroupId', 'in', personGroupIds)
       .returning(['personGroupId', 'ownerId', 'thumbnailPath'])
       .execute();
@@ -174,6 +204,16 @@ export class PersonRepository {
       .deleteFrom('cluster_group')
       .where(({ not, exists, selectFrom }) =>
         not(exists(selectFrom('user').whereRef('user.clusterGroupId', '=', 'cluster_group.id').select('user.id'))),
+      )
+      // fork: shared-libraries - a space's facial-recognition universe has no users; keep it (S9).
+      .where(({ not, exists, selectFrom }) =>
+        not(
+          exists(
+            selectFrom('shared_space')
+              .whereRef('shared_space.clusterGroupId', '=', 'cluster_group.id')
+              .select('shared_space.id'),
+          ),
+        ),
       )
       .executeTakeFirst();
 
@@ -230,7 +270,9 @@ export class PersonRepository {
   }
 
   @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID] })
+  // fork: shared-libraries - options.memberSpaceIds adds space-scoped people of member spaces (S9).
   async getAllForUser(pagination: PaginationOptions, userId: string, options?: PersonSearchOptions) {
+    const memberSpaceIds = options?.memberSpaceIds ?? [];
     const items = await this.db
       .selectFrom('person')
       .selectAll('person')
@@ -238,11 +280,21 @@ export class PersonRepository {
       .innerJoin('asset', (join) =>
         join
           .onRef('asset_face.assetId', '=', 'asset.id')
-          .onRef('asset.ownerId', '=', 'person.ownerId')
+          .on((eb) =>
+            eb.or([
+              eb.and([eb('person.spaceId', 'is', null), eb('asset.ownerId', '=', eb.ref('person.ownerId'))]),
+              eb.and([eb('person.spaceId', 'is not', null), eb('asset.spaceId', '=', eb.ref('person.spaceId'))]),
+            ]),
+          )
           .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
           .on('asset.deletedAt', 'is', null),
       )
-      .where('person.ownerId', '=', userId)
+      .where((eb) =>
+        eb.or([
+          eb('person.ownerId', '=', userId),
+          ...(memberSpaceIds.length > 0 ? [eb('person.spaceId', 'in', memberSpaceIds)] : []),
+        ]),
+      )
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
       .orderBy('person.isHidden', 'asc')
@@ -346,7 +398,14 @@ export class PersonRepository {
           eb
             .selectFrom('asset')
             .innerJoin('user', 'user.id', 'asset.ownerId')
-            .select(['asset.ownerId', 'asset.visibility', 'asset.fileCreatedAt', 'user.clusterGroupId'])
+            .select([
+              'asset.ownerId',
+              'asset.visibility',
+              'asset.fileCreatedAt',
+              // fork: shared-libraries - route space-asset faces to space-scoped recognition (S9).
+              'asset.spaceId',
+              'user.clusterGroupId',
+            ])
             .whereRef('asset.id', '=', 'asset_face.assetId'),
         ).as('asset'),
       )
@@ -403,15 +462,128 @@ export class PersonRepository {
       .executeTakeFirst();
   }
 
+  // fork: shared-libraries - resolve a person the user may see: their own row, else a member
+  // space's row. The own row wins when both exist (upstream behavior preserved) (S9).
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async getByGroupIdForUser(personGroupId: string, userId: string) {
+    return (
+      (await this.getByGroupId({ ownerId: userId, personGroupId })) ??
+      (await this.db
+        .selectFrom('person')
+        .selectAll('person')
+        .where('person.personGroupId', '=', personGroupId)
+        .where('person.spaceId', 'is not', null)
+        .where('person.spaceId', 'in', (sub) =>
+          sub
+            .selectFrom('shared_space_member')
+            .select('shared_space_member.spaceId')
+            .where('shared_space_member.userId', '=', userId),
+        )
+        .executeTakeFirst())
+    );
+  }
+
+  // fork: shared-libraries - member space ids for people scoping; timelineOnly honors
+  // shared_space_member.showInTimeline like the timeline ContainerScope (S9).
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getMemberSpaceIds(userId: string, timelineOnly = false) {
+    return this.db
+      .selectFrom('shared_space_member')
+      .select(['shared_space_member.spaceId', 'shared_space_member.showInTimeline'])
+      .where('shared_space_member.userId', '=', userId)
+      .$if(timelineOnly, (qb) => qb.where('shared_space_member.showInTimeline', '=', true))
+      .execute();
+  }
+
+  // fork: shared-libraries - the space-scoped row for a facial-recognition group, if any (S9).
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getSpacePerson(spaceId: string, personGroupId: string) {
+    return this.db
+      .selectFrom('person')
+      .selectAll('person')
+      .where('person.spaceId', '=', spaceId)
+      .where('person.personGroupId', '=', personGroupId)
+      .executeTakeFirst();
+  }
+
+  // fork: shared-libraries - create a facial-recognition group in the space's clustering universe,
+  // creating that universe (a dedicated cluster_group row) on first use (S9).
+  async createSpaceGroup(spaceId: string) {
+    return this.db.transaction().execute(async (trx) => {
+      const space = await trx
+        .selectFrom('shared_space')
+        .select('clusterGroupId')
+        .where('id', '=', spaceId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+
+      let clusterGroupId = space.clusterGroupId;
+      if (!clusterGroupId) {
+        const clusterGroup = await trx
+          .insertInto('cluster_group')
+          .values({ name: null })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await trx
+          .updateTable('shared_space')
+          .set({ clusterGroupId: clusterGroup.id })
+          .where('id', '=', spaceId)
+          .execute();
+        clusterGroupId = clusterGroup.id;
+      }
+
+      return trx.insertInto('person_group').values({ clusterGroupId }).returningAll().executeTakeFirstOrThrow();
+    });
+  }
+
+  // fork: shared-libraries - detach machine-learning faces on moved assets from the source
+  // container's people so they re-cluster in the target container (S9). Manual faces are kept.
+  // Returns the detached face ids for re-queuing facial recognition.
+  async detachFacesForMove(assetIds: string[], source: { spaceId: string | null; ownerId: string }): Promise<string[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .updateTable('asset_face')
+      .set({ personGroupId: null })
+      .where('asset_face.assetId', 'in', assetIds)
+      .where('asset_face.sourceType', '=', SourceType.MachineLearning)
+      .where('asset_face.personGroupId', 'is not', null)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('person')
+            .select('person.personGroupId')
+            .whereRef('person.personGroupId', '=', 'asset_face.personGroupId')
+            .where((eb) =>
+              source.spaceId
+                ? eb('person.spaceId', '=', source.spaceId)
+                : eb.and([eb('person.spaceId', 'is', null), eb('person.ownerId', '=', source.ownerId)]),
+            ),
+        ),
+      )
+      .returning('asset_face.id')
+      .execute();
+
+    return rows.map(({ id }) => id);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { withHidden: true }] })
-  getByName(userId: string, personName: string, { withHidden }: PersonNameSearchOptions) {
+  // fork: shared-libraries - options.memberSpaceIds adds space-scoped people to name search (S9).
+  getByName(userId: string, personName: string, { withHidden, memberSpaceIds = [] }: PersonNameSearchOptions) {
     return this.db
       .with('similarity_threshold', (db) =>
         db.selectNoFrom(sql`set_config('pg_trgm.word_similarity_threshold', '0.5', true)`.as('thresh')),
       )
       .selectFrom(['similarity_threshold', 'person'])
       .selectAll('person')
-      .where('person.ownerId', '=', userId)
+      .where((eb) =>
+        eb.or([
+          eb('person.ownerId', '=', userId),
+          ...(memberSpaceIds.length > 0 ? [eb('person.spaceId', 'in', memberSpaceIds)] : []),
+        ]),
+      )
       .where(() => sql`f_unaccent("person"."name") %> f_unaccent(${personName})`)
       .orderBy(sql`f_unaccent("person"."name") <->>> f_unaccent(${personName})`)
       .limit(100)
@@ -420,18 +592,29 @@ export class PersonRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { withHidden: true }] })
-  getDistinctNames(userId: string, { withHidden }: PersonNameSearchOptions): Promise<PersonNameResponse[]> {
+  // fork: shared-libraries - options.memberSpaceIds adds space-scoped people to name search (S9).
+  getDistinctNames(
+    userId: string,
+    { withHidden, memberSpaceIds = [] }: PersonNameSearchOptions,
+  ): Promise<PersonNameResponse[]> {
     return this.db
       .selectFrom('person')
       .select(['person.personGroupId', 'person.name'])
       .distinctOn((eb) => eb.fn('lower', ['person.name']))
-      .where((eb) => eb.and([eb('person.ownerId', '=', userId), eb('person.name', '!=', '')]))
+      .where((eb) => eb.and([eb('person.name', '!=', '')]))
+      .where((eb) =>
+        eb.or([
+          eb('person.ownerId', '=', userId),
+          ...(memberSpaceIds.length > 0 ? [eb('person.spaceId', 'in', memberSpaceIds)] : []),
+        ]),
+      )
       .$if(!withHidden, (qb) => qb.where('person.isHidden', '=', false))
       .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  async getStatistics(personGroupId: string, userId: string): Promise<PersonStatistics> {
+  // fork: shared-libraries - spaceId counts that space's assets for a space-scoped person (S9).
+  async getStatistics(personGroupId: string, userId: string, spaceId?: string | null): Promise<PersonStatistics> {
     const result = await this.db
       .selectFrom('asset_face')
       .leftJoin('asset', (join) =>
@@ -439,7 +622,11 @@ export class PersonRepository {
           .onRef('asset.id', '=', 'asset_face.assetId')
           .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
           .on('asset.deletedAt', 'is', null)
-          .on((eb) => eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)])),
+          .on((eb) =>
+            spaceId
+              ? eb('asset.spaceId', '=', spaceId)
+              : eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)]),
+          ),
       )
       .select((eb) => eb.fn.count(eb.fn('distinct', ['asset.id'])).as('count'))
       .where('asset_face.deletedAt', 'is', null)
@@ -453,7 +640,8 @@ export class PersonRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  getNumberOfPeople(userId: string) {
+  // fork: shared-libraries - memberSpaceIds counts space-scoped people alongside the user's own (S9).
+  getNumberOfPeople(userId: string, memberSpaceIds: string[] = []) {
     const zero = sql.lit(0);
     return this.db
       .selectFrom('person')
@@ -475,7 +663,12 @@ export class PersonRepository {
             ),
         ),
       )
-      .where('person.ownerId', '=', userId)
+      .where((eb) =>
+        eb.or([
+          eb('person.ownerId', '=', userId),
+          ...(memberSpaceIds.length > 0 ? [eb('person.spaceId', 'in', memberSpaceIds)] : []),
+        ]),
+      )
       .select((eb) => eb.fn.coalesce(eb.fn.countAll<number>(), zero).as('total'))
       .select((eb) => eb.fn.coalesce(eb.fn.countAll<number>().filterWhere('isHidden', '=', true), zero).as('hidden'))
       .executeTakeFirstOrThrow();

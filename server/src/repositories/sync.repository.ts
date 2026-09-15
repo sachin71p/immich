@@ -441,12 +441,27 @@ class AuthUserSync extends BaseSync {
   }
 }
 
+// fork: shared-libraries - members also sync their spaces' people (S9).
 class PersonSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('person_audit', options)
       .select(['id', 'personGroupId as personId'])
-      .where('ownerId', '=', options.userId)
+      .where((eb) =>
+        eb.or([
+          eb('person_audit.ownerId', '=', options.userId),
+          eb.and([
+            eb('person_audit.spaceId', 'is not', null),
+            eb.exists(
+              eb
+                .selectFrom('shared_space_member')
+                .select('shared_space_member.userId')
+                .whereRef('shared_space_member.spaceId', '=', 'person_audit.spaceId')
+                .where('shared_space_member.userId', '=', options.userId),
+            ),
+          ]),
+        ]),
+      )
       .stream();
   }
 
@@ -469,8 +484,23 @@ class PersonSync extends BaseSync {
         'color',
         'updateId',
         'faceAssetId',
+        'spaceId',
       ])
-      .where('ownerId', '=', options.userId)
+      .where((eb) =>
+        eb.or([
+          eb('person.ownerId', '=', options.userId),
+          eb.and([
+            eb('person.spaceId', 'is not', null),
+            eb.exists(
+              eb
+                .selectFrom('shared_space_member')
+                .select('shared_space_member.userId')
+                .whereRef('shared_space_member.spaceId', '=', 'person.spaceId')
+                .where('shared_space_member.userId', '=', options.userId),
+            ),
+          ]),
+        ]),
+      )
       .stream();
   }
 }
@@ -481,13 +511,28 @@ class PersonGroupSync extends BaseSync {
   }
 }
 
+// fork: shared-libraries - members also sync faces on their spaces' assets (S9).
 class AssetFaceSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('asset_face_audit', options)
       .select(['asset_face_audit.id', 'assetFaceId'])
       .leftJoin('asset', 'asset.id', 'asset_face_audit.assetId')
-      .where('asset.ownerId', '=', options.userId)
+      .where((eb) =>
+        eb.or([
+          eb('asset.ownerId', '=', options.userId),
+          eb.and([
+            eb('asset.spaceId', 'is not', null),
+            eb.exists(
+              eb
+                .selectFrom('shared_space_member')
+                .select('shared_space_member.userId')
+                .whereRef('shared_space_member.spaceId', '=', 'asset.spaceId')
+                .where('shared_space_member.userId', '=', options.userId),
+            ),
+          ]),
+        ]),
+      )
       .stream();
   }
 
@@ -514,7 +559,21 @@ class AssetFaceSync extends BaseSync {
         'asset_face.updateId',
       ])
       .leftJoin('asset', 'asset.id', 'asset_face.assetId')
-      .where('asset.ownerId', '=', options.userId)
+      .where((eb) =>
+        eb.or([
+          eb('asset.ownerId', '=', options.userId),
+          eb.and([
+            eb('asset.spaceId', 'is not', null),
+            eb.exists(
+              eb
+                .selectFrom('shared_space_member')
+                .select('shared_space_member.userId')
+                .whereRef('shared_space_member.spaceId', '=', 'asset.spaceId')
+                .where('shared_space_member.userId', '=', options.userId),
+            ),
+          ]),
+        ]),
+      )
       .stream();
   }
 }

@@ -590,7 +590,12 @@ describe(PersonService.name, () => {
       await expect(sut.create(auth, {})).resolves.toBeDefined();
 
       expect(mocks.person.createGroup).toHaveBeenCalledWith(auth.user.id);
-      expect(mocks.person.create).toHaveBeenCalledWith({ ownerId: auth.user.id, personGroupId: group.id });
+      // fork: shared-libraries - person rows carry the S9 spaceId column (null = personal).
+      expect(mocks.person.create).toHaveBeenCalledWith({
+        ownerId: auth.user.id,
+        personGroupId: group.id,
+        spaceId: null,
+      });
     });
   });
 
@@ -1190,10 +1195,12 @@ describe(PersonService.name, () => {
       await sut.handleRecognizeFaces({ id: noPerson1.id });
 
       expect(mocks.person.createGroup).toHaveBeenCalledWith(asset.ownerId);
+      // fork: shared-libraries - person rows carry the S9 spaceId column (null = personal).
       expect(mocks.person.create).toHaveBeenCalledWith({
         ownerId: asset.ownerId,
         faceAssetId: noPerson1.id,
         personGroupId: person.personGroupId,
+        spaceId: null,
       });
       expect(mocks.person.reassignFaces).toHaveBeenCalledWith({
         faceIds: [noPerson1.id],
@@ -1222,10 +1229,12 @@ describe(PersonService.name, () => {
       await sut.handleRecognizeFaces({ id: noPerson.id });
 
       expect(mocks.person.createGroup).not.toHaveBeenCalled();
+      // fork: shared-libraries - person rows carry the S9 spaceId column (null = personal).
       expect(mocks.person.create).toHaveBeenCalledWith({
         ownerId: asset.ownerId,
         faceAssetId: noPerson.id,
         personGroupId: otherOwnerFace.person!.personGroupId,
+        spaceId: null,
       });
       expect(mocks.person.reassignFaces).toHaveBeenCalledWith({
         faceIds: [noPerson.id],

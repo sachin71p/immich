@@ -399,6 +399,8 @@ const SyncPersonV1Schema = z
     isFavorite: z.boolean().describe('Is favorite'),
     color: z.string().nullable().describe('Color'),
     faceAssetId: z.string().nullable().describe('Face asset ID'),
+    // fork: shared-libraries - space scope of a space-shared person (S9).
+    spaceId: z.string().nullish().describe('Shared space ID'),
   })
   .meta({ id: 'SyncPersonV1' });
 

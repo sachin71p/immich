@@ -14,6 +14,7 @@ import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { person_delete_audit } from 'src/schema/functions.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
+import { SharedSpaceTable } from 'src/schema/tables/shared-space.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('person')
@@ -67,6 +68,15 @@ export class PersonTable {
 
   @ForeignKeyColumn(() => AssetFaceTable, { onDelete: 'SET NULL', nullable: true })
   faceAssetId!: string | null;
+
+  // fork: shared-libraries - space-scoped person (S9). NULL = personal (per-owner, upstream).
+  @ForeignKeyColumn(() => SharedSpaceTable, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+    nullable: true,
+    index: true,
+  })
+  spaceId!: string | null;
 
   @Column({ type: 'boolean', default: false })
   isFavorite!: Generated<boolean>;

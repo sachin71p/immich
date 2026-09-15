@@ -12,6 +12,10 @@ export class PersonAuditTable {
   @Column({ type: 'uuid', index: true })
   ownerId!: string;
 
+  // fork: shared-libraries - space scope of a deleted space person (S9), for member sync deletes.
+  @Column({ type: 'uuid', nullable: true, default: null })
+  spaceId!: string | null;
+
   @CreateDateColumn({ default: () => 'clock_timestamp()', index: true })
   deletedAt!: Generated<Timestamp>;
 }

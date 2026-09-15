@@ -960,7 +960,8 @@ export class MetadataService extends BaseService {
         missing.map((item) => ({ id: item.personGroupId, clusterGroupId: asset.clusterGroupId })),
       );
       await this.personRepository.createAll(
-        missing.map(({ name, ownerId, personGroupId }) => ({ name, ownerId, personGroupId })),
+        // fork: shared-libraries - EXIF-region people stay owner-scoped (S9 limitation, see handoff).
+        missing.map(({ name, ownerId, personGroupId }) => ({ name, ownerId, personGroupId, spaceId: null })),
       );
 
       const jobs = missing.map(

@@ -246,6 +246,8 @@ export type Person = {
   createdAt: Date;
   personGroupId: string;
   ownerId: string;
+  // fork: shared-libraries - space-scoped person (S9). NULL = personal (per-owner, upstream).
+  spaceId: string | null;
   updatedAt: Date;
   updateId: string;
   isFavorite: boolean;

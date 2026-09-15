@@ -210,10 +210,11 @@ export const person_delete_audit = registerFunction({
   name: 'person_delete_audit',
   returnType: 'TRIGGER',
   language: 'PLPGSQL',
+  // fork: shared-libraries - record the space scope so member sync streams see space-person deletes (S9).
   body: `
     BEGIN
-      INSERT INTO person_audit ("personGroupId", "ownerId")
-      SELECT "personGroupId", "ownerId"
+      INSERT INTO person_audit ("personGroupId", "ownerId", "spaceId")
+      SELECT "personGroupId", "ownerId", "spaceId"
       FROM OLD;
       RETURN NULL;
     END`,

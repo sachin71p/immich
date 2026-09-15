@@ -80,3 +80,4 @@ immediately.
 | `web/src/lib/components/shared-components/search-bar/{SearchExposureSection,SearchFileSection,SearchLibrarySection}.svelte` | extended metadata filters + library scope | R13 | S8c |
 | `web/src/lib/{components/shared-components/search-bar/search-bar-utils.ts,managers/search-manager.svelte.ts,types.ts}` | filter<->URL query mapping | R13 | S8c |
 | `packages/sdk/src/fetch-client.ts` | hand-added AssetFullExifResponseDto/getAssetFullExif + rich search fields (SDK hunks ride with the S8b commit) | R12/R13 | S8c |
+| `server/src/schema (person.spaceId, person_audit.spaceId, shared_space.clusterGroupId, migration 1789426700280), dtos, repositories, services (person/asset/search/metadata)` | space-scoped people, space recognition, move detach, member sync | S9 sketch §11 | S9 |

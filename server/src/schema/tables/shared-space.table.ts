@@ -10,6 +10,7 @@ import {
 } from '@immich/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 // fork: shared-libraries
@@ -38,6 +39,10 @@ export class SharedSpaceTable {
     comment: 'Asset ID to be used as thumbnail',
   })
   thumbnailAssetId!: string | null;
+
+  // fork: shared-libraries - facial-recognition universe for space-scoped people (S9), assigned lazily.
+  @ForeignKeyColumn(() => ClusterGroupTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  clusterGroupId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

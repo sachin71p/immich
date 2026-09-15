@@ -61,20 +61,21 @@ export class PersonService extends BaseService {
     };
 
     if (closestPersonId) {
-      const person = await this.personRepository.getByGroupId({
-        ownerId: auth.user.id,
-        personGroupId: closestPersonId,
-      });
+      // fork: shared-libraries - members may page from a space person (S9).
+      const person = await this.personRepository.getByGroupIdForUser(closestPersonId, auth.user.id);
       if (!person?.faceAssetId) {
         throw new NotFoundException('Person not found');
       }
       closestFaceAssetId = person.faceAssetId;
     }
+    // fork: shared-libraries - list own people plus people of timeline-visible member spaces (S9).
+    const memberSpaceIds = await this.getTimelineSpaceIds(auth.user.id);
     const { items, hasNextPage } = await this.personRepository.getAllForUser(pagination, auth.user.id, {
       withHidden,
       closestFaceAssetId,
+      ...(memberSpaceIds.length > 0 && { memberSpaceIds }),
     });
-    const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id);
+    const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id, memberSpaceIds);
 
     return {
       people: items.map((person) => mapPerson(person)),
@@ -166,12 +167,19 @@ export class PersonService extends BaseService {
 
   async getStatistics(auth: AuthDto, personGroupId: string): Promise<PersonStatisticsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
-    return this.personRepository.getStatistics(personGroupId, auth.user.id);
+    // fork: shared-libraries - space people count their space's assets (S9).
+    const person = await this.findOrFail(auth, personGroupId);
+    return person.spaceId
+      ? this.personRepository.getStatistics(personGroupId, auth.user.id, person.spaceId)
+      : this.personRepository.getStatistics(personGroupId, auth.user.id);
   }
 
   async getThumbnail(auth: AuthDto, personGroupId: string): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
-    const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
+    // fork: shared-libraries - members resolve the space-scoped row when they own none (S9).
+    const person =
+      (await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId })) ??
+      (await this.personRepository.getByGroupIdForUser(personGroupId, auth.user.id));
     if (!person || !person.thumbnailPath) {
       throw new NotFoundException();
     }
@@ -184,10 +192,32 @@ export class PersonService extends BaseService {
   }
 
   async create(auth: AuthDto, dto: PersonCreateDto): Promise<PersonResponseDto> {
+    // fork: shared-libraries - members may create people scoped to a space (S9).
+    if (dto.spaceId) {
+      const membership = await this.accessRepository.space.checkMemberAccess(auth.user.id, new Set([dto.spaceId]));
+      if (membership.size === 0) {
+        throw new NotFoundException('Space not found');
+      }
+      const group = await this.personRepository.createSpaceGroup(dto.spaceId);
+      const person = await this.personRepository.create({
+        ownerId: auth.user.id,
+        personGroupId: group.id,
+        spaceId: dto.spaceId,
+        name: dto.name,
+        birthDate: dto.birthDate,
+        isHidden: dto.isHidden,
+        isFavorite: dto.isFavorite,
+        color: dto.color,
+      });
+
+      return mapPerson(person);
+    }
+
     const group = await this.personRepository.createGroup(auth.user.id);
     const person = await this.personRepository.create({
       ownerId: auth.user.id,
       personGroupId: group.id,
+      spaceId: null,
       name: dto.name,
       birthDate: dto.birthDate,
       isHidden: dto.isHidden,
@@ -259,16 +289,34 @@ export class PersonService extends BaseService {
 
   async deleteAll(auth: AuthDto, { ids }: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.PersonDelete, ids });
-    await this.removeAllPersonGroups(ids, auth.user.id);
+    // fork: shared-libraries - members may delete space people; delete each row in its own scope (S9).
+    const bySpace = new Map<string, string[]>();
+    const personal: string[] = [];
+    for (const id of ids) {
+      const person = await this.personRepository.getByGroupIdForUser(id, auth.user.id);
+      if (person?.spaceId) {
+        const groupIds = bySpace.get(person.spaceId) ?? [];
+        groupIds.push(id);
+        bySpace.set(person.spaceId, groupIds);
+      } else {
+        personal.push(id);
+      }
+    }
+    await this.removeAllPersonGroups(personal, auth.user.id);
+    for (const [spaceId, groupIds] of bySpace) {
+      await this.removeAllPersonGroups(groupIds, undefined, spaceId);
+    }
   }
 
   @Chunked()
-  private async removeAllPersonGroups(groupIds: string[], ownerId?: string) {
+  private async removeAllPersonGroups(groupIds: string[], ownerId?: string, spaceId?: string) {
     if (groupIds.length === 0) {
       return;
     }
 
-    const people = await this.personRepository.delete(groupIds, ownerId);
+    const people = spaceId
+      ? await this.personRepository.delete(groupIds, ownerId, spaceId)
+      : await this.personRepository.delete(groupIds, ownerId);
     await Promise.all(people.map((person) => this.storageRepository.unlink(person.thumbnailPath)));
     await this.personRepository.deleteEmptyGroups();
     this.logger.debug(`Deleted ${groupIds.length} people`);
@@ -501,9 +549,11 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { ownerId, clusterGroupId } = face.asset;
+    const { ownerId, clusterGroupId, spaceId } = face.asset;
+    // fork: shared-libraries - faces on space assets cluster only against that space (S9).
+    const faceScope = spaceId ? { spaceId } : { clusterGroupId };
     const matches = await this.searchRepository.searchFaces({
-      clusterGroupId,
+      ...faceScope,
       embedding: face.faceSearch.embedding,
       maxDistance: machineLearning.facialRecognition.maxDistance,
       numResults: machineLearning.facialRecognition.minFaces,
@@ -530,7 +580,7 @@ export class PersonService extends BaseService {
     let personGroupId = matches.find((match) => match.personGroupId)?.personGroupId;
     if (!personGroupId) {
       const [matchWithPerson] = await this.searchRepository.searchFaces({
-        clusterGroupId,
+        ...faceScope,
         embedding: face.faceSearch.embedding,
         maxDistance: machineLearning.facialRecognition.maxDistance,
         numResults: 1,
@@ -542,17 +592,26 @@ export class PersonService extends BaseService {
     }
 
     if (!personGroupId && isCore) {
-      const group = await this.personRepository.createGroup(ownerId);
+      // fork: shared-libraries - space faces get a group in the space's universe (S9).
+      const group = spaceId
+        ? await this.personRepository.createSpaceGroup(spaceId)
+        : await this.personRepository.createGroup(ownerId);
       personGroupId = group.id;
       this.logger.log(`Created person group ${personGroupId} for face ${id}`);
     }
 
     if (personGroupId) {
-      const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
+      const person = spaceId
+        ? await this.personRepository.getSpacePerson(spaceId, personGroupId)
+        : await this.personRepository.getByGroupId({ ownerId, personGroupId });
       if (person) {
         this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
       } else {
-        await this.personRepository.create({ ownerId, faceAssetId: face.id, personGroupId });
+        await this.personRepository.create(
+          spaceId
+            ? { ownerId, faceAssetId: face.id, personGroupId, spaceId }
+            : { ownerId, faceAssetId: face.id, personGroupId, spaceId: null },
+        );
         this.logger.log(`Created person for face ${id} in group ${personGroupId}`);
         await this.jobRepository.queue({
           name: JobName.PersonGenerateThumbnail,
@@ -609,15 +668,18 @@ export class PersonService extends BaseService {
         continue;
       }
 
-      for (const mergePerson of peopleMap[mergeId]) {
-        if (!targetPeople[mergePerson.ownerId]) {
-          targetPeople[mergePerson.ownerId] = mergePerson;
+      for (const mergePerson of peopleMap[mergeId] ?? []) {
+        // fork: shared-libraries - space people merge within their space, not per owner (S9).
+        const scopeKey = mergePerson.spaceId ?? mergePerson.ownerId;
+        if (!targetPeople[scopeKey]) {
+          targetPeople[scopeKey] = mergePerson;
           continue;
         }
 
-        const targetPerson = targetPeople[mergePerson.ownerId];
+        const targetPerson = targetPeople[scopeKey];
 
         if (
+          !mergePerson.spaceId &&
           mergePerson.ownerId !== auth.user.id &&
           ((targetPerson.name && mergePerson.name) || (targetPerson.birthDate && mergePerson.birthDate))
         ) {
@@ -633,7 +695,7 @@ export class PersonService extends BaseService {
         );
 
         if (Object.keys(changes).length > 0) {
-          targetPeople[mergePerson.ownerId] = await this.personRepository.update({
+          targetPeople[scopeKey] = await this.personRepository.update({
             ownerId: targetPerson.ownerId,
             personGroupId: targetPerson.personGroupId,
             ...changes,
@@ -641,16 +703,23 @@ export class PersonService extends BaseService {
         }
 
         const mergeName = mergePerson.name || mergePerson.personGroupId;
-        const mergeData: UpdateFacesData = {
-          oldPersonGroupId: mergeId,
-          newPersonGroupId: targetPerson.personGroupId,
-          ownerId: targetPerson.ownerId,
-        };
+        // fork: shared-libraries - space merges move only that space's faces (S9).
+        const mergeData: UpdateFacesData = targetPerson.spaceId
+          ? {
+              oldPersonGroupId: mergeId,
+              newPersonGroupId: targetPerson.personGroupId,
+              spaceId: targetPerson.spaceId,
+            }
+          : {
+              oldPersonGroupId: mergeId,
+              newPersonGroupId: targetPerson.personGroupId,
+              ownerId: targetPerson.ownerId,
+            };
         this.logger.log(`Merging ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
 
         try {
           await this.personRepository.reassignFaces(mergeData);
-          await this.removeAllPersonGroups([mergeId], targetPerson.ownerId);
+          await this.removeAllPersonGroups([mergeId], targetPerson.ownerId, targetPerson.spaceId ?? undefined);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
           results.push({ id: mergeId, success: true });
@@ -664,8 +733,45 @@ export class PersonService extends BaseService {
     return results;
   }
 
+  // fork: shared-libraries - called after a container move: detach machine-learning faces from
+  // the source container's people and re-queue recognition so they cluster in the target (S9).
+  // Manual faces are kept. No-op for moves that stay inside one personal library.
+  async handleContainerMove(move: { assetIds: string[]; fromSpaceId: string | null; toSpaceId: string | null }) {
+    const { assetIds, fromSpaceId, toSpaceId } = move;
+    if (fromSpaceId === toSpaceId || (!fromSpaceId && !toSpaceId)) {
+      return;
+    }
+
+    const assets = await this.assetRepository.getByIds(assetIds);
+    const byOwner = new Map<string, string[]>();
+    for (const asset of assets) {
+      const groupIds = byOwner.get(asset.ownerId) ?? [];
+      groupIds.push(asset.id);
+      byOwner.set(asset.ownerId, groupIds);
+    }
+
+    const faceIds: string[] = [];
+    for (const [ownerId, ids] of byOwner) {
+      faceIds.push(...(await this.personRepository.detachFacesForMove(ids, { spaceId: fromSpaceId, ownerId })));
+    }
+
+    if (faceIds.length > 0) {
+      await this.jobRepository.queueAll(faceIds.map((id) => ({ name: JobName.FacialRecognition, data: { id } })));
+    }
+  }
+
   private findOrFail(auth: AuthDto, personGroupId: string) {
-    return findOrFail(() => this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId }), 'Person');
+    // fork: shared-libraries - members resolve the space-scoped row when they own none (S9).
+    return findOrFail(async () => {
+      const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
+      return person ?? (await this.personRepository.getByGroupIdForUser(personGroupId, auth.user.id));
+    }, 'Person');
+  }
+
+  // fork: shared-libraries - ids of timeline-visible member spaces for people scoping (S9).
+  private async getTimelineSpaceIds(userId: string): Promise<string[]> {
+    const memberships = (await this.personRepository.getMemberSpaceIds(userId, true)) ?? [];
+    return memberships.map(({ spaceId }) => spaceId);
   }
 
   // TODO return a asset face response

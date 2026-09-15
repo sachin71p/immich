@@ -694,7 +694,18 @@ class PersonAccess {
       .selectFrom('person')
       .select('person.personGroupId')
       .where('person.personGroupId', 'in', [...personGroupIds])
-      .where('person.ownerId', '=', userId)
+      .where((eb) =>
+        eb.or([
+          eb('person.ownerId', '=', userId),
+          // fork: shared-libraries - any space member may read/rename/merge space people (S9).
+          eb('person.spaceId', 'in', (sub) =>
+            sub
+              .selectFrom('shared_space_member')
+              .select('shared_space_member.spaceId')
+              .where('shared_space_member.userId', '=', userId),
+          ),
+        ]),
+      )
       .execute()
       .then((persons) => new Set(persons.map((person) => person.personGroupId)));
   }
@@ -711,7 +722,18 @@ class PersonAccess {
       .select('asset_face.id')
       .leftJoin('asset', (join) => join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.deletedAt', 'is', null))
       .where('asset_face.id', 'in', [...assetFaceIds])
-      .where('asset.ownerId', '=', userId)
+      .where((eb) =>
+        eb.or([
+          eb('asset.ownerId', '=', userId),
+          // fork: shared-libraries - members may manage faces on their spaces' assets (S9).
+          eb('asset.spaceId', 'in', (sub) =>
+            sub
+              .selectFrom('shared_space_member')
+              .select('shared_space_member.spaceId')
+              .where('shared_space_member.userId', '=', userId),
+          ),
+        ]),
+      )
       .execute()
       .then((faces) => new Set(faces.map((face) => face.id)));
   }

@@ -189,7 +189,9 @@ export type SmartSearchOptions = SearchDateOptions &
 export type LargeAssetSearchOptions = AssetSearchOptions & { minFileSize?: number };
 
 export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userIds'> {
-  clusterGroupId: string;
+  clusterGroupId?: string;
+  // fork: shared-libraries - when set, match only faces on this space's assets (S9).
+  spaceId?: string;
   hasPerson?: boolean;
   numResults: number;
   maxDistance: number;
@@ -373,7 +375,15 @@ export class SearchRepository {
       },
     ],
   })
-  searchFaces({ clusterGroupId, embedding, numResults, maxDistance, hasPerson, minBirthDate }: FaceEmbeddingSearch) {
+  searchFaces({
+    clusterGroupId,
+    spaceId,
+    embedding,
+    numResults,
+    maxDistance,
+    hasPerson,
+    minBirthDate,
+  }: FaceEmbeddingSearch) {
     if (!z.int().min(1).max(1000).safeParse(numResults).success) {
       throw new Error(`Invalid value for 'numResults': ${numResults}`);
     }
@@ -391,8 +401,12 @@ export class SearchRepository {
               'asset_face.personGroupId',
               sql<number>`face_search.embedding <=> ${embedding}`.as('distance'),
             ])
-            .where('asset.ownerId', 'in', (eb) =>
-              eb.selectFrom('user').select('user.id').where('user.clusterGroupId', '=', clusterGroupId),
+            // fork: shared-libraries - space recognition matches only that space's faces (S9).
+            .$if(!!spaceId, (qb) => qb.where('asset.spaceId', '=', spaceId!))
+            .$if(!spaceId && !!clusterGroupId, (qb) =>
+              qb.where('asset.ownerId', 'in', (eb) =>
+                eb.selectFrom('user').select('user.id').where('user.clusterGroupId', '=', clusterGroupId!),
+              ),
             )
             .where('asset.deletedAt', 'is', null)
             .$if(!!hasPerson, (qb) => qb.where('asset_face.personGroupId', 'is not', null))
@@ -404,7 +418,8 @@ export class SearchRepository {
                       .selectFrom('person')
                       .select('person.personGroupId')
                       .whereRef('person.personGroupId', '=', 'asset_face.personGroupId')
-                      .where('person.birthDate', '>', minBirthDate!),
+                      .where('person.birthDate', '>', minBirthDate!)
+                      .$if(!!spaceId, (qb) => qb.where('person.spaceId', '=', spaceId!)),
                   ),
                 ),
               ),

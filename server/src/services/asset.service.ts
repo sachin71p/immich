@@ -42,6 +42,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PersonService } from 'src/services/person.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import {
   getAssetFiles,
@@ -61,6 +62,8 @@ import { transformOcrBoundingBox } from 'src/utils/transform.js';
 export class AssetService extends BaseService {
   // fork: shared-libraries
   @Inject() private containerScopeService!: ContainerScopeService;
+  // fork: shared-libraries
+  @Inject() private personService!: PersonService;
   // fork: shared-libraries
   async move(auth: AuthDto, dto: AssetMoveDto): Promise<AssetMoveResponseDto> {
     const requested = await this.assetRepository.getByIds(dto.assetIds);
@@ -148,6 +151,12 @@ export class AssetService extends BaseService {
         }
       }
       await this.assetRepository.moveWithRelocation(groupIds, target, auth.user.id);
+      // fork: shared-libraries - re-cluster faces when a move crosses a space boundary (S9).
+      await this.personService.handleContainerMove({
+        assetIds: groupIds,
+        fromSpaceId: asset.spaceId,
+        toSpaceId: target.spaceId,
+      });
       await Promise.all(
         group.map((item) =>
           this.eventRepository.emit('AssetMetadataExtracted', {

@@ -25,6 +25,8 @@ const PersonCreateSchema = z
     isHidden: z.boolean().optional().describe('Person visibility (hidden)'),
     isFavorite: z.boolean().optional().describe('Mark as favorite'),
     color: hexColor.nullable().optional().describe('Person color (hex)'),
+    // fork: shared-libraries - create a space-scoped person (S9).
+    spaceId: z.uuidv4().optional().describe('Shared space ID'),
   })
   .meta({ id: 'PersonCreateDto' });
 
@@ -83,6 +85,8 @@ export const PersonResponseSchema = z
       .optional()
       .describe('Person color (hex)')
       .meta(new HistoryBuilder().added('v1.126.0').stable('v2').getExtensions()),
+    // fork: shared-libraries - space-scoped person (S9); absent for personal people.
+    spaceId: z.uuidv4().nullable().optional().describe('Shared space ID'),
   })
   .meta({ id: 'PersonResponseDto' });
 
@@ -180,6 +184,8 @@ export function mapPerson(person: MaybeDehydrated<Person>): PersonResponseDto {
     isHidden: person.isHidden,
     isFavorite: person.isFavorite,
     color: person.color ?? undefined,
+    // fork: shared-libraries - space scope of the person (S9).
+    spaceId: person.spaceId ?? undefined,
     updatedAt: asDateTimeString(person.updatedAt),
   };
 }

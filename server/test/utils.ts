@@ -450,6 +450,8 @@ export const newTestService = <T extends BaseService>(
   );
   // fork: shared-libraries - production uses Nest property injection for this provider.
   Object.assign(sut, { containerScopeService: { resolve: vitest.fn().mockResolvedValue(undefined) } });
+  // fork: shared-libraries - AssetService.move re-clusters faces via PersonService (S9).
+  Object.assign(sut, { personService: { handleContainerMove: vitest.fn().mockResolvedValue(undefined) } });
 
   return {
     sut,

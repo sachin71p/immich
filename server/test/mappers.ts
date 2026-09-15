@@ -58,7 +58,10 @@ export const getAsDetectedFace = (face: ReturnType<AssetFaceFactory['build']>) =
 export const getForFacialRecognitionJob = (
   face: ReturnType<AssetFaceFactory['build']>,
   asset:
-    (Pick<Selectable<AssetTable>, 'ownerId' | 'visibility' | 'fileCreatedAt'> & { clusterGroupId?: string }) | null,
+    | (Pick<Selectable<AssetTable>, 'ownerId' | 'visibility' | 'fileCreatedAt' | 'spaceId'> & {
+        clusterGroupId?: string;
+      })
+    | null,
 ) => ({
   ...face,
   asset: asset
@@ -67,6 +70,8 @@ export const getForFacialRecognitionJob = (
         clusterGroupId: asset.clusterGroupId ?? newUuid(),
         visibility: asset.visibility,
         fileCreatedAt: asset.fileCreatedAt.toISOString(),
+        // fork: shared-libraries - route space-asset faces to space-scoped recognition (S9).
+        spaceId: asset.spaceId ?? null,
       }
     : null,
   faceSearch: { faceId: face.id, embedding: '[1, 2, 3, 4]' },
