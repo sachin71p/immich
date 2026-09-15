@@ -10,7 +10,7 @@ Legend: ⬜ todo · 🟨 in progress · ✅ done · ⛔ blocked · ➖ skipped
 | S3 | Storage keys & relocation engine | S1 (parallel-safe with S2) | **high** | ✅ | 83f80f33f | check/lint and focused suites PASS; full unit suite blocked by sandbox socket policy |
 | S4 | Spaces/library-member API, move API, upload target, lifecycle | S2, S3 | **high** | ✅ | 19cce54f5 | typecheck/lint and focused suites PASS; full unit suite blocked by sandbox socket policy; Dart SDK regen needs Java |
 | S5 | Visibility scope across queries | S4 | **high** | ✅ | 98f0179d9 | check/lint and 181 focused tests PASS; full/medium suites blocked by sandbox/socket and no Docker |
-| T0 | Test harness: fixtures, world, disk oracle, runner, coverage | S0 (parallel-safe with S6/S7) | med | ⬜ | | see TESTING.md |
+| T0 | Test harness: fixtures, world, disk oracle, runner, coverage | S0 (parallel-safe with S6/S7) | med | 🟨 | 83f7fc363 | verifier PARTIAL: harness runs, 16 missing IDs are untagged S6/S7/S8a specs (backfill); unit/e2e need Docker host |
 | T1 | Regression backfill for S1–S5 (host run with Docker) | T0 | **high** | ⬜ | | S1–S5 were ✅ without medium/e2e runs |
 | S6 | Sync stream for spaces & shared libraries | S5 | **high** | ✅ | 41822db64 | check/lint pass; focused sync tests pass; full suite blocked by sandbox socket policy; medium needs container runtime |
 | S7 | Full metadata endpoint & extended search filters | S5 | med | ✅ | 231211358 | check/lint and 241 configured focused tests pass; bare plan Vitest command lacks alias config; full/medium suites constrained by sandbox/container |
