@@ -63,13 +63,21 @@ after `utils.resetDatabase()`. Composition:
   alice personal; the duplicate pair split between bob personal and Camera.
 - Preferences: bob `defaultUploadTarget = Family Mobile`; alice default personal.
 - Variants: `buildWorld({ storageTemplate: 'on' | 'off' })` — R17 cases run in both.
-Media location: the fork compose override bind-mounts the server's media root to `e2e/.fork-data/` so tests can
-check real files on the host (see T0).
+Media location: the fork compose override sets `IMMICH_MEDIA_LOCATION=/fork-data` and bind-mounts it to
+`e2e/.fork-data/` so tests can check real files on the host (see T0). Container `/fork-data/…` maps 1:1 to the
+host mirror (`toHostPath` in `fork/disk.ts`, rooted at the exported `containerMediaRoot`). Two consequences:
+- Template-OFF originals carry the server's stored basename (`<upload-uuid>.<ext>`), not the client filename —
+  oracles must derive nesting from `basename(originalPath)` (see §4). Template-ON originals keep display names.
+- Any spec hardcoding `/data/…` container paths (upstream `integrity.e2e-spec`) is invalid on the fork stack —
+  it plants/scans a tree the server never writes. Those specs run only via the `upstream` tier (§6, §8).
+`uploadFixture` also uploads each fixture's `<file>.xmp` sidecar when present, so sidecar assertions hold.
 
 ## §4 Test helpers (fork-only files)
-- `fork/disk.ts` — `expectedPaths(asset, world, template)`: an **independent** re-implementation of DECISIONS §7
-  (do not import server code — the point is to catch server regressions). `expectFilesAt(asset)` asserts original,
-  sidecar, thumbnail, preview, fullsize, encoded video exist at expected host paths and old paths are gone.
+- `fork/disk.ts` — `expectFilesAt(asset, { template, … })`: an **independent** re-implementation of DECISIONS §7
+  (do not import server code — the point is to catch server regressions). It asserts original, sidecar, thumbnail,
+  preview, fullsize, encoded video exist at expected host paths and old paths are gone. Template-OFF originals are
+  asserted exactly via `expectedUploadPath(storageKey, basename(originalPath))` — never from `originalFileName`.
+  Sidecars live at `<originalPath>.xmp` (server migrates them with the original in both modes).
   `auditDisk()` walks `e2e/.fork-data/{library,upload,thumbs,encoded-video}` and the DB (via API/admin query) and
   reports orphans and missing files.
 - `fork/jobs.ts` — `settle()`: wait for all queues (storage template/relocation, thumbnails, metadata, library)
@@ -206,7 +214,8 @@ cases for phases already done when this plan was added).
   wait healthy; `cd e2e && VITEST_DISABLE_DOCKER_SETUP=true pnpm test -- src/specs/server/api/fork`.
 - `e2e-web` → same stack; `cd e2e && pnpm test:web -- src/specs/web/fork`.
 - `apple` → `native-apple/scripts/verify.sh core` (+ `ios`/`mac` when requested).
-- `upstream` → upstream e2e API + web + medium suites (INV-03).
+- `upstream` → upstream e2e API + web + medium suites (INV-03), always on the DEFAULT compose stack
+  (no fork override): upstream specs hardcode `/data/…` container paths and are invalid under `/fork-data`.
 - `upgrade` → UP-01 + INV-02 scripts.
 - `coverage` → greps all fork specs for `[ID]` tags and diffs against §5; fails if a case owned by a completed
   phase (per STATUS.md ✅) has no test.
@@ -228,6 +237,9 @@ Output: `e2e/.fork-report/<timestamp>.md` — per tier pass/fail/skip counts and
   run those tiers with the sandbox disabled on a host with Docker Desktop running, or report the tier as
   **NOT RUN** — never PASS. The orchestrator must not mark a phase ✅ with server-behaviour tiers NOT RUN; mark it
   🟨 "awaiting host run" and ask the user to run `scripts/fork-test/run.sh <tiers>`.
+- Container/host path split: the fork stack (`+ docker-compose.fork.yml`) serves `/fork-data`; the default stack
+  serves `/data`. Never run upstream path-planting specs (notably `integrity.e2e-spec`, which `docker exec`s files
+  into `/data/upload/…`) on the fork stack — every detection reads zero. Fork-oracle specs run on the fork stack.
 - Apple tier needs a healthy Xcode toolchain on the host (A0 reported an SDK/compiler mismatch — fix before A1).
 - Upstream server medium specs have two host prerequisites (both provided by mise — never run them with bare
   `pnpm`, which silently uses the wrong toolchain): (1) `mise run //:plugins` must have built

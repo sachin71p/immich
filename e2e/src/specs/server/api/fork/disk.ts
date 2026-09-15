@@ -14,12 +14,17 @@
 // maps 1:1; /test-assets import paths map to e2e/test-assets on the host.
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { expect } from 'vitest';
 
 const e2eDir = join(import.meta.dirname, '..', '..', '..', '..', '..');
 export const forkDataDir = join(e2eDir, '.fork-data');
 export const hostTestAssetDir = join(e2eDir, 'test-assets');
+
+/** Container media root on the fork stack (IMMICH_MEDIA_LOCATION in docker-compose.fork.yml). */
+export const containerMediaRoot = '/fork-data';
+/** Container mount of the upstream test-assets tree (read-write on the fork stack). */
+export const containerTestAssetRoot = '/test-assets';
 
 /** Storage key K(asset): `shared/<spaceId>` for space assets, else ownerId. */
 export const storageKey = (asset: { ownerId: string; spaceId?: string | null }): string =>
@@ -28,9 +33,16 @@ export const storageKey = (asset: { ownerId: string; spaceId?: string | null }):
 const nested = (base: string, key: string, filename: string): string =>
   join(base, key, filename.slice(0, 2), filename.slice(2, 4), filename);
 
-/** Exact template-OFF original location (host path). */
-export const expectedUploadPath = (key: string, filename: string): string =>
-  join(nested(join(forkDataDir, 'upload'), key, filename), filename);
+/**
+ * Exact template-OFF original location (host path).
+ *
+ * `storedFilename` is the on-disk basename — `basename()` of the
+ * API-reported `originalPath` — which the server derives from the upload
+ * uuid (`<uuid>.<ext>`), NOT the client `originalFileName`. Passing the
+ * client filename computes nesting the server never wrote.
+ */
+export const expectedUploadPath = (key: string, storedFilename: string): string =>
+  nested(join(forkDataDir, 'upload'), key, storedFilename);
 
 /** Host prefix of a personal library tree (template ON): library/<label>. */
 export const personalLibraryPrefix = (storageLabelOrId: string): string =>
@@ -76,7 +88,7 @@ export interface ExpectFilesAtOptions {
 /** Assert original, sidecar, and derived files are at their expected host paths. */
 export const expectFilesAt = (asset: DiskAsset, opts: ExpectFilesAtOptions): void => {
   if (opts.template === 'off' && !asset.libraryId) {
-    const exact = expectedUploadPath(storageKey(asset), asset.originalFileName);
+    const exact = expectedUploadPath(storageKey(asset), basename(asset.originalPath));
     expect(existsSync(exact), `original missing at ${exact} (container: ${asset.originalPath})`).toBe(true);
   } else if (opts.hostPrefix && !asset.libraryId) {
     const found = findUnder(opts.hostPrefix, asset.originalFileName);
@@ -100,11 +112,11 @@ export const expectFilesAt = (asset: DiskAsset, opts: ExpectFilesAtOptions): voi
 
 /** Map a container path reported by the API to its host mirror path. */
 export const toHostPath = (containerPath: string): string | null => {
-  if (containerPath.startsWith('/fork-data/')) {
-    return join(forkDataDir, containerPath.slice('/fork-data/'.length));
+  if (containerPath.startsWith(`${containerMediaRoot}/`)) {
+    return join(forkDataDir, containerPath.slice(containerMediaRoot.length + 1));
   }
-  if (containerPath.startsWith('/test-assets/')) {
-    return join(hostTestAssetDir, containerPath.slice('/test-assets/'.length));
+  if (containerPath.startsWith(`${containerTestAssetRoot}/`)) {
+    return join(hostTestAssetDir, containerPath.slice(containerTestAssetRoot.length + 1));
   }
   return null;
 };
@@ -137,32 +149,36 @@ export const auditDisk = async (listDbFiles: () => Promise<DbFileEntry[]>): Prom
   const ids = new Set(entries.map((e) => e.id));
   const referenced = new Set<string>();
   const missing: string[] = [];
-  for (const entry of entries) {
-    for (const containerPath of [entry.originalPath, entry.sidecarPath]) {
-      if (!containerPath) {
-        continue;
-      }
-      const host = toHostPath(containerPath);
-      if (!host) {
-        continue;
-      }
-      referenced.add(host);
-      if (!existsSync(host)) {
-        missing.push(host);
-      }
+  const collectPath = (containerPath: string | null | undefined) => {
+    if (!containerPath) {
+      return;
     }
+    const host = toHostPath(containerPath);
+    if (!host) {
+      return;
+    }
+    referenced.add(host);
+    if (!existsSync(host)) {
+      missing.push(host);
+    }
+  };
+  for (const entry of entries) {
+    collectPath(entry.originalPath);
+    collectPath(entry.sidecarPath);
   }
   const orphans: string[] = [];
+  // Derived filenames embed the asset id (<id>_<type>.<ext>); sidecars
+  // sit next to their original.
+  const isOrphan = (file: string): boolean => {
+    if (referenced.has(file)) {
+      return false;
+    }
+    const base = basename(file);
+    return !ids.has(base.split('_', 1)[0]) && [...ids].every((id) => !base.includes(id));
+  };
   for (const folder of ['library', 'upload', 'thumbs', 'encoded-video']) {
     for (const file of walkFiles(join(forkDataDir, folder))) {
-      if (referenced.has(file)) {
-        continue;
-      }
-      // Derived filenames embed the asset id (<id>_<type>.<ext>); sidecars
-      // sit next to their original.
-      const base = file.split('/').pop() ?? '';
-      const known = ids.has(base.split('_')[0]) || [...ids].some((id) => base.includes(id));
-      if (!known) {
+      if (isOrphan(file)) {
         orphans.push(file);
       }
     }

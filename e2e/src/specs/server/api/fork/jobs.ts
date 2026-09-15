@@ -10,13 +10,13 @@ import { utils } from 'src/utils.js';
 
 type LegacyQueue = keyof QueuesResponseLegacyDto;
 
-const settleQueues: LegacyQueue[] = [
+const settleQueues = new Set<LegacyQueue>([
   'thumbnailGeneration',
   'metadataExtraction',
   'sidecar',
   'library',
   'storageTemplateMigration',
-];
+]);
 
 /** Wait until all fork-relevant queues (and any extra ones) are empty. */
 export const settle = async (adminToken: string, extraQueues: LegacyQueue[] = []): Promise<void> => {
@@ -26,7 +26,7 @@ export const settle = async (adminToken: string, extraQueues: LegacyQueue[] = []
     } catch (error) {
       // Unknown queue keys (e.g. before a phase registers them) must not fail
       // the harness: only the known queues are required.
-      if (!settleQueues.includes(queue)) {
+      if (!settleQueues.has(queue)) {
         continue;
       }
       throw error;

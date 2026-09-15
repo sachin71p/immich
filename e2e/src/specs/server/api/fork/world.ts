@@ -101,10 +101,30 @@ const manifestFile = (manifestId: string): string => {
   return entry.file;
 };
 
+export const requireAssetId = (asset: { id?: string }, label: string): string => {
+  if (!asset?.id) {
+    throw new Error(`upload failed for ${label}: ${JSON.stringify(asset)}`);
+  }
+  return asset.id;
+};
+
 export const uploadFixture = async (token: string, manifestId: string, extra?: { spaceId?: string }) => {
   const file = manifestFile(manifestId);
   const bytes = readFileSync(join(generatedDir, file));
-  return utils.createAsset(token, { assetData: { bytes, filename: file }, ...(extra ?? {}) });
+  // Fixtures with a `<file>.xmp` next to them (fork-06/07/08/10) must upload
+  // it as sidecarData, otherwise the server never writes `<original>.xmp`
+  // and the disk oracle's sidecar assertion cannot pass.
+  const sidecarFile = join(generatedDir, `${file}.xmp`);
+  const sidecarData = existsSync(sidecarFile)
+    ? { bytes: readFileSync(sidecarFile), filename: `${file}.xmp` }
+    : undefined;
+  const asset = await utils.createAsset(token, {
+    assetData: { bytes, filename: file },
+    ...(sidecarData && { sidecarData }),
+    ...extra,
+  });
+  requireAssetId(asset, `fixture ${manifestId}`);
+  return asset;
 };
 
 export interface BuildWorldOptions {
@@ -205,16 +225,19 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
     const video = await utils.createAsset(alice.login.accessToken, {
       assetData: { bytes: readFileSync(liveMotion), filename: 'live.mov' },
     });
+    requireAssetId(video, 'personal live.mov');
     const still = await utils.createAsset(alice.login.accessToken, {
       assetData: { bytes: readFileSync(liveStill), filename: 'live.heic' },
       livePhotoVideoId: video.id,
     });
+    requireAssetId(still, 'personal live.heic');
     track(still.id, 'personal-live', 'alice');
   } else {
     const bytes = readFileSync(join(testAssetDir, 'formats', 'motionphoto', 'pixel-8a.jpg'));
     const motion = await utils.createAsset(alice.login.accessToken, {
       assetData: { bytes, filename: 'pixel-8a.jpg' },
     });
+    requireAssetId(motion, 'upstream pixel-8a.jpg');
     track(motion.id, 'up-motion-jpg', 'alice');
   }
 
