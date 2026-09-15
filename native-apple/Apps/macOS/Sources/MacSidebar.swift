@@ -17,6 +17,7 @@ struct MacSidebarView: View {
       Section("Library") {
         row(.library)
         row(.collections)
+        row(.search)
       }
       Section("Pinned") {
         row(.favorites)

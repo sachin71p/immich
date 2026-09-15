@@ -7,6 +7,7 @@ import Rules
 public enum SidebarDestination: Sendable, Hashable {
   case library
   case collections
+  case search
   case favorites
   case recentlySaved
   case map
@@ -28,6 +29,7 @@ public enum SidebarDestination: Sendable, Hashable {
     switch self {
     case .library: return "Library"
     case .collections: return "Collections"
+    case .search: return "Search"
     case .favorites: return "Favorites"
     case .recentlySaved: return "Recently Saved"
     case .map: return "Map"
@@ -52,6 +54,7 @@ public enum SidebarDestination: Sendable, Hashable {
     switch self {
     case .library: return "photo.on.rectangle"
     case .collections: return "rectangle.grid.2x2"
+    case .search: return "magnifyingglass"
     case .favorites: return "heart"
     case .recentlySaved: return "tray.and.arrow.down"
     case .map: return "map"
@@ -89,6 +92,7 @@ public enum DestinationQuery: Sendable, Hashable {
   case map
   case people
   case memories
+  case search
 }
 
 extension SidebarDestination {
@@ -96,6 +100,7 @@ extension SidebarDestination {
     switch self {
     case .library: return .timeline(nil)
     case .collections: return .timeline(nil)
+    case .search: return .search
     case .favorites: return .favorites(nil)
     case .recentlySaved: return .recents(nil)
     case .map: return .map
