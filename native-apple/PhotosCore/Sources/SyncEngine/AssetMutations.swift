@@ -30,6 +30,14 @@ public struct AssetMutations: Sendable {
     try await localStore.setVisibility(ids: ids, visibility: isArchived ? .archive : .timeline)
   }
 
+  /// Hides/unhides via the same bulk-update visibility field as archive (DECISIONS §4 edit rights).
+  public func setHidden(ids: [String], isHidden: Bool) async throws {
+    let visibility: Components.Schemas.AssetVisibility = isHidden ? .hidden : .timeline
+    let input = Operations.updateAssets.Input(body: .json(.init(ids: ids, visibility: visibility)))
+    _ = try await connection.client.updateAssets(input)
+    try await localStore.setVisibility(ids: ids, visibility: isHidden ? .hidden : .timeline)
+  }
+
   /// Trash (soft delete, `force: false`).
   public func trash(ids: [String]) async throws {
     let input = Operations.deleteAssets.Input(body: .json(.init(force: false, ids: ids)))

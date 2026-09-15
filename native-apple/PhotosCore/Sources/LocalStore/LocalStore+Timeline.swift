@@ -23,7 +23,7 @@ extension PhotosLocalStore {
   /// The row projection shared by every query below — kept in one place so the `mediaKind` heuristics
   /// (live/panorama/video from data we already have; screenshot is a best-effort filename heuristic,
   /// no DECISIONS section defines one) never drift between call sites.
-  private static let rowSelectSQL = """
+  static let rowSelectSQL = """
     SELECT asset.id AS id, asset.thumbhash AS thumbhash, asset.width AS width, asset.height AS height,
       asset.isFavorite AS isFavorite, asset.deletedAt AS deletedAt, asset.visibility AS visibility,
       asset.localDateTime AS localDateTime,
@@ -38,7 +38,7 @@ extension PhotosLocalStore {
     LEFT JOIN assetExif ON assetExif.assetId = asset.id
     """
 
-  private static func row(from row: Row) -> TimelineRow {
+  static func row(from row: Row) -> TimelineRow {
     let width: Int? = row["width"]
     let height: Int? = row["height"]
     let ratio: Double
@@ -59,7 +59,7 @@ extension PhotosLocalStore {
     )
   }
 
-  private static func scopeWhere(_ scope: ContainerScope) -> (sql: String, arguments: [String]) {
+  static func scopeWhere(_ scope: ContainerScope) -> (sql: String, arguments: [String]) {
     var clauses: [String] = []
     var args: [String] = []
     if !scope.personalUserIds.isEmpty {

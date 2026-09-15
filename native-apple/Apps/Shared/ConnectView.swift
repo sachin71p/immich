@@ -27,6 +27,7 @@ struct ConnectView: View {
         try await connection.ping()
         let token = try await connection.login(email: email, password: password)
         try SharedTokenStore.save(token)
+        UserDefaults.standard.set(url.absoluteString, forKey: "PhotosFork.serverURL")
         status = "Connected"
       } catch {
         status = "Could not connect: \(error.localizedDescription)"

@@ -25,6 +25,9 @@ filter:
     - deleteAlbum
     - addAssetsToAlbum
     - removeAssetFromAlbum
+    # A3: album sharing (share with users, remove member)
+    - addUsersToAlbum
+    - removeUserFromAlbum
     # shared spaces
     - getAll
     - create

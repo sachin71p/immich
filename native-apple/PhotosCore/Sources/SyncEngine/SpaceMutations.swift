@@ -60,4 +60,42 @@ public struct SpaceMutations: Sendable {
     _ = try await connection.client.removeMember(input)
     try await localStore.removeSpaceMemberLocally(spaceId: spaceId, userId: userId)
   }
+
+  /// The "Show in timeline" toggle — `PATCH /shared-spaces/{id}/members/me` (DECISIONS §9
+  /// `space_member.showInTimeline`). The app layer's management sheet calls this, then re-resolves
+  /// `Rules.TimelineScope` so the grid updates immediately.
+  public func setShowInTimeline(spaceId: String, show: Bool) async throws {
+    let input = Operations.updateMyTimeline.Input(
+      path: .init(id: spaceId), body: .json(.init(showInTimeline: show)))
+    _ = try await connection.client.updateMyTimeline(input)
+    let userId = try await connection.currentUserId()
+    try await localStore.setSpaceShowInTimeline(spaceId: spaceId, userId: userId, show: show)
+  }
+
+  /// Ownership transfer — `PUT /shared-spaces/{id}/owner` (DECISIONS §8 "owner ↔ contributor role
+  /// swap in one transaction"). Owner-only server-side; the local mirror applies the same swap.
+  public func transferOwnership(spaceId: String, fromUserId: String, toUserId: String) async throws {
+    let input = Operations.transferOwner.Input(
+      path: .init(id: spaceId), body: .json(.init(userId: toUserId)))
+    _ = try await connection.client.transferOwner(input)
+    try await localStore.swapSpaceOwnership(spaceId: spaceId, fromUserId: fromUserId, toUserId: toUserId)
+  }
+
+  /// Re-reads the member list (`GET /shared-spaces/{id}/members`) and reconciles the local mirror —
+  /// the space detail screen calls this on appear so role/showInTimeline changes made on another
+  /// device show up without waiting for a sync tick.
+  public func refreshMembers(spaceId: String) async throws -> [SpaceMember] {
+    let output = try await connection.client.getMembers(.init(path: .init(id: spaceId)))
+    guard case let .ok(response) = output, case let .json(body) = response.body else {
+      throw AssetMutationError.unexpectedResponse
+    }
+    let members = body.map {
+      SpaceMember(
+        spaceId: spaceId, userId: $0.userId,
+        role: SharedSpaceRoleKind(rawValue: $0.role.rawValue) ?? .contributor,
+        showInTimeline: $0.showInTimeline)
+    }
+    try await localStore.replaceSpaceMembers(spaceId: spaceId, members: members)
+    return members
+  }
 }

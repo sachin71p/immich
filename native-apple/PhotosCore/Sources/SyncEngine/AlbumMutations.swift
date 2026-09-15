@@ -39,6 +39,18 @@ public struct AlbumMutations: Sendable {
     try await localStore.deleteAlbumLocally(id: id)
   }
 
+  /// Renames the album (`PATCH /albums/{id}`) — album-level setting, gated by role in the app
+  /// layer (DECISIONS §4).
+  public func renameAlbum(id: String, name: String) async throws {
+    let input = Operations.updateAlbumInfo.Input(
+      path: .init(id: id), body: .json(.init(albumName: name)))
+    _ = try await connection.client.updateAlbumInfo(input)
+    if var album = try await localStore.album(id: id) {
+      album.name = name
+      try await localStore.upsertAlbumLocally(album)
+    }
+  }
+
   @discardableResult
   public func addAssets(_ assetIds: [String], toAlbum albumId: String) async throws -> Bool {
     let input = Operations.addAssetsToAlbum.Input(path: .init(id: albumId), body: .json(.init(ids: assetIds)))
@@ -53,5 +65,24 @@ public struct AlbumMutations: Sendable {
     _ = try await connection.client.removeAssetFromAlbum(input)
     try await localStore.removeAssets(assetIds, fromAlbum: albumId)
     return true
+  }
+
+  /// Shares the album with users — `PUT /albums/{id}/users` (brief task 7 "share with users").
+  /// New members join as viewers (DECISIONS §4: any member may add/remove assets; role only gates
+  /// album-level settings).
+  public func shareWithUsers(_ userIds: [String], albumId: String) async throws {
+    let input = Operations.addUsersToAlbum.Input(
+      path: .init(id: albumId),
+      body: .json(.init(albumUsers: userIds.map { .init(role: .viewer, userId: $0) })))
+    _ = try await connection.client.addUsersToAlbum(input)
+    for userId in userIds {
+      try await localStore.upsertAlbumMember(AlbumMember(albumId: albumId, userId: userId, role: .viewer))
+    }
+  }
+
+  public func removeUser(_ userId: String, fromAlbum albumId: String) async throws {
+    let input = Operations.removeUserFromAlbum.Input(path: .init(id: albumId, userId: userId))
+    _ = try await connection.client.removeUserFromAlbum(input)
+    try await localStore.removeAlbumMemberLocally(albumId: albumId, userId: userId)
   }
 }

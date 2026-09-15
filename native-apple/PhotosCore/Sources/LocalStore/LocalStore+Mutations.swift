@@ -151,6 +151,51 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Replaces a space's member rows with the server-read list (`SpaceMutations.refreshMembers`).
+  public func replaceSpaceMembers(spaceId: String, members: [SpaceMember]) async throws {
+    try await dbQueue.write { db in
+      try db.execute(sql: "DELETE FROM spaceMember WHERE spaceId = ?", arguments: [spaceId])
+      for member in members {
+        try SpaceMemberRecord(member).save(db)
+      }
+    }
+  }
+
+  /// Local half of the DECISIONS §8 ownership transfer (owner ↔ contributor swap in one transaction).
+  public func swapSpaceOwnership(spaceId: String, fromUserId: String, toUserId: String) async throws {
+    try await dbQueue.write { db in
+      try db.execute(
+        sql: "UPDATE spaceMember SET role = 'contributor' WHERE spaceId = ? AND userId = ?",
+        arguments: [spaceId, fromUserId]
+      )
+      try db.execute(
+        sql: "UPDATE spaceMember SET role = 'owner' WHERE spaceId = ? AND userId = ?",
+        arguments: [spaceId, toUserId]
+      )
+    }
+  }
+
+  /// Local half of the DECISIONS §9 `showInTimeline` toggle (`SpaceMutations.setShowInTimeline`) —
+  /// only the acting user's own membership row changes.
+  public func setSpaceShowInTimeline(spaceId: String, userId: String, show: Bool) async throws {
+    try await dbQueue.write { db in
+      try db.execute(
+        sql: "UPDATE spaceMember SET showInTimeline = ? WHERE spaceId = ? AND userId = ?",
+        arguments: [show, spaceId, userId]
+      )
+    }
+  }
+
+  public func upsertAlbumMember(_ member: AlbumMember) async throws {
+    try await dbQueue.write { db in try AlbumUserRecord(member).save(db) }
+  }
+
+  public func removeAlbumMemberLocally(albumId: String, userId: String) async throws {
+    try await dbQueue.write { db in
+      try AlbumUserRecord.deleteOne(db, key: ["albumId": albumId, "userId": userId])
+    }
+  }
+
   static func placeholdersList(_ count: Int) -> String {
     Array(repeating: "?", count: count).joined(separator: ",")
   }

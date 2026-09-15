@@ -44,6 +44,19 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
   }
 }
 
+/// An asset carrying GPS — the Places map's pin set (backed by `assetExif` lat/lng).
+public struct LocatedAsset: Sendable, Hashable, Identifiable {
+  public var id: String
+  public var latitude: Double
+  public var longitude: Double
+
+  public init(id: String, latitude: Double, longitude: Double) {
+    self.id = id
+    self.latitude = latitude
+    self.longitude = longitude
+  }
+}
+
 /// One month or day bucket header with its asset count — the unit the grid paginates by.
 public struct TimelineBucket: Sendable, Hashable {
   /// `yyyy-MM` for month buckets, `yyyy-MM-dd` for day buckets.

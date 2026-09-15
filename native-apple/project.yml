@@ -19,6 +19,22 @@ targets:
     dependencies:
       - package: PhotosCore
         product: ImmichAPI
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: Rules
+      - package: PhotosCore
+        product: LocalStore
+      - package: PhotosCore
+        product: SyncEngine
+      - package: PhotosCore
+        product: Media
+  PhotosFork-iOS-UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Apps/iOS/UITests]
+    dependencies:
+      - target: PhotosFork-iOS
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.ios
@@ -31,10 +47,29 @@ targets:
     dependencies:
       - package: PhotosCore
         product: ImmichAPI
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: Rules
+      - package: PhotosCore
+        product: LocalStore
+      - package: PhotosCore
+        product: SyncEngine
+      - package: PhotosCore
+        product: Media
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.macos
         CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+  PhotosFork-macOS-UITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [Apps/macOS/UITests]
+    dependencies:
+      - target: PhotosFork-macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.macos.uitests
   PhotosFork-BackgroundUpload:
     type: app-extension
     platform: iOS
@@ -85,10 +120,11 @@ schemes:
       targets:
         PhotosFork-iOS: all
     test:
-      targets: []
+      targets: [PhotosFork-iOS-UITests]
   PhotosFork-macOS:
     build:
       targets:
         PhotosFork-macOS: all
     test:
-      targets: []
+      targets:
+        - PhotosFork-macOS-UITests
