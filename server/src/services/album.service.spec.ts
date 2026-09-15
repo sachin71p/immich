@@ -1393,7 +1393,9 @@ describe(AlbumService.name, () => {
       ]);
     });
 
-    it('should allow an album viewer to remove any album asset', async () => {
+    // fork: shared-libraries (upstream parity: viewers cannot remove album assets;
+    // only the owner bypasses the per-asset share check)
+    it('should not allow an album viewer to remove a foreign asset', async () => {
       const asset = AssetFactory.create();
       const viewer = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: viewer.id, role: AlbumUserRole.Viewer }).build();
@@ -1402,8 +1404,10 @@ describe(AlbumService.name, () => {
       mocks.album.getAssetIds.mockResolvedValue(new Set([asset.id]));
 
       await expect(sut.removeAssets(AuthFactory.create(viewer), album.id, { ids: [asset.id] })).resolves.toEqual([
-        { success: true, id: asset.id },
+        { success: false, id: asset.id, error: BulkIdErrorReason.NO_PERMISSION },
       ]);
+
+      expect(mocks.album.removeAssetIds).not.toHaveBeenCalled();
     });
 
     it('should reset the thumbnail if it is removed', async () => {

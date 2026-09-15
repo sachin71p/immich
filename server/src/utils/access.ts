@@ -249,8 +249,8 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isShared = await access.album.checkSharedAlbumAccess(
         auth.user.id,
         setDifference(ids, isOwner),
-        // fork: shared-libraries
-        AlbumUserRole.Viewer,
+        // fork: shared-libraries (upstream parity: editors only, viewers get 'no albumAsset.create access')
+        AlbumUserRole.Editor,
       );
       return setUnion(isOwner, isShared);
     }
@@ -294,8 +294,8 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isShared = await access.album.checkSharedAlbumAccess(
         auth.user.id,
         setDifference(ids, isOwner),
-        // fork: shared-libraries
-        AlbumUserRole.Viewer,
+        // fork: shared-libraries (upstream parity: editors only, viewers get 'no albumAsset.delete access')
+        AlbumUserRole.Editor,
       );
       return setUnion(isOwner, isShared);
     }
