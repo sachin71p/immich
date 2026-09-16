@@ -58,6 +58,7 @@
 		8B42ECF6B1AF7C434B602742 /* FixtureSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */; };
 		8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */; };
 		8BE193705534A8D74F73A0D4 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */; };
+		8E9F084D689556BF9E2E912F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE3A2E934C82B427235CAAC4 /* Assets.xcassets */; };
 		9072FA0D2B3536D5DD098ECD /* HeirloomWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B423EDAD3D1C1AC259A1BE /* HeirloomWidgets.swift */; };
 		90F9E6ACBD138F7275D37FCB /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 1BE688DBA40C3BEC4B449CBA /* SyncEngine */; };
 		9449D68838DF4E1421762D52 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7506ABF3A9E271B97CFA596 /* MemoriesView.swift */; };
@@ -85,6 +86,7 @@
 		C30A28B0EEA9BC9DAE5F2E56 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 2C468586827D06DB7DBFB36A /* LocalStore */; };
 		C58688346D8899529D46D329 /* MacMemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */; };
 		C66E3C17920D5031FD4EBE4D /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB42CF139FDE95D19202A9F0 /* MacSearchView.swift */; };
+		C73C9DED8745E21A84656176 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE3A2E934C82B427235CAAC4 /* Assets.xcassets */; };
 		C750B6CD502A1F9848EED59C /* MacStorageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C489D7BEF9C9328C346F2DFC /* MacStorageView.swift */; };
 		C85E293F9688512B7D0D9064 /* MacGridHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */; };
 		CA0727D769971F8DA20E364B /* FreeUpSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F8C9D9FECBF534C26B94DC2 /* FreeUpSpaceView.swift */; };
@@ -217,6 +219,7 @@
 		EC15EE8293446CD203DE97CC /* LockedMediaAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedMediaAuthentication.swift; sourceTree = "<group>"; };
 		F7506ABF3A9E271B97CFA596 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
 		FAD06FF34A315C4624E74B70 /* ClusteredMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusteredMap.swift; sourceTree = "<group>"; };
+		FE3A2E934C82B427235CAAC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -328,6 +331,7 @@
 		224A5DDEF9B42049F31464A7 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				FE3A2E934C82B427235CAAC4 /* Assets.xcassets */,
 				71607B706C614A1C8A0A6D54 /* ConnectView.swift */,
 				7DA2A5BE54E39B6CB40564E4 /* Heirloom.entitlements */,
 				EC15EE8293446CD203DE97CC /* LockedMediaAuthentication.swift */,
@@ -598,6 +602,7 @@
 			buildConfigurationList = 1D381433D4782878A8786464 /* Build configuration list for PBXNativeTarget "Heirloom-iOS" */;
 			buildPhases = (
 				A52725CC8D41063127427650 /* Sources */,
+				CBBFFDDB0C325FC504477A47 /* Resources */,
 				D1CA1CF52C77BD3BA0580162 /* Frameworks */,
 			);
 			buildRules = (
@@ -705,6 +710,7 @@
 			buildConfigurationList = 4B1FB311804F2A40DAD5AA80 /* Build configuration list for PBXNativeTarget "Heirloom-macOS" */;
 			buildPhases = (
 				75ADF98DA4BA25536F293840 /* Sources */,
+				9A49AAA03F71CEA6EF4E1C01 /* Resources */,
 				2574010E691F2FDEFC0A8437 /* Frameworks */,
 			);
 			buildRules = (
@@ -810,6 +816,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9A49AAA03F71CEA6EF4E1C01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C73C9DED8745E21A84656176 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBBFFDDB0C325FC504477A47 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E9F084D689556BF9E2E912F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		12D1CAF0CCA301108440E9B7 /* Sources */ = {
