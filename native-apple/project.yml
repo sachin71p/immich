@@ -88,6 +88,14 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Heirloom
         INFOPLIST_KEY_CFBundleName: Heirloom
         CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
+      configs:
+        # R0: the installed bundle used to ship Heirloom-macOS.debug.dylib and
+        # __preview.dylib because Release inherited Xcode's preview/debug defaults.
+        Release:
+          ENABLE_DEBUG_DYLIB: NO
+          SWIFT_OPTIMIZATION_LEVEL: -O
+          SWIFT_COMPILATION_MODE: wholemodule
+          ENABLE_PREVIEWS: NO
   Heirloom-macOS-UITests:
     type: bundle.ui-testing
     platform: macOS

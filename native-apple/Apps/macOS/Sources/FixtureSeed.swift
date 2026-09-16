@@ -31,7 +31,32 @@ enum FixtureSeed {
     )
   }
 
-  static func changes() -> [SyncChange] {
+  /// Largest `--fixture-seed-count` honored (brief step 5: N up to 150000).
+  static let maxGeneratedCount = 150_000
+
+  /// Reads `--fixture-seed-count=<N>` from the launch arguments (0 / absent =
+  /// base fixture only). Parsed here rather than in `MacAppState` so this WP
+  /// owns every line of the feature; `seedForSmoke()` keeps calling
+  /// `changes()` with no arguments and picks the count up via the default.
+  static var requestedCount: Int {
+    let prefix = "--fixture-seed-count="
+    for arg in CommandLine.arguments where arg.hasPrefix(prefix) {
+      if let n = Int(arg.dropFirst(prefix.count)), n > 0 {
+        return min(n, maxGeneratedCount)
+      }
+    }
+    return 0
+  }
+
+  static func changes(count: Int = requestedCount) -> [SyncChange] {
+    var out = baseChanges()
+    if count > 0 {
+      out += generatedChanges(count: min(count, maxGeneratedCount))
+    }
+    return out
+  }
+
+  static func baseChanges() -> [SyncChange] {
     let alice = User(id: userId, name: "Alice", email: "alice@example.com")
     let bob = User(id: bobId, name: "Bob", email: "bob@example.com")
     let space = Space(
@@ -66,5 +91,78 @@ enum FixtureSeed {
       .albumAsset(albumId: albumId, assetId: "asset-personal-1"),
       .albumAsset(albumId: albumId, assetId: "asset-space-video"),
     ]
+  }
+
+  // MARK: - Large synthetic fixture (brief step 5)
+
+  /// One real thumbhash harvested from `MediaPipelineTests` — reused for every
+  /// generated asset. Only one genuine sample exists in-tree; per-asset variety
+  /// does not matter because the media pipeline runs offline in seeded launches
+  /// and cells show placeholders regardless of the hash content.
+  private static let generatedThumbhash = "1fsDBYBKeI97iIh4eIiIdweIdIBI"
+
+  /// Cycled (width, height) pairs so the grid exercises varied aspect ratios.
+  private static let generatedSizes = [
+    (4000, 3000), (3000, 4000), (6000, 4000), (4032, 3024),
+    (1920, 1080), (1080, 1920), (1440, 1440),
+  ]
+
+  /// Generates `count` primary assets deterministically from the index (no RNG,
+  /// so repeated runs seed identical rows). `localDateTime` spreads evenly over
+  /// 15 years starting 2011-01-01; the `i % 20` mix yields photos, videos (with
+  /// duration), live-photo still+motion pairs and screenshots per the
+  /// `TimelineRow(asset:)` classification. Live pairs emit one companion motion
+  /// row, so the store ends up with ~5% more rows than `count`.
+  static func generatedChanges(count: Int) -> [SyncChange] {
+    // 2011-01-01T00:00:00Z through ~2026-01-01 (15 x 365.25 days).
+    let base = Date(timeIntervalSince1970: 1_293_840_000)
+    let span = 15 * 365.25 * 86_400
+    let step = span / Double(max(count, 1))
+    var out: [SyncChange] = []
+    out.reserveCapacity(count + count / 20 + 1)
+    for i in 0..<count {
+      let at = base.addingTimeInterval(Double(i) * step)
+      let (w, h) = generatedSizes[i % generatedSizes.count]
+      let favorite = i % 47 == 0
+      let id = "asset-gen-\(i)"
+      switch i % 20 {
+      case 0:  // Video with duration.
+        out.append(.asset(Asset(
+          id: id, ownerId: userId, originalFileName: String(format: "VID_%04d.MOV", i),
+          thumbhash: generatedThumbhash, checksum: "checksum-\(id)",
+          createdAt: at, localDateTime: at, durationSeconds: 10 + (i % 300),
+          type: .video, isFavorite: favorite, width: w, height: h
+        )))
+      case 1:  // Live photo: still linking its motion part via livePhotoVideoId.
+        let motionId = "\(id)-motion"
+        out.append(.asset(Asset(
+          id: motionId, ownerId: userId, originalFileName: String(format: "VID_%04d-live.MOV", i),
+          thumbhash: generatedThumbhash, checksum: "checksum-\(motionId)",
+          createdAt: at, localDateTime: at, durationSeconds: 3,
+          type: .video, width: w, height: h
+        )))
+        out.append(.asset(Asset(
+          id: id, ownerId: userId, originalFileName: String(format: "IMG_%04d-live.HEIC", i),
+          thumbhash: generatedThumbhash, checksum: "checksum-\(id)",
+          createdAt: at, localDateTime: at, type: .image,
+          isFavorite: favorite, livePhotoVideoId: motionId, width: w, height: h
+        )))
+      case 2:  // Screenshot (`TimelineRow` keys off the filename prefix).
+        out.append(.asset(Asset(
+          id: id, ownerId: userId, originalFileName: "Screenshot 2020-05-06 at 12.00.\(i % 60).png",
+          thumbhash: generatedThumbhash, checksum: "checksum-\(id)",
+          createdAt: at, localDateTime: at, type: .image,
+          isFavorite: favorite, width: w, height: h
+        )))
+      default:  // Photo.
+        out.append(.asset(Asset(
+          id: id, ownerId: userId, originalFileName: String(format: "IMG_%04d.HEIC", i),
+          thumbhash: generatedThumbhash, checksum: "checksum-\(id)",
+          createdAt: at, localDateTime: at, type: .image,
+          isFavorite: favorite, width: w, height: h
+        )))
+      }
+    }
+    return out
   }
 }
