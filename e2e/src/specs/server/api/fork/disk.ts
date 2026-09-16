@@ -245,3 +245,23 @@ export const auditDisk = async (listDbFiles: () => Promise<DbFileEntry[]>): Prom
   }
   return { orphans, missing };
 };
+
+/**
+ * R17-03 steady-state wrapper (harness, not product): the host walks the
+ * container media root through a bind mount, so a walk can briefly surface
+ * files from a previous world that the container already deleted (their space
+ * keys match no current DB row). Genuine leaks persist; stale views vanish.
+ * On a dirty first read, wait and re-walk with early exit: only a dirty set
+ * that survives the window fails.
+ */
+export const auditDiskStable = async (
+  listDbFiles: () => Promise<DbFileEntry[]>,
+  { retries = 4, delayMs = 15_000 }: { retries?: number; delayMs?: number } = {},
+): Promise<{ orphans: string[]; missing: string[] }> => {
+  let result = await auditDisk(listDbFiles);
+  for (let attempt = 0; attempt < retries && (result.orphans.length > 0 || result.missing.length > 0); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    result = await auditDisk(listDbFiles);
+  }
+  return result;
+};

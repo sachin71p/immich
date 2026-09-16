@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { app, utils } from 'src/utils.js';
 import { moveAssetsAs } from './as.js';
 import {
-  auditDisk,
+  auditDiskStable,
   expectFilesAt,
   motionCompanion,
   personalLibraryPrefix,
@@ -91,7 +91,7 @@ describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
       // Motion transcodes land on the videoConversion queue, which the shared
       // settle does not drain: wait for them so companion expectations are stable.
       await settle(adminToken, ['videoConversion']);
-      const { orphans, missing } = await auditDisk(async () =>
+      const { orphans, missing } = await auditDiskStable(async () =>
         Promise.all(world.assets.map((entry) => toDiskAsset(world, entry))),
       );
       expect(missing, `missing files: ${missing.join(', ')}`).toEqual([]);
