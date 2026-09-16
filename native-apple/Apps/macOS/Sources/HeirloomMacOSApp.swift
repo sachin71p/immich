@@ -51,7 +51,9 @@ struct HeirloomMacOSApp: App {
     if CommandLine.arguments.contains("--fixture-seed") {
       return try? MacAppState.seeded()
     }
-    let savedURL = UserDefaults.standard.string(forKey: "Heirloom.serverURL")
+    // Must read the same domain `completeLogin` writes to (SharedContainer.sharedDefaults) —
+    // reading UserDefaults.standard here silently never sees a real login's saved server.
+    let savedURL = SharedContainer.sharedDefaults.string(forKey: SharedContainer.serverURLKey)
       .flatMap { URL(string: $0) }
     // A placeholder with no host fails `ImmichConnection`'s server-URL validation, so
     // `MacAppState.standard` throws and `state` never leaves nil on a fresh install

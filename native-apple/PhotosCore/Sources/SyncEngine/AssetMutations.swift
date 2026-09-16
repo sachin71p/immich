@@ -38,6 +38,16 @@ public struct AssetMutations: Sendable {
     try await localStore.setVisibility(ids: ids, visibility: isHidden ? .hidden : .timeline)
   }
 
+  /// Locked media is deliberately a separate visibility state from Hidden. App shells must only
+  /// offer this mutation for assets in the signed-in user's personal library, after local-device
+  /// authentication has succeeded.
+  public func setLocked(ids: [String], isLocked: Bool) async throws {
+    let visibility: Components.Schemas.AssetVisibility = isLocked ? .locked : .timeline
+    let input = Operations.updateAssets.Input(body: .json(.init(ids: ids, visibility: visibility)))
+    _ = try await connection.client.updateAssets(input)
+    try await localStore.setVisibility(ids: ids, visibility: isLocked ? .locked : .timeline)
+  }
+
   /// Trash (soft delete, `force: false`).
   public func trash(ids: [String]) async throws {
     let input = Operations.deleteAssets.Input(body: .json(.init(force: false, ids: ids)))

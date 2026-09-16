@@ -15,6 +15,13 @@ import VisionKit
 struct MacViewerView: View {
   @Bindable var state: MacAppState
   var assetId: String
+  /// Non-nil when hosted inline in `MacLibraryBrowser`: arrow-key paging updates `assetId` in
+  /// place instead of opening another window. Nil in the standalone `MacWindow.viewer` scene
+  /// (`File > New Viewer Window`), where paging still opens a new window as before.
+  var onNavigate: ((String) -> Void)? = nil
+  /// Non-nil when hosted inline: shows a back button/Escape to return to the library instead of
+  /// relying on the window's own close button.
+  var onClose: (() -> Void)? = nil
   @State private var asset: Asset?
   @State private var image: NSImage?
   @State private var loadedTier: MediaTier?
@@ -27,6 +34,10 @@ struct MacViewerView: View {
   @State private var liveTextEnabled = true
   @State private var liveText: ImageAnalysis?
   @Environment(\.openWindow) private var openWindow
+  // Hosted inline, this view replaces an NSCollectionView (the grid) that held first responder —
+  // SwiftUI doesn't hand keyboard focus to the new content automatically, so arrow-key paging
+  // silently did nothing until something explicitly claims focus.
+  @FocusState private var isFocused: Bool
 
   private var assetActions: MacAssetActions {
     MacAssetActions(
@@ -43,6 +54,13 @@ struct MacViewerView: View {
 
   private var siblings: [String] { state.viewerContext }
   private var index: Int? { siblings.firstIndex(of: assetId) }
+
+  /// Immich doesn't sync Apple's Portrait-mode depth EXIF, so unlike native Photos this can only
+  /// badge what `Asset` itself already knows, without a separate `AssetExif` fetch: Live Photo.
+  private var mediaTypeBadge: (title: String, systemImage: String)? {
+    guard let asset, asset.livePhotoVideoId != nil else { return nil }
+    return ("Live", "livephoto")
+  }
 
   var body: some View {
     ZStack {
@@ -67,10 +85,26 @@ struct MacViewerView: View {
         Text(error).foregroundStyle(.red).font(.caption).padding()
       }
     }
+    .overlay(alignment: .topLeading) {
+      if let badge = mediaTypeBadge {
+        Label(badge.title, systemImage: badge.systemImage)
+          .font(.caption.weight(.semibold))
+          .labelStyle(.titleAndIcon)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 5)
+          .background(.thinMaterial, in: Capsule())
+          .padding(12)
+      }
+    }
     .frame(minWidth: 640, minHeight: 480)
     .navigationTitle(asset?.originalFileName ?? "Viewer")
     .focusedValue(\.macAssetActions, assetActions)
     .toolbar {
+      if let onClose {
+        ToolbarItem(placement: .navigation) {
+          Button { onClose() } label: { Label("Back", systemImage: "chevron.left") }
+        }
+      }
       ToolbarItemGroup {
         Button { toggleFavorite() } label: {
           Label("Favorite", systemImage: (asset?.isFavorite ?? false) ? "heart.fill" : "heart")
@@ -79,6 +113,11 @@ struct MacViewerView: View {
         Button { trash() } label: { Label("Delete", systemImage: "trash") }
         Button { showingMove = true } label: { Label("Move to…", systemImage: "folder") }
         Button { showingAddToAlbum = true } label: { Label("Add to Album", systemImage: "rectangle.stack.badge.plus") }
+        if let asset, canLock(asset) {
+          Button { toggleLocked(asset) } label: {
+            Label(asset.visibility == .locked ? "Unlock" : "Lock", systemImage: asset.visibility == .locked ? "lock.open" : "lock")
+          }
+        }
         if let asset, canEdit(asset) {
           Button { showingEdit = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
         }
@@ -110,15 +149,27 @@ struct MacViewerView: View {
           .frame(minWidth: 900, minHeight: 640)
       }
     }
+    .focusable()
+    .focused($isFocused)
     .onKeyPress(.leftArrow) { page(by: -1); return .handled }
     .onKeyPress(.rightArrow) { page(by: 1); return .handled }
+    .onKeyPress(.escape) {
+      guard let onClose else { return .ignored }
+      onClose()
+      return .handled
+    }
     .task(id: assetId) { await load(tier: .preview) }
+    .onAppear { isFocused = true }
   }
 
   private func page(by delta: Int) {
     guard let index, !siblings.isEmpty else { return }
     let next = siblings[(index + delta + siblings.count) % siblings.count]
-    openWindow(value: MacWindow.viewer(next))
+    if let onNavigate {
+      onNavigate(next)
+    } else {
+      openWindow(value: MacWindow.viewer(next))
+    }
   }
 
   private func load(tier: MediaTier) async {
@@ -238,6 +289,24 @@ struct MacViewerView: View {
       }
     }
   }
+
+  private func canLock(_ asset: Asset) -> Bool {
+    asset.ownerId == state.userId && asset.spaceId == nil && asset.libraryId == nil
+  }
+
+  private func toggleLocked(_ asset: Asset) {
+    Task { @MainActor in
+      guard await LockedMediaAuthentication.authenticate(
+        reason: asset.visibility == .locked ? "Unlock your personal photo" : "Lock this personal photo")
+      else { return }
+      do {
+        try await state.assetMutations().setLocked(ids: [asset.id], isLocked: asset.visibility != .locked)
+        self.asset = try await state.store.asset(id: asset.id)
+      } catch {
+        self.error = error.localizedDescription
+      }
+    }
+  }
 }
 
 /// NSScrollView magnifier: pinch/scroll zoom; crossing 2× fires `onZoomBeyondPreview` once so the
@@ -309,6 +378,7 @@ struct MacZoomableImageView: NSViewRepresentable {
 struct MacInfoPanel: View {
   var asset: Asset
   var state: MacAppState
+  @State private var ownerName: String?
 
   var body: some View {
     Form {
@@ -318,7 +388,10 @@ struct MacInfoPanel: View {
           LabeledContent("Date", value: date.formatted(date: .abbreviated, time: .shortened))
         }
         LabeledContent("Container", value: containerName)
-        LabeledContent("Owner", value: asset.ownerId)
+        LabeledContent("Owner", value: ownerName ?? asset.ownerId)
+          .task(id: asset.ownerId) {
+            ownerName = try? await state.store.user(id: asset.ownerId)?.name
+          }
         if let w = asset.width, let h = asset.height {
           LabeledContent("Dimensions", value: "\(w) × \(h)")
         }
@@ -338,5 +411,12 @@ struct MacInfoPanel: View {
     case .library(let id):
       return state.libraries.first(where: { $0.library.id == id })?.library.name ?? "External Library"
     }
+  }
+}
+
+#Preview("Viewer") {
+  MacPreviewFixture { state in
+    MacViewerView(state: state, assetId: "asset-personal-1")
+      .frame(width: 1000, height: 700)
   }
 }

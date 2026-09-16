@@ -187,12 +187,16 @@ extension PhotosLocalStore {
   }
 
   public func upsertAlbumMember(_ member: AlbumMember) async throws {
-    try await dbQueue.write { db in try AlbumUserRecord(member).save(db) }
+    try await dbQueue.write { db in
+      try AlbumUserRecord(member).save(db)
+      try db.execute(sql: "UPDATE album SET sharingType = CASE WHEN (SELECT COUNT(*) FROM albumUser WHERE albumId = ?) > 1 THEN 'shared' ELSE 'personal' END WHERE id = ?", arguments: [member.albumId, member.albumId])
+    }
   }
 
   public func removeAlbumMemberLocally(albumId: String, userId: String) async throws {
     try await dbQueue.write { db in
       try AlbumUserRecord.deleteOne(db, key: ["albumId": albumId, "userId": userId])
+      try db.execute(sql: "UPDATE album SET sharingType = CASE WHEN (SELECT COUNT(*) FROM albumUser WHERE albumId = ?) > 1 THEN 'shared' ELSE 'personal' END WHERE id = ?", arguments: [albumId, albumId])
     }
   }
 

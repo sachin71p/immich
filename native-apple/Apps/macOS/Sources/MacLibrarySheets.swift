@@ -204,14 +204,14 @@ struct MacAddToAlbumSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Add to Album").font(.headline)
-      List(state.albums, id: \.id) { album in
+      List(state.albums, id: \.album.id) { entry in
         Button {
-          Task { await add(to: album.id) }
+          Task { await add(to: entry.album.id) }
         } label: {
-          Label(album.name, systemImage: "rectangle.stack")
+          Label(entry.album.name, systemImage: "rectangle.stack")
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("add-to-album-\(album.id)")
+        .accessibilityIdentifier("add-to-album-\(entry.album.id)")
       }
       .frame(minHeight: 160)
       if let error { Text(error).foregroundStyle(.red).font(.caption) }

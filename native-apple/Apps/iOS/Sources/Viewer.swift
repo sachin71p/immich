@@ -294,6 +294,19 @@ struct ViewerView: View {
             try await mutations.setHidden(ids: [asset.id], isHidden: asset.visibility != .hidden)
           }
         }
+        if canLock(asset) {
+          Button(asset.visibility == .locked ? "Unlock" : "Lock") {
+            Task {
+              guard await LockedMediaAuthentication.authenticate(
+                reason: asset.visibility == .locked ? "Unlock your personal photo" : "Lock this personal photo")
+              else { return }
+              mutate {
+                guard let mutations = session.assetMutations else { return }
+                try await mutations.setLocked(ids: [asset.id], isLocked: asset.visibility != .locked)
+              }
+            }
+          }
+        }
         if canDownload {
           Button("Copy") { copyAsset(asset) }
         }
@@ -313,6 +326,10 @@ struct ViewerView: View {
         actionError = error.localizedDescription
       }
     }
+  }
+
+  private func canLock(_ asset: Asset) -> Bool {
+    asset.ownerId == session.userId && asset.spaceId == nil && asset.libraryId == nil
   }
 
   private func share(_ asset: Asset) {

@@ -8,7 +8,7 @@ MODULE_CACHE   := $(NATIVE_DIR)/.build/clang-module-cache
 SIMULATOR_NAME ?= iPhone 17 Pro Max
 IOS_BUNDLE_ID  := com.immich.heirloom.ios
 SERVER_URL     := http://localhost:2283
-DEVELOPMENT_TEAM ?= XS724Y6X3U
+DEVELOPMENT_TEAM ?= 599Z443923
 export DEVELOPMENT_TEAM
 
 .DEFAULT_GOAL := help

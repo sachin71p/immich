@@ -547,7 +547,7 @@ struct LibraryView: View {
           .accessibilityIdentifier("date-scrubber")
         }
       }
-      .navigationTitle(sourceTitle)
+      .navigationTitle("")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
@@ -568,10 +568,20 @@ struct LibraryView: View {
           }
           .accessibilityIdentifier("library-switcher")
         }
+        ToolbarItem(placement: .principal) {
+          VStack(spacing: 0) {
+            Text("Library").font(.headline)
+            Text(libraryDateRange).font(.caption2).foregroundStyle(.secondary)
+          }
+        }
         ToolbarItem(placement: .topBarTrailing) {
-          Button(editMode ? "Done" : "Select") {
-            editMode.toggle()
-            if !editMode { selectedIds = [] }
+          HStack(spacing: 10) {
+            Button { columns = max(2, columns - 1) } label: { Image(systemName: "minus") }
+            Button { columns = min(10, columns + 1) } label: { Image(systemName: "plus") }
+            Button(editMode ? "Done" : "Select") {
+              editMode.toggle()
+              if !editMode { selectedIds = [] }
+            }
           }
         }
       }
@@ -645,6 +655,14 @@ struct LibraryView: View {
     case .space(let id): return session.spaces.first { $0.id == id }?.name ?? "Shared Library"
     case .library(let id): return session.libraries.first { $0.id == id }?.name ?? "Library"
     }
+  }
+
+  private var libraryDateRange: String {
+    let dates = loader.model.rowsById.values.compactMap(\.localDateTime).sorted()
+    guard let first = dates.first, let last = dates.last else { return "No Photos" }
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d, yyyy"
+    return "\(formatter.string(from: first)) – \(formatter.string(from: last))"
   }
 
   private func pickSource(_ new: LibrarySource) {

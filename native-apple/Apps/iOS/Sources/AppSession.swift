@@ -87,8 +87,11 @@ final class AppSession: ObservableObject {
     let store = try PhotosLocalStore(path: SharedContainer.databaseURL().path)
     let cacheRoot = support.appendingPathComponent("media-cache", isDirectory: true)
     try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+    // `connection.serverURL` is `serverURL` normalized to include the `/api` base (see
+    // ImmichConnection.normalizedAPIBaseURL) — MediaServer must build asset/thumbnail URLs
+    // against that same base, or every request 404s and Nuke fails to decode the error body.
     let mediaServer = MediaServer(
-      baseURL: serverURL,
+      baseURL: connection.serverURL,
       tokenProvider: {
         let store = connection.tokenStore
         return await store.get()

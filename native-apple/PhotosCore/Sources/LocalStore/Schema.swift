@@ -239,6 +239,19 @@ enum Schema {
       }
     }
 
+    // Album sharing is relational upstream (albumUser rows), but the app sidebar needs a durable
+    // local classification that updates immediately after a share/unshare sync batch.
+    migrator.registerMigration("v2_album_sharing_type") { db in
+      try db.alter(table: "album") { t in
+        t.add(column: "sharingType", .text).notNull().defaults(to: "personal")
+      }
+      try db.execute(sql: """
+        UPDATE album SET sharingType = CASE
+          WHEN (SELECT COUNT(*) FROM albumUser WHERE albumUser.albumId = album.id) > 1 THEN 'shared'
+          ELSE 'personal' END
+        """)
+    }
+
     // A5: durable upload queue. One row per file part to send (live-photo still+motion and
     // original+edit pairs enqueue as separate rows linked by `pairId`, uploaded motion-first).
     migrator.registerMigration("v2_upload_queue") { db in
@@ -271,6 +284,15 @@ enum Schema {
         t.column("tokenData", .blob)
         t.column("updatedAt", .datetime).notNull()
       }
+    }
+
+    // Every timeline/browse query excludes Live Photo motion-video components via
+    // `id NOT IN (SELECT livePhotoVideoId FROM asset WHERE livePhotoVideoId IS NOT NULL)`
+    // (rowSelectSQL in LocalStore+Timeline). Without an index that inner SELECT is a full table
+    // scan, and `MacGridLoader.bucketed()` runs it once per month bucket — a library spanning
+    // decades can mean hundreds of scans per grid load, turning into minutes of "0 photos".
+    migrator.registerMigration("v2_livephoto_video_index") { db in
+      try db.create(index: "asset_on_livePhotoVideoId", on: "asset", columns: ["livePhotoVideoId"])
     }
 
     return migrator

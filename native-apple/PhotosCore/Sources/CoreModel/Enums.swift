@@ -19,6 +19,7 @@ public enum AssetVisibilityKind: String, Sendable, Codable, CaseIterable {
 
 /// Mirrors `server/src/enum.ts` `AlbumUserRole`.
 public enum AlbumUserRoleKind: String, Sendable, Codable, CaseIterable {
+  case owner
   case editor
   case viewer
 }

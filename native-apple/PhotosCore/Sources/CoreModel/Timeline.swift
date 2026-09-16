@@ -44,6 +44,24 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
   }
 }
 
+extension TimelineRow {
+  /// Client-side projection for utility and album queries that intentionally hydrate `Asset`
+  /// records rather than using the timeline SQL projection.
+  public init(asset: Asset) {
+    let ratio: Double
+    if let w = asset.width, let h = asset.height, h > 0 { ratio = Double(w) / Double(h) } else { ratio = 1 }
+    let kind: TimelineMediaKind
+    if asset.livePhotoVideoId != nil { kind = .livePhoto }
+    else if asset.type == .video { kind = .video }
+    else if asset.originalFileName.lowercased().hasPrefix("screenshot") { kind = .screenshot }
+    else { kind = .photo }
+    self.init(
+      id: asset.id, thumbhash: asset.thumbhash, aspectRatio: ratio, mediaKind: kind,
+      isFavorite: asset.isFavorite, isTrashed: asset.deletedAt != nil,
+      isArchived: asset.visibility == .archive, localDateTime: asset.localDateTime)
+  }
+}
+
 /// An asset carrying GPS — the Places map's pin set (backed by `assetExif` lat/lng).
 public struct LocatedAsset: Sendable, Hashable, Identifiable {
   public var id: String

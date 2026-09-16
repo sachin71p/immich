@@ -1,5 +1,6 @@
 import CoreModel
 import LocalStore
+import SyncEngine
 import SwiftUI
 
 // MARK: - row list (shared grid-detail host)
@@ -87,6 +88,11 @@ struct CollectionsView: View {
   @State private var trash: [TimelineRow] = []
   @State private var hidden: [TimelineRow] = []
   @State private var archived: [TimelineRow] = []
+  @State private var locked: [TimelineRow] = []
+  @State private var capturedByMe: [TimelineRow] = []
+  @State private var nativeMedia: [NativeMediaCollection: [TimelineRow]] = [:]
+  @State private var cameras: [CameraModel] = []
+  @State private var showingLocked = false
   @State private var people: [Person] = []
   @State private var personCounts: [String: Int] = [:]
   @State private var placeCount = 0
@@ -172,17 +178,11 @@ struct CollectionsView: View {
           }
         }
         Section("Media Types") {
-          NavigationLink("Videos (\(videos.count))") {
-            AssetRowList(title: "Videos", rows: videos)
-          }
-          NavigationLink("Live Photos (\(live.count))") {
-            AssetRowList(title: "Live Photos", rows: live)
-          }
-          NavigationLink("Panoramas (\(panoramas.count))") {
-            AssetRowList(title: "Panoramas", rows: panoramas)
-          }
-          NavigationLink("Screenshots (\(screenshots.count))") {
-            AssetRowList(title: "Screenshots", rows: screenshots)
+          ForEach(NativeMediaCollection.allCases, id: \.self) { collection in
+            let rows = nativeMedia[collection] ?? []
+            NavigationLink("\(collection.title) (\(rows.count))") {
+              AssetRowList(title: collection.title, rows: rows)
+            }
           }
         }
         Section("Utilities") {
@@ -193,14 +193,39 @@ struct CollectionsView: View {
           NavigationLink("Hidden (\(hidden.count))") {
             AssetRowList(title: "Hidden", rows: hidden)
           }
+          NavigationLink("Duplicates") {
+            DuplicateGroupsView()
+          }
+          NavigationLink("Captured by Me (\(capturedByMe.count))") {
+            AssetRowList(title: "Captured by Me", rows: capturedByMe)
+          }
           NavigationLink("Archive (\(archived.count))") {
             AssetRowList(title: "Archive", rows: archived)
+          }
+          Button("Locked (\(locked.count))") {
+            Task {
+              if await LockedMediaAuthentication.authenticate() { showingLocked = true }
+            }
+          }
+        }
+        if !cameras.isEmpty {
+          Section("Captured With") {
+            // Device models are useful EXIF data but noisy navigation. Present the same broad
+            // classes as macOS (Phone, DSLR, Drone, Action Camera) and query all member models.
+            ForEach(CameraCategory.grouped(cameras)) { category in
+              NavigationLink("\(category.name) (\(category.count))") {
+                CameraCategoryAssetList(category: category)
+              }
+            }
           }
         }
       }
       .navigationTitle("Collections")
       .refreshable { await reload() }
       .task { await reload() }
+      .navigationDestination(isPresented: $showingLocked) {
+        AssetRowList(title: "Locked", rows: locked)
+      }
     }
     .accessibilityIdentifier("collections")
   }
@@ -225,6 +250,14 @@ struct CollectionsView: View {
       trash = try await store.trashedAssets(scope: manage)
       hidden = try await store.visibilityAssets(.hidden, scope: manage)
       archived = try await store.visibilityAssets(.archive, scope: manage)
+      locked = try await store.lockedAssets(currentUserId: session.userId)
+      capturedByMe = try await store.capturedByUser(session.userId, scope: manage).map(TimelineRow.init(asset:))
+      cameras = try await store.cameraModels(scope: manage)
+      var media: [NativeMediaCollection: [TimelineRow]] = [:]
+      for collection in NativeMediaCollection.allCases {
+        media[collection] = try await store.mediaAssets(scope: scope, collection: collection)
+      }
+      nativeMedia = media
       people = try await store.peopleForOwner(session.userId)
       var counts: [String: Int] = [:]
       for person in people {
@@ -234,6 +267,82 @@ struct CollectionsView: View {
       placeCount = try await store.locatedAssets(scope: scope).count
     } catch {
       session.lastError = error.localizedDescription
+    }
+  }
+}
+
+struct CameraAssetList: View {
+  @EnvironmentObject var session: AppSession
+  var camera: CameraModel
+  @State private var rows: [TimelineRow] = []
+
+  var body: some View {
+    AssetRowList(title: camera.model, rows: rows)
+      .task {
+        guard let store = session.store, let scope = try? await session.manageScope() else { return }
+        rows = (try? await store.assets(cameraModel: camera.model, scope: scope).map(TimelineRow.init(asset:))) ?? []
+      }
+  }
+}
+
+struct CameraCategoryAssetList: View {
+  @EnvironmentObject var session: AppSession
+  var category: CameraCategory
+  @State private var rows: [TimelineRow] = []
+
+  var body: some View {
+    AssetRowList(title: category.name, rows: rows)
+      .task {
+        guard let store = session.store, let scope = try? await session.manageScope() else { return }
+        var assets: [Asset] = []
+        for model in category.models {
+          assets += (try? await store.assets(cameraModel: model, scope: scope, limit: 250_000)) ?? []
+        }
+        rows = assets.sorted { ($0.localDateTime ?? .distantPast) > ($1.localDateTime ?? .distantPast) }
+          .map(TimelineRow.init(asset:))
+      }
+  }
+}
+
+struct DuplicateGroupsView: View {
+  @EnvironmentObject var session: AppSession
+  @State private var groups: [DuplicateGroup] = []
+  @State private var assets: [String: Asset] = [:]
+  @State private var error: String?
+
+  var body: some View {
+    List {
+      if let error {
+        ContentUnavailableView("Duplicates unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
+      } else if groups.isEmpty {
+        ContentUnavailableView("No Duplicates Found", systemImage: "rectangle.on.rectangle")
+      } else {
+        ForEach(groups) { group in
+          Section("Duplicate group · \(group.assetIds.count) items") {
+            ForEach(group.assetIds, id: \.self) { id in
+              HStack {
+                RowThumbnail(rowId: id).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(assets[id]?.originalFileName ?? "Photo")
+                Spacer()
+                if group.suggestedKeepAssetIds.contains(id) {
+                  Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    .navigationTitle("Duplicates")
+    .task {
+      guard let connection = session.connection, let store = session.store else { return }
+      do {
+        let loaded = try await DuplicateService(connection: connection).groups()
+        groups = loaded
+        assets = Dictionary(uniqueKeysWithValues: (try await store.assets(ids: loaded.flatMap(\.assetIds))).map { ($0.id, $0) })
+      } catch {
+        self.error = error.localizedDescription
+      }
     }
   }
 }

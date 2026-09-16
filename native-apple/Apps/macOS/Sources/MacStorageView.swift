@@ -47,12 +47,12 @@ struct MacStorageView: View {
           )
           .accessibilityIdentifier("storage-pin-\(entry.library.id)")
         }
-        ForEach(state.albums) { album in
+        ForEach(state.albums, id: \.album.id) { entry in
           Toggle(
-            "Album: \(album.name)",
-            isOn: pinBinding(album.id)
+            "Album: \(entry.album.name)",
+            isOn: pinBinding(entry.album.id)
           )
-          .accessibilityIdentifier("storage-pin-\(album.id)")
+          .accessibilityIdentifier("storage-pin-\(entry.album.id)")
         }
       }
       Section("Usage") {

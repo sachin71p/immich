@@ -80,7 +80,7 @@ struct LibraryListsTests {
     #expect(libraries.first?.isOwner == true)
     #expect(try await store.accessibleLibraries(for: "user-bob").isEmpty)
     let albums = try await store.memberAlbums(for: "user-alice")
-    #expect(albums.map(\.id) == ["album-trip"])
+    #expect(albums.map(\.album.id) == ["album-trip"])
     #expect(try await store.albumAssetCount(albumId: "album-trip") == 2)
     #expect(try await store.assetIds(inAlbum: "album-trip") == ["a-space", "a-personal"])
   }

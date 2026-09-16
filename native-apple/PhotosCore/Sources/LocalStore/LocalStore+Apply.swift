@@ -10,6 +10,7 @@ extension PhotosLocalStore {
       for change in changes {
         try Self.applyOne(change, currentUserId: currentUserId, db: db)
       }
+      try Self.recomputeAlbumSharingTypes(db: db)
     }
   }
 
@@ -113,5 +114,13 @@ extension PhotosLocalStore {
     try SpaceRecord.deleteOne(db, key: id)
     try db.execute(sql: "DELETE FROM spaceMember WHERE spaceId = ?", arguments: [id])
     try db.execute(sql: "DELETE FROM asset WHERE spaceId = ?", arguments: [id])
+  }
+
+  private static func recomputeAlbumSharingTypes(db: Database) throws {
+    try db.execute(sql: """
+      UPDATE album SET sharingType = CASE
+        WHEN (SELECT COUNT(*) FROM albumUser WHERE albumUser.albumId = album.id) > 1 THEN 'shared'
+        ELSE 'personal' END
+      """)
   }
 }

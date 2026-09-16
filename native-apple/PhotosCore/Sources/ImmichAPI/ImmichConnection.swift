@@ -113,6 +113,7 @@ public struct ImmichConnection: Sendable {
     self.tokenStore = tokenStore
     self.client = Client(
       serverURL: serverURL,
+      configuration: Configuration(dateTranscoder: .iso8601WithFractionalSeconds),
       transport: URLSessionTransport(),
       middlewares: [BearerAuthMiddleware(tokenStore: tokenStore)]
     )

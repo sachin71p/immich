@@ -1,4 +1,5 @@
 import CoreModel
+import LocalStore
 import Rules
 import SwiftUI
 
@@ -28,11 +29,12 @@ struct MacSidebarView: View {
       }
       Section("Media Types") {
         row(.mediaPhotos)
-        row(.mediaVideos)
-        row(.mediaScreenshots)
+        ForEach(NativeMediaCollection.allCases, id: \.self) { collection in
+          row(.media(collection))
+        }
       }
       Section("Shared Libraries") {
-        ForEach(state.spaces, id: \.space.id) { entry in
+        collapsible(state.spaces, id: \.space.id, title: "Shared Libraries") { entry in
           row(.space(entry.space.id), title: entry.space.name)
         }
         Button {
@@ -43,14 +45,24 @@ struct MacSidebarView: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar-new-space")
       }
-      Section("Shared External Libraries") {
-        ForEach(state.libraries, id: \.library.id) { entry in
+      Section("Shared Albums") {
+        collapsible(state.albums.filter(\.isShared), id: \.album.id, title: "Shared Albums") { entry in
+          row(.album(entry.album.id), title: entry.album.name)
+        }
+      }
+      Section("External Libraries") {
+        collapsible(state.libraries, id: \.library.id, title: "External Libraries") { entry in
           row(.externalLibrary(entry.library.id), title: entry.library.name)
         }
       }
-      Section("Albums") {
-        ForEach(state.albums, id: \.id) { album in
-          row(.album(album.id), title: album.name)
+      Section {
+        DisclosureGroup("Albums") {
+          // All Albums is a real destination, not a disclosure affordance. It opens the album
+          // overview in the main pane while the disclosure keeps the sidebar compact.
+          row(.allAlbums)
+          ForEach(state.albums.filter { !$0.isShared }, id: \.album.id) { entry in
+            row(.album(entry.album.id), title: entry.album.name)
+          }
         }
         Button {
           onNewAlbum()
@@ -62,9 +74,20 @@ struct MacSidebarView: View {
       Section("Utilities") {
         row(.imports)
         row(.recentlyDeleted)
+        row(.duplicates)
+        row(.capturedByMe)
         row(.hidden)
         row(.archive)
         row(.locked)
+      }
+      if !state.cameras.isEmpty {
+        Section {
+          DisclosureGroup("Captured With") {
+            ForEach(state.cameraCategories) { category in
+              row(.camera(category.name), title: "\(category.name) (\(category.count))")
+            }
+          }
+        }
       }
     }
     .listStyle(.sidebar)
@@ -78,6 +101,22 @@ struct MacSidebarView: View {
       .onDrop(of: [.plainText], isTargeted: nil) { providers in
         handleAssetDrop(providers: providers, destination: destination)
       }
+  }
+
+  /// Photos keeps long sidebar collections compact. The disclosure starts closed, so a large
+  /// membership never forces the sidebar to show every source on launch.
+  @ViewBuilder
+  private func collapsible<Entry, ID: Hashable, Row: View>(
+    _ entries: [Entry], id: KeyPath<Entry, ID>, title: String,
+    @ViewBuilder rowContent: @escaping (Entry) -> Row
+  ) -> some View {
+    if entries.count > 3 {
+      DisclosureGroup(title) {
+        ForEach(entries, id: id) { entry in rowContent(entry) }
+      }
+    } else {
+      ForEach(entries, id: id) { entry in rowContent(entry) }
+    }
   }
 
   private func accessibilityKey(_ destination: SidebarDestination) -> String {
@@ -124,5 +163,15 @@ extension NSItemProvider {
         else { continuation.resume(returning: (object as? NSString ?? "") as String) }
       }
     }
+  }
+}
+
+#Preview("Sidebar") {
+  MacPreviewFixture { state in
+    MacSidebarView(
+      state: state, selection: .constant(.library), onDropAssets: { _, _ in },
+      onNewSpace: {}, onNewAlbum: {}
+    )
+    .frame(width: 260, height: 860)
   }
 }

@@ -24,6 +24,10 @@ extension PhotosLocalStore {
     try await dbQueue.read { db in try SpaceRecord.fetchOne(db, key: id)?.model }
   }
 
+  public func user(id: String) async throws -> User? {
+    try await dbQueue.read { db in try UserRecord.fetchOne(db, key: id)?.model }
+  }
+
   public func spaceRole(spaceId: String, userId: String) async throws -> SharedSpaceRoleKind? {
     try await dbQueue.read { db in
       try SpaceMemberRecord
@@ -166,6 +170,34 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Native Photos-style media utility collections that can be derived from the metadata mirrored
+  /// by Immich today. A missing server-side classification simply yields an empty collection rather
+  /// than leaking unrelated media into the category.
+  public func mediaAssets(
+    scope: ContainerScope, collection: NativeMediaCollection, limit: Int = 500
+  ) async throws -> [TimelineRow] {
+    let (whereSQL, args) = Self.scopeWhere(scope)
+    let predicate: String
+    switch collection {
+    case .videos: predicate = "asset.type = 'VIDEO'"
+    case .selfies: predicate = "lower(asset.originalFileName) LIKE '%selfie%'"
+    case .livePhotos: predicate = "asset.livePhotoVideoId IS NOT NULL"
+    case .portraits: predicate = "lower(asset.originalFileName) LIKE '%portrait%'"
+    case .screenshots: predicate = "lower(asset.originalFileName) LIKE 'screenshot%'"
+    case .screenRecordings:
+      predicate = "asset.type = 'VIDEO' AND (lower(asset.originalFileName) LIKE 'screen recording%' OR lower(asset.originalFileName) LIKE 'screenrecording%')"
+    }
+    let sql = """
+      \(Self.rowSelectSQL)
+      WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked' AND \(predicate) AND \(whereSQL)
+      ORDER BY asset.localDateTime DESC
+      LIMIT ?
+      """
+    return try await dbQueue.read { db in
+      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit])).map(Self.row)
+    }
+  }
+
   // MARK: - people (DECISIONS §11: per-owner)
 
   /// People owned by `ownerId`, ordered by name — faces in a space asset cluster under the
@@ -194,6 +226,32 @@ extension PhotosLocalStore {
           """,
         arguments: [personId, limit]
       )
+    }
+  }
+}
+
+public enum NativeMediaCollection: String, Sendable, Hashable, CaseIterable {
+  case videos, selfies, livePhotos, portraits, screenshots, screenRecordings
+
+  public var title: String {
+    switch self {
+    case .videos: return "Videos"
+    case .selfies: return "Selfies"
+    case .livePhotos: return "Live Photos"
+    case .portraits: return "Portrait"
+    case .screenshots: return "Screenshots"
+    case .screenRecordings: return "Screen Recordings"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .videos: return "video"
+    case .selfies: return "person.crop.rectangle"
+    case .livePhotos: return "livephoto"
+    case .portraits: return "f.cursive"
+    case .screenshots: return "camera.viewfinder"
+    case .screenRecordings: return "record.circle"
     }
   }
 }

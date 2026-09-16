@@ -22,6 +22,9 @@ filter:
     - restoreAssets
     - restoreTrash
     - emptyTrash
+    # Utilities: native Immich's server-side duplicate detection works across every library
+    # the signed-in user can access; do not approximate it with checksum matching on-device.
+    - getAssetDuplicates
     # albums
     - createAlbum
     - updateAlbumInfo

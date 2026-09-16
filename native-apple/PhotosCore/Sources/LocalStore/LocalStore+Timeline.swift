@@ -23,6 +23,11 @@ extension PhotosLocalStore {
   /// The row projection shared by every query below — kept in one place so the `mediaKind` heuristics
   /// (live/panorama/video from data we already have; screenshot is a best-effort filename heuristic,
   /// no DECISIONS section defines one) never drift between call sites.
+  /// A Live Photo's motion-video half is synced as its own `asset` row (type VIDEO) so it can be
+  /// played, but Immich (and every other client) treats it as an internal component of the still
+  /// photo that owns it, never a standalone timeline item — otherwise every Live Photo would count
+  /// and appear as one photo plus one extra "video". The `visibleAsset` join enforces that by
+  /// dropping any row that some other asset's `livePhotoVideoId` points at.
   static let rowSelectSQL = """
     SELECT asset.id AS id, asset.thumbhash AS thumbhash, asset.width AS width, asset.height AS height,
       asset.isFavorite AS isFavorite, asset.deletedAt AS deletedAt, asset.visibility AS visibility,
@@ -35,6 +40,10 @@ extension PhotosLocalStore {
         ELSE 'photo'
       END AS mediaKind
     FROM asset
+    JOIN (
+      SELECT id FROM asset
+      WHERE id NOT IN (SELECT livePhotoVideoId FROM asset WHERE livePhotoVideoId IS NOT NULL)
+    ) AS visibleAsset ON visibleAsset.id = asset.id
     LEFT JOIN assetExif ON assetExif.assetId = asset.id
     """
 
@@ -95,6 +104,7 @@ extension PhotosLocalStore {
       SELECT strftime('\(granularity.strftimeFormat)', asset.localDateTime) AS bucketKey, COUNT(*) AS count
       FROM asset
       WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked' AND asset.localDateTime IS NOT NULL AND \(whereSQL)
+        AND asset.id NOT IN (SELECT livePhotoVideoId FROM asset WHERE livePhotoVideoId IS NOT NULL)
       GROUP BY bucketKey
       ORDER BY bucketKey DESC
       """

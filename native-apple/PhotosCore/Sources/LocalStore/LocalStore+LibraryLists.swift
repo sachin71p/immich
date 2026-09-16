@@ -61,14 +61,39 @@ extension PhotosLocalStore {
     }
   }
 
-  /// Albums the user is a member of — DECISIONS §4 (R11). Ordered by most recently updated.
-  public func memberAlbums(for userId: String) async throws -> [Album] {
+  /// Albums the user is a member of, with their role — DECISIONS §4 (R11). Ordered by most
+  /// recently updated.
+  public func memberAlbums(for userId: String) async throws -> [(album: Album, role: AlbumUserRoleKind, isShared: Bool)] {
     try await dbQueue.read { db in
-      try AlbumRecord
-        .filter(sql: "id IN (SELECT albumId FROM albumUser WHERE userId = ?)", arguments: [userId])
-        .order(Column("updatedAt").desc)
-        .fetchAll(db)
-        .map(\.model)
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT album.id AS id, album.name AS name, album.description AS description,
+                 album.createdAt AS createdAt, album.updatedAt AS updatedAt,
+                 album.thumbnailAssetId AS thumbnailAssetId, album.isActivityEnabled AS isActivityEnabled,
+                 album."order" AS "order",
+                 albumUser.role AS role,
+                 album.sharingType = 'shared' AS isShared
+          FROM album
+          JOIN albumUser ON albumUser.albumId = album.id
+          WHERE albumUser.userId = ?
+          ORDER BY album.updatedAt DESC
+          """,
+        arguments: [userId]
+      )
+      return rows.map { row in
+        let roleString: String = row["role"]
+        return (
+          album: Album(
+            id: row["id"], name: row["name"], description: row["description"],
+            createdAt: row["createdAt"], updatedAt: row["updatedAt"],
+            thumbnailAssetId: row["thumbnailAssetId"], isActivityEnabled: row["isActivityEnabled"],
+            order: row["order"]
+          ),
+          role: AlbumUserRoleKind(rawValue: roleString) ?? .viewer,
+          isShared: row["isShared"]
+        )
+      }
     }
   }
 
@@ -164,6 +189,62 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Assets created by the signed-in user, including their contributions to accessible shared
+  /// libraries. This is intentionally owner-based rather than container-based: a photo remains
+  /// "Captured by Me" after it is shared or moved.
+  public func capturedByUser(_ userId: String, scope: ContainerScope, limit: Int = 500) async throws -> [Asset] {
+    let (whereSQL, args) = Self.scopeWhereValues(scope)
+    return try await dbQueue.read { db in
+      try AssetRecord
+        .filter(sql: "deletedAt IS NULL AND visibility != 'locked' AND ownerId = ? AND \(whereSQL)", arguments: Self.sqlArgs([userId], args))
+        .order(Column("localDateTime").desc)
+        .limit(limit)
+        .fetchAll(db)
+        .map(\.model)
+    }
+  }
+
+  /// Camera models represented in a scope. The model is the stable selection key; make is kept
+  /// for display and category heuristics in the app shell.
+  public func cameraModels(scope: ContainerScope) async throws -> [CameraModel] {
+    let (whereSQL, args) = Self.scopeWhereValues(scope)
+    return try await dbQueue.read { db in
+      try Row.fetchAll(
+        db,
+        sql: """
+          SELECT assetExif.make AS make, assetExif.model AS model, COUNT(*) AS count
+          FROM asset
+          JOIN assetExif ON assetExif.assetId = asset.id
+          WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked'
+            AND assetExif.model IS NOT NULL AND trim(assetExif.model) != '' AND \(whereSQL)
+          GROUP BY assetExif.make, assetExif.model
+          ORDER BY count DESC, assetExif.model COLLATE NOCASE
+          """,
+        arguments: Self.sqlArgs(args)
+      ).map { row in
+        CameraModel(make: row["make"], model: row["model"], count: row["count"])
+      }
+    }
+  }
+
+  public func assets(cameraModel: String, scope: ContainerScope, limit: Int = 500) async throws -> [Asset] {
+    let (whereSQL, args) = Self.scopeWhereValues(scope)
+    return try await dbQueue.read { db in
+      let ids = try String.fetchAll(
+        db,
+        sql: """
+          SELECT asset.id FROM asset
+          JOIN assetExif ON assetExif.assetId = asset.id
+          WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked' AND assetExif.model = ? AND \(whereSQL)
+          ORDER BY asset.localDateTime DESC LIMIT ?
+          """,
+        arguments: Self.sqlArgs([cameraModel], args, [limit])
+      )
+      let byId = Dictionary(uniqueKeysWithValues: try AssetRecord.fetchAll(db, keys: ids).map { ($0.id, $0.model) })
+      return ids.compactMap { byId[$0] }
+    }
+  }
+
   /// Geotagged assets in scope — sidebar Map (DECISIONS §10 `timeline` purpose scope).
   public func mapPoints(scope: ContainerScope, limit: Int = 2000) async throws -> [MapPoint] {
     let (whereSQL, args) = Self.scopeWhereValues(scope)
@@ -208,6 +289,64 @@ extension PhotosLocalStore {
     }
     guard !clauses.isEmpty else { return ("0", []) }
     return ("(" + clauses.joined(separator: " OR ") + ")", args)
+  }
+}
+
+public struct CameraModel: Sendable, Hashable, Identifiable {
+  public var make: String?
+  public var model: String
+  public var count: Int
+
+  public init(make: String? = nil, model: String, count: Int) {
+    self.make = make
+    self.model = model
+    self.count = count
+  }
+
+  public var id: String { model }
+
+  /// Broad, human-oriented grouping used by the sidebar. Individual models remain selectable.
+  public var category: String {
+    let fingerprint = "\(make ?? "") \(model)".lowercased()
+    if fingerprint.contains("gopro") || fingerprint.contains("insta360") || fingerprint.contains("osmo action") {
+      return "Action Camera"
+    }
+    if ["dji", "skydio", "parrot", "autel"].contains(where: fingerprint.contains) { return "Drone" }
+    if ["iphone", "pixel", "galaxy", "samsung", "oneplus", "xiaomi", "huawei"].contains(where: fingerprint.contains) { return "Phone" }
+    if ["canon", "nikon", "sony", "fujifilm", "leica", "olympus", "pentax", "panasonic"].contains(where: fingerprint.contains) { return "DSLR" }
+    return "Camera"
+  }
+}
+
+/// A user-facing device class. EXIF model names stay in `models` for the query, while the shell
+/// presents only broad Photos-style groups such as Phone, DSLR, Drone, and Action Camera.
+public struct CameraCategory: Sendable, Hashable, Identifiable {
+  public var name: String
+  public var models: [String]
+  public var count: Int
+
+  public init(name: String, models: [String], count: Int) {
+    self.name = name
+    self.models = models
+    self.count = count
+  }
+
+  public var id: String { name }
+
+  public static func grouped(_ cameras: [CameraModel]) -> [CameraCategory] {
+    let grouped = Dictionary(grouping: cameras, by: \.category)
+    let order = ["Phone", "DSLR", "Drone", "Action Camera", "Camera"]
+    return grouped.map { name, models in
+      CameraCategory(
+        name: name,
+        models: models.map(\.model).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending },
+        count: models.reduce(0) { $0 + $1.count }
+      )
+    }.sorted {
+      let left = order.firstIndex(of: $0.name) ?? order.count
+      let right = order.firstIndex(of: $1.name) ?? order.count
+      return left == right ? $0.name < $1.name : left < right
+    }
   }
 }
 

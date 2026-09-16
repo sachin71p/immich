@@ -12,7 +12,8 @@ import SwiftUI
 /// main grid.
 struct MacSearchView: View {
   @Bindable var state: MacAppState
-  @Environment(\.openWindow) private var openWindow
+  /// Opens the asset inline in the hosting `MacLibraryBrowser`, same as a grid double-click.
+  var onOpenViewer: (String) -> Void
 
   @State private var query = ""
   @State private var scope: SearchScope = .all
@@ -153,10 +154,20 @@ struct MacSearchView: View {
           selectedIds: $selectedIds,
           onSelectionChange: { _ in },
           onOpen: openViewer,
-          onPreview: showPreview
+          onPreview: showPreview,
+          onToggleFavorite: { id in toggleFavorite(id) },
+          onMagnify: { _ in }
         )
         .accessibilityIdentifier("mac-search-results")
       }
+    }
+  }
+
+  private func toggleFavorite(_ id: String) {
+    Task {
+      guard let asset = assetsById[id] else { return }
+      try? await state.assetMutations().setFavorite(ids: [id], isFavorite: !asset.isFavorite)
+      await runSearch()
     }
   }
 
@@ -242,7 +253,7 @@ struct MacSearchView: View {
 
   private func openViewer(id: String) {
     state.viewerContext = rows.map(\.id)
-    openWindow(value: MacWindow.viewer(id))
+    onOpenViewer(id)
   }
 
   private func showPreview(id: String) {

@@ -29,8 +29,14 @@ final class MacAppState {
   var prefs = SharedLibraryPrefs()
   var spaces: [(space: Space, role: SharedSpaceRoleKind)] = []
   var libraries: [(library: Library, isOwner: Bool)] = []
-  var albums: [Album] = []
+  var albums: [(album: Album, role: AlbumUserRoleKind, isShared: Bool)] = []
+  var cameras: [CameraModel] = []
+  var cameraCategories: [CameraCategory] = []
   var lastSyncError: String?
+  /// A completed stream is the strongest signal the sync protocol exposes.  It is deliberately
+  /// not presented as "up to date": the server does not expose a remote asset total for us to
+  /// verify against the local database.
+  var lastCompletedSyncAt: Date?
   var isSyncing = false
 
   /// Import-drop staging (brief task 5): picked files wait here for a destination-library choice.
@@ -42,26 +48,53 @@ final class MacAppState {
   /// Row ids backing viewer paging (set when the viewer opens).
   var viewerContext: [String] = []
 
-  private init(serverURL: URL, token: String?, store: PhotosLocalStore) throws {
+  /// Connection, sync, upload queue and media pipeline all key off `serverURL`+token, so a
+  /// server switch (fresh init, or a successful login to a different host in `completeLogin`)
+  /// rebuilds every one of them together — reusing only `store` and `diskCache`, which don't.
+  private struct ConnectionState {
+    let serverURL: URL
+    let connection: ImmichConnection
+    let sync: SyncCoordinator
+    let uploadQueue: UploadQueue
+    let pipeline: MediaPipeline
+  }
+
+  private static func makeConnectionState(
+    serverURL: URL, token: String?, store: PhotosLocalStore, diskCache: TieredMediaCache
+  ) throws -> ConnectionState {
     let connection = try ImmichConnection(serverURL: serverURL, accessToken: token)
+    let tokenStore = connection.tokenStore
+    // `connection.serverURL` is `serverURL` normalized to include the `/api` base (see
+    // ImmichConnection.normalizedAPIBaseURL) — MediaServer must build asset/thumbnail URLs
+    // against that same base, or every request 404s and Nuke fails to decode the error body.
+    let server = MediaServer(
+      baseURL: connection.serverURL,
+      tokenProvider: { @Sendable in await tokenStore.get() }
+    )
+    return ConnectionState(
+      serverURL: serverURL,
+      connection: connection,
+      sync: SyncCoordinator(connection: connection, localStore: store),
+      uploadQueue: UploadQueue(store: store, transport: ImmichUploadTransport(connection: connection)),
+      pipeline: MediaPipeline.makeDefault(diskCache: diskCache, server: server)
+    )
+  }
+
+  private init(serverURL: URL, token: String?, store: PhotosLocalStore) throws {
     let diskCache = TieredMediaCache(
       rootDirectory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Heirloom/Media", isDirectory: true)
     )
-    let tokenStore = connection.tokenStore
-    let server = MediaServer(
-      baseURL: serverURL,
-      tokenProvider: { @Sendable in await tokenStore.get() }
-    )
+    let built = try Self.makeConnectionState(
+      serverURL: serverURL, token: token, store: store, diskCache: diskCache)
 
-    self.serverURL = serverURL
+    self.serverURL = built.serverURL
     self.store = store
-    self.connection = connection
-    sync = SyncCoordinator(connection: connection, localStore: store)
-    uploadQueue = UploadQueue(
-      store: store, transport: ImmichUploadTransport(connection: connection))
+    self.connection = built.connection
+    sync = built.sync
+    uploadQueue = built.uploadQueue
     self.diskCache = diskCache
-    pipeline = MediaPipeline.makeDefault(diskCache: diskCache, server: server)
+    pipeline = built.pipeline
   }
 
   /// Normal launch: file-backed DB in Application Support, token from the Keychain.
@@ -91,8 +124,17 @@ final class MacAppState {
   }
 
   func completeLogin(serverURL: URL, token: String) async throws {
-    self.serverURL = serverURL
-    await connection.tokenStore.set(token)
+    // `connection` (and `sync`/`uploadQueue`/`pipeline`, which key off it) was built at launch
+    // against whatever server was previously configured — on a fresh install, an unreachable
+    // placeholder. Rebuild them against the server that was just verified with `probe.ping()`,
+    // or `currentUserId()` below still hits the stale host.
+    let built = try Self.makeConnectionState(
+      serverURL: serverURL, token: token, store: store, diskCache: diskCache)
+    self.serverURL = built.serverURL
+    connection = built.connection
+    sync = built.sync
+    uploadQueue = built.uploadQueue
+    pipeline = built.pipeline
     SharedTokenStore.saveBestEffort(token)
     SharedContainer.sharedDefaults.set(serverURL.absoluteString, forKey: SharedContainer.serverURLKey)
     userId = try await connection.currentUserId()
@@ -117,6 +159,8 @@ final class MacAppState {
     spaces = []
     libraries = []
     albums = []
+    cameras = []
+    cameraCategories = []
   }
 
   func refresh() async {
@@ -126,9 +170,14 @@ final class MacAppState {
       async let s = store.memberSpaces(for: userId)
       async let l = store.accessibleLibraries(for: userId)
       async let a = store.memberAlbums(for: userId)
+      let timelineContext = try await store.timelineContext(for: userId)
+      let manageScope = TimelineScope.resolve(purpose: .manage, context: timelineContext)
+      async let c = store.cameraModels(scope: manageScope)
       spaces = try await s
       libraries = try await l
       albums = try await a
+      cameras = try await c
+      cameraCategories = CameraCategory.grouped(cameras)
     } catch {
       lastSyncError = error.localizedDescription
     }
@@ -140,6 +189,8 @@ final class MacAppState {
     defer { isSyncing = false }
     do {
       _ = try await sync.syncNow()
+      lastSyncError = nil
+      lastCompletedSyncAt = Date()
       await refresh()
     } catch {
       lastSyncError = error.localizedDescription

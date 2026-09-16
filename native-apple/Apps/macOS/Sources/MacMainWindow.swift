@@ -22,6 +22,38 @@ private struct AssetIdsSheetItem: Identifiable {
   let ids: [String]
 }
 
+/// The three-button Photos toolbar filter. Filters are an inclusive multi-selection: choosing
+/// Photos and Videos shows either type, and reopening the menu preserves its checkmarks.
+private enum TimelineQuickFilter: Hashable {
+  case all, favorites, edited, photos, videos, screenshots, capturedByMe, notInAlbum
+
+  var title: String {
+    switch self {
+    case .all: return "All Items"
+    case .favorites: return "Favorites"
+    case .edited: return "Edited"
+    case .photos: return "Photos"
+    case .videos: return "Videos"
+    case .screenshots: return "Screenshots"
+    case .capturedByMe: return "Captured by Me"
+    case .notInAlbum: return "Not in an Album"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .all: return "square.grid.3x3"
+    case .favorites: return "heart.fill"
+    case .edited: return "slider.horizontal.3"
+    case .photos: return "photo"
+    case .videos: return "video"
+    case .screenshots: return "camera.viewfinder"
+    case .capturedByMe: return "person.crop.circle.badge.checkmark"
+    case .notInAlbum: return "rectangle.stack.badge.minus"
+    }
+  }
+}
+
 struct MacMainView: View {
   @Bindable var state: MacAppState
   var window: MacWindow
@@ -43,6 +75,13 @@ struct MacLibraryBrowser: View {
   @State private var grouping: TimelineGrouping = .months
   @State private var switcher: LibraryFilterOption = .all
   @State private var zoom: CGFloat = 120
+  @State private var usesSquareThumbnails = false
+  @State private var timelineOrder: TimelineOrder = .newestFirst
+  @State private var quickFilters: Set<TimelineQuickFilter> = [.all]
+  @State private var albumAssetIds = Set<String>()
+  @State private var toolbarSearch = ""
+  @State private var isSelecting = false
+  @State private var didRequestInitialSync = false
   @State private var loader = MacGridLoader()
   @State private var selectionModel = GridSelectionModel()
   @State private var toast: String?
@@ -52,6 +91,7 @@ struct MacLibraryBrowser: View {
   @State private var showingNewAlbum = false
   @State private var managingSpace: Space?
   @State private var pendingDropMove: (ids: [String], target: MoveTarget)?
+  @State private var viewingAssetId: String?
   @Environment(\.openWindow) private var openWindow
   @SceneStorage("MacSidebar.selection") private var restoredSelection: String?
 
@@ -62,8 +102,7 @@ struct MacLibraryBrowser: View {
         selection: Binding(
           get: { selection },
           set: {
-            selection = $0
-            restoredSelection = $0?.restorableID
+            selectDestination($0)
           }
         ),
         onDropAssets: handleSidebarDrop,
@@ -72,14 +111,31 @@ struct MacLibraryBrowser: View {
       )
       .navigationSplitViewColumnWidth(min: 200, ideal: 240)
     } detail: {
-      detailView
-        .navigationTitle(selection?.title ?? "Library")
+      // A plain click/double-click opens the asset in the detail pane, sidebar still visible —
+      // matching native Photos. `File > New Viewer Window` still opens a real second NSWindow
+      // via `MacWindow.viewer(id)` for anyone who explicitly wants a standalone window.
+      if let viewingAssetId {
+        MacViewerView(
+          state: state, assetId: viewingAssetId,
+          onNavigate: { self.viewingAssetId = $0 },
+          onClose: { self.viewingAssetId = nil }
+        )
+      } else {
+        detailView
+          .navigationTitle("")
         .toolbar { toolbarContent }
-        .onDrop(of: [.fileURL], isTargeted: nil, perform: handleFileDrop)
+          .onDrop(of: [.fileURL], isTargeted: nil, perform: handleFileDrop)
+      }
     }
     .focusedValue(\.macAssetActions, gridActions)
     .onReceive(NotificationCenter.default.publisher(for: .macSyncNow)) { _ in
       Task { await state.syncNow(); await reload() }
+    }
+    // `refresh()`/`syncNow()` capture failures into `lastSyncError` but nothing displayed it,
+    // so a failed post-login sync (stale libraries/spaces, no thumbnails) looked identical to
+    // a slow one — surface it the same way every other error in this view already is.
+    .onChange(of: state.lastSyncError) { _, error in
+      if let error { showToast("Sync error: \(error)") }
     }
     .onReceive(NotificationCenter.default.publisher(for: .macImportFiles)) { _ in
       pickImportFiles()
@@ -88,6 +144,14 @@ struct MacLibraryBrowser: View {
       state.showingCameraImport = true
     }
     .task(id: reloadKey) { await reload() }
+    .task {
+      // The timeline is local-first, but a newly opened desktop app must initiate the first
+      // server stream rather than silently presenting a stale cache as a finished library.
+      guard !didRequestInitialSync, state.isConnected else { return }
+      didRequestInitialSync = true
+      await state.syncNow()
+      await reload()
+    }
     .onAppear {
       if let restoredSelection, selection == .library {
         selection = SidebarDestination(restorableID: restoredSelection)
@@ -161,8 +225,14 @@ struct MacLibraryBrowser: View {
   @ViewBuilder
   private var detailView: some View {
     switch selection?.query {
+    case .some where selection == .allAlbums:
+      MacAllAlbumsView(state: state) { album in
+        selectDestination(.album(album.id))
+      }
+    case .some where selection == .duplicates:
+      MacDuplicatesView(state: state, openViewer: openViewer)
     case .search:
-      MacSearchView(state: state)
+      MacSearchView(state: state, onOpenViewer: openViewer)
     case .map:
       MacMapPlacesView(state: state, openViewer: openViewer)
     case .people:
@@ -183,27 +253,35 @@ struct MacLibraryBrowser: View {
         ProgressView().padding()
       }
       MacCollectionGridView(
-        sections: loader.sections,
+        sections: displayedSections,
         assetsById: loader.assetsById,
-        rowDates: loader.sections.flatMap { $0.rows.map { Self.dateString($0.localDateTime) } },
+        rowDates: displayedSections.flatMap { $0.rows.map { Self.dateString($0.localDateTime) } },
         pipeline: state.pipeline,
         exporter: MacExporter(
           serverURL: state.serverURL,
           tokenProvider: exportTokenProvider
         ),
         itemSize: zoom,
+        usesSquareThumbnails: usesSquareThumbnails,
+        isSelectionMode: isSelecting,
         selectedIds: Binding(
           get: { selectionModel.selected },
           set: { selectionModel.selected = $0 }
         ),
         onSelectionChange: { ids in
-          selectionModel.retarget(to: loader.allRowIds)
+          selectionModel.retarget(to: displayedRowIds)
           selectionModel.selected = Set(ids)
         },
         onOpen: openViewer,
-        onPreview: showPreview
+        onPreview: showPreview,
+        onToggleFavorite: { id in toggleFavorite(ids: [id]) },
+        onMagnify: { delta in
+          let step: CGFloat = delta > 0 ? 12 : -12
+          zoom = min(300, max(64, zoom + step))
+        }
       )
       .accessibilityIdentifier("asset-grid")
+      footer
     }
   }
 
@@ -216,21 +294,25 @@ struct MacLibraryBrowser: View {
 
   @ToolbarContentBuilder
   private var toolbarContent: some ToolbarContent {
-    ToolbarItemGroup(placement: .navigation) {
-      Picker("Library", selection: $switcher) {
-        Text("All Libraries").tag(LibraryFilterOption.all)
-        Text("Personal").tag(LibraryFilterOption.personalOnly)
-        ForEach(state.spaces, id: \.space.id) { entry in
-          Text(entry.space.name).tag(LibraryFilterOption.space(entry.space.id))
-        }
-        ForEach(state.libraries, id: \.library.id) { entry in
-          Text(entry.library.name).tag(LibraryFilterOption.library(entry.library.id))
-        }
+    ToolbarItem(placement: .navigation) {
+      VStack(alignment: .leading, spacing: 0) {
+        Text(selection?.title ?? "Library").font(.headline)
+        Text(librarySubtitle).font(.caption).foregroundStyle(.secondary)
       }
-      .pickerStyle(.menu)
-      .accessibilityIdentifier("library-switcher")
+      .fixedSize()
     }
+    .sharedBackgroundVisibility(.hidden)
     ToolbarItemGroup(placement: .principal) {
+      librarySwitcher
+      HStack(spacing: 0) {
+        Button { zoom = max(64, zoom - 16) } label: { Image(systemName: "minus") }
+          .disabled(zoom <= 64)
+        Divider().frame(height: 18)
+        Button { zoom = min(300, zoom + 16) } label: { Image(systemName: "plus") }
+          .disabled(zoom >= 300)
+      }
+      .buttonStyle(.bordered)
+      .accessibilityIdentifier("grid-size-controls")
       Picker("Grouping", selection: $grouping) {
         Text("Years").tag(TimelineGrouping.years)
         Text("Months").tag(TimelineGrouping.months)
@@ -238,13 +320,79 @@ struct MacLibraryBrowser: View {
       }
       .pickerStyle(.segmented)
       .accessibilityIdentifier("grouping-segmented")
-      Slider(value: $zoom, in: 64...300) {
-        Text("Zoom")
+    }
+    ToolbarItem(placement: .automatic) {
+      Button {
+        usesSquareThumbnails.toggle()
+      } label: {
+        Label(
+          usesSquareThumbnails ? "Use Full Aspect Ratio" : "Use Square Thumbnails",
+          systemImage: usesSquareThumbnails ? "rectangle.on.rectangle.angled" : "square.grid.2x2"
+        )
       }
-      .frame(width: 120)
-      .accessibilityIdentifier("zoom-slider")
+      .labelStyle(.iconOnly)
+      .accessibilityIdentifier("thumbnail-display-toggle")
+    }
+    ToolbarItem(placement: .automatic) {
+      Menu {
+        sortChoice(.newestFirst)
+        sortChoice(.oldestFirst)
+      } label: {
+        Label("Sort", systemImage: "line.3.horizontal.decrease")
+      }
+      .labelStyle(.iconOnly)
+      .menuIndicator(.hidden)
+      .accessibilityIdentifier("timeline-sort-menu")
+    }
+    ToolbarItem(placement: .automatic) {
+      Menu {
+        filterChoice(.all)
+        Divider()
+        filterChoice(.favorites)
+        filterChoice(.edited)
+        filterChoice(.photos)
+        filterChoice(.videos)
+        filterChoice(.screenshots)
+        filterChoice(.capturedByMe)
+        filterChoice(.notInAlbum)
+      } label: {
+        Label("Filter", systemImage: "ellipsis")
+      }
+      .labelStyle(.iconOnly)
+      .menuIndicator(.hidden)
+      .accessibilityIdentifier("timeline-filter-menu")
     }
     ToolbarItemGroup {
+      Button {
+        if let first = selectionModel.selectedInOrder.first { openViewer(id: first) }
+        else { showToast("Select an item to view its info.") }
+      } label: {
+        Label("Info", systemImage: "info.circle")
+      }
+      Button {
+        guard !selectionModel.selected.isEmpty else {
+          showToast("Select an item to share.")
+          return
+        }
+        showToast("Sharing \(selectionModel.selected.count) selected item\(selectionModel.selected.count == 1 ? "" : "s").")
+      } label: {
+        Label("Share", systemImage: "square.and.arrow.up")
+      }
+      Button { toggleFavorite(ids: selectionModel.selectedInOrder) } label: {
+        Label("Favorite", systemImage: "heart")
+      }
+      .disabled(selectionModel.selected.isEmpty)
+      Button {
+        if selectionModel.selected.isEmpty { showToast("Select an item to rotate.") }
+        else { showToast("Rotation is available in the viewer.") }
+      } label: {
+        Label("Rotate", systemImage: "rotate.right")
+      }
+      Button(isSelecting ? "Done" : "Select") {
+        isSelecting.toggle()
+        if !isSelecting { selectionModel.clear() }
+      }
+      .accessibilityIdentifier("timeline-select-button")
       if let selection, case .space(let id) = selection,
         state.spaces.contains(where: { $0.space.id == id })
       {
@@ -259,7 +407,60 @@ struct MacLibraryBrowser: View {
       }
       .disabled(state.isSyncing)
       .accessibilityIdentifier("sync-button")
+      TextField("Search", text: $toolbarSearch)
+        .textFieldStyle(.roundedBorder)
+        .frame(minWidth: 160, idealWidth: 220, maxWidth: 280)
+        .onSubmit {
+          guard !toolbarSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+          selectDestination(.search)
+        }
+        .accessibilityIdentifier("toolbar-search")
     }
+  }
+
+  @ViewBuilder
+  private var librarySwitcher: some View {
+      // Native `.pickerStyle(.menu)` draws its own system pill with fixed, cramped internal
+      // padding we can't reach with `.padding()` (that only adds space *outside* the control).
+      // A `Menu` with a custom label gives full control over the capsule's padding/centering,
+      // and lets each row append a type glyph — an SF Symbol inline in `Text` renders correctly
+      // as a menu-item title, unlike a `Label`, whose icon AppKit always pins before the text.
+      Menu {
+        Button { switcher = .all } label: {
+          Text("All Libraries") + Text(" ") + Text(Image(systemName: "square.grid.2x2"))
+        }
+        Button { switcher = .personalOnly } label: {
+          Text("Personal") + Text(" ") + Text(Image(systemName: "person.crop.circle"))
+        }
+        ForEach(state.spaces, id: \.space.id) { entry in
+          Button { switcher = .space(entry.space.id) } label: {
+            Text(entry.space.name) + Text(" ") + Text(Image(systemName: "person.2.circle"))
+          }
+        }
+        ForEach(state.libraries, id: \.library.id) { entry in
+          Button { switcher = .library(entry.library.id) } label: {
+            Text(entry.library.name) + Text(" ") + Text(Image(systemName: "externaldrive"))
+          }
+        }
+      } label: {
+        HStack(spacing: 5) {
+          Image(systemName: "photo.on.rectangle.angled")
+            .font(.system(size: 15, weight: .semibold))
+          Text(switcherTitle)
+            .font(.system(size: 13, weight: .medium))
+            .lineLimit(1)
+          Image(systemName: "chevron.up.chevron.down")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(Color(nsColor: .controlColor)))
+      }
+      .menuStyle(.borderlessButton)
+      .fixedSize()
+      .accessibilityLabel("Library source: \(switcherTitle)")
+      .accessibilityIdentifier("library-switcher")
   }
 
   // MARK: - loading
@@ -277,21 +478,163 @@ struct MacLibraryBrowser: View {
     }
   }
 
+  private var switcherTitle: String {
+    switch switcher {
+    case .all: return "All Libraries"
+    case .personalOnly: return "Personal"
+    case .space(let id): return state.spaces.first { $0.space.id == id }?.space.name ?? "Shared Library"
+    case .library(let id): return state.libraries.first { $0.library.id == id }?.library.name ?? "External Library"
+    }
+  }
+
+  private static let dateRangeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d, yyyy"
+    return formatter
+  }()
+
+  private var libraryDateRange: String {
+    let dates = loader.sections.flatMap(\.rows).compactMap(\.localDateTime)
+    guard let first = dates.min(), let last = dates.max() else { return "No Photos" }
+    return "\(Self.dateRangeFormatter.string(from: first)) – \(Self.dateRangeFormatter.string(from: last))"
+  }
+
+  private var displayedSections: [MacGridSection] {
+    let filtered = loader.sections.compactMap { section -> MacGridSection? in
+      let rows = section.rows.filter(matchesQuickFilter)
+      return rows.isEmpty ? nil : MacGridSection(header: section.header, rows: rows)
+    }
+    guard timelineOrder == .oldestFirst else { return filtered }
+    return filtered.reversed().map { section in
+      MacGridSection(header: section.header, rows: section.rows.reversed())
+    }
+  }
+
+  private var displayedRowIds: [String] { displayedSections.flatMap { $0.rows.map(\.id) } }
+
+  private func matchesQuickFilter(_ row: TimelineRow) -> Bool {
+    guard !quickFilters.contains(.all) else { return true }
+    guard !quickFilters.isEmpty else { return true }
+    let asset = loader.assetsById[row.id]
+    return quickFilters.contains { filter in
+      switch filter {
+      case .all: return true
+      case .favorites: return row.isFavorite
+      case .edited: return asset?.isEdited == true
+      case .photos: return row.mediaKind == .photo || row.mediaKind == .livePhoto
+      case .videos: return row.mediaKind == .video
+      case .screenshots: return row.mediaKind == .screenshot
+      case .capturedByMe: return asset?.ownerId == state.userId
+      case .notInAlbum: return !albumAssetIds.contains(row.id)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func sortChoice(_ choice: TimelineOrder) -> some View {
+    Button {
+      timelineOrder = choice
+    } label: {
+      HStack {
+        Image(systemName: "checkmark").opacity(timelineOrder == choice ? 1 : 0)
+        Text(choice == .newestFirst ? "Newest First" : "Oldest First")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func filterChoice(_ filter: TimelineQuickFilter) -> some View {
+    Button {
+      if filter == .all {
+        quickFilters = [.all]
+      } else {
+        quickFilters.remove(.all)
+        if quickFilters.contains(filter) { quickFilters.remove(filter) }
+        else { quickFilters.insert(filter) }
+        if quickFilters.isEmpty { quickFilters = [.all] }
+      }
+    } label: {
+      HStack {
+        Image(systemName: "checkmark").opacity(quickFilters.contains(filter) ? 1 : 0)
+        Image(systemName: filter.systemImage)
+        Text(filter.title)
+      }
+    }
+  }
+
+  private var librarySubtitle: String {
+    let count = selectionModel.selected.count
+    guard count > 0 else { return libraryDateRange }
+    return "\(libraryDateRange) · \(count) Photo\(count == 1 ? "" : "s") Selected"
+  }
+
+  private var footer: some View {
+    let rows = loader.sections.flatMap(\.rows)
+    let photos = rows.filter { $0.mediaKind != .video }.count
+    let videos = rows.filter { $0.mediaKind == .video }.count
+    return VStack(spacing: 3) {
+      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
+        .font(.headline)
+      Text(syncStatusText)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 12)
+    .accessibilityIdentifier("library-sync-status")
+  }
+
+  private var syncStatusText: String {
+    if state.isSyncing { return "Syncing with Immich…" }
+    if state.lastSyncError != nil { return "Sync needs attention" }
+    if let completed = state.lastCompletedSyncAt {
+      return "Last server sync finished \(completed.formatted(date: .omitted, time: .shortened))"
+    }
+    return "Sync has not completed yet"
+  }
+
+  private func selectDestination(_ destination: SidebarDestination?) {
+    guard let destination else { selection = nil; restoredSelection = nil; return }
+    if destination == .locked {
+      Task { @MainActor in
+        guard await LockedMediaAuthentication.authenticate() else {
+          showToast("Locked photos could not be unlocked.")
+          return
+        }
+        selection = destination
+        restoredSelection = destination.restorableID
+      }
+      return
+    }
+    selection = destination
+    restoredSelection = destination.restorableID
+  }
+
   private func reload() async {
     guard let userId = state.userId, let selection else { return }
     await loader.load(
       store: state.store, userId: userId, destination: selection,
       grouping: grouping, switcher: switcher
     )
+    // Keep the local "Not in an Album" toolbar filter accurate without another server call.
+    var assigned = Set<String>()
+    for entry in state.albums {
+      assigned.formUnion((try? await state.store.assetIds(inAlbum: entry.album.id)) ?? [])
+    }
+    albumAssetIds = assigned
     selectionModel.retarget(to: loader.allRowIds)
   }
 
-  static func dateString(_ date: Date?) -> String {
-    guard let date else { return "" }
+  private static let rowDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
     formatter.locale = Locale(identifier: "en_US_POSIX")
-    return formatter.string(from: date)
+    return formatter
+  }()
+
+  static func dateString(_ date: Date?) -> String {
+    guard let date else { return "" }
+    return rowDateFormatter.string(from: date)
   }
 
   // MARK: - actions (focused value for menus)
@@ -312,7 +655,11 @@ struct MacLibraryBrowser: View {
         if let first = ids.first { openViewer(id: first) }
       },
       openViewer: {
-        if let first = ids.first { openViewer(id: first) }
+        // "File > New Viewer Window": unlike a plain click, this explicitly wants a separate
+        // NSWindow, so it bypasses `openViewer(id:)`'s inline in-window navigation.
+        guard let first = ids.first else { return }
+        state.viewerContext = loader.allRowIds
+        openWindow(value: MacWindow.viewer(first))
       },
       preview: {
         if let first = ids.first { showPreview(id: first) }
@@ -322,7 +669,7 @@ struct MacLibraryBrowser: View {
 
   private func openViewer(id: String) {
     state.viewerContext = loader.allRowIds
-    openWindow(value: MacWindow.viewer(id))
+    viewingAssetId = id
   }
 
   private func showPreview(id: String) {
@@ -455,11 +802,16 @@ extension SidebarDestination {
     case .mediaPhotos: return "media-photos"
     case .mediaVideos: return "media-videos"
     case .mediaScreenshots: return "media-screenshots"
+    case .media(let collection): return "media-\(collection.rawValue)"
     case .space(let id): return "space:\(id)"
     case .externalLibrary(let id): return "extlib:\(id)"
     case .album(let id): return "album:\(id)"
+    case .allAlbums: return "all-albums"
     case .imports: return "imports"
     case .recentlyDeleted: return "trash"
+    case .duplicates: return "duplicates"
+    case .capturedByMe: return "captured-by-me"
+    case .camera(let model): return "camera:\(model)"
     case .hidden: return "hidden"
     case .archive: return "archive"
     case .locked: return "locked"
@@ -478,6 +830,9 @@ extension SidebarDestination {
     if restorableID == "media-photos" { self = .mediaPhotos; return }
     if restorableID == "media-videos" { self = .mediaVideos; return }
     if restorableID == "media-screenshots" { self = .mediaScreenshots; return }
+    if restorableID == "duplicates" { self = .duplicates; return }
+    if restorableID == "all-albums" { self = .allAlbums; return }
+    if restorableID == "captured-by-me" { self = .capturedByMe; return }
     if restorableID == "imports" { self = .imports; return }
     if restorableID == "trash" { self = .recentlyDeleted; return }
     if restorableID == "hidden" { self = .hidden; return }
@@ -489,6 +844,7 @@ extension SidebarDestination {
     case "space": self = .space(parts[1])
     case "extlib": self = .externalLibrary(parts[1])
     case "album": self = .album(parts[1])
+    case "camera": self = .camera(parts[1])
     default: return nil
     }
   }
@@ -532,6 +888,13 @@ enum MacPreviewPanel {
   }
 }
 
+#Preview("Library") {
+  MacPreviewFixture { state in
+    MacLibraryBrowser(state: state)
+      .frame(width: 1400, height: 900)
+  }
+}
+
 extension NSItemProvider {
   @MainActor
   func loadFileURL() async throws -> URL {
@@ -564,5 +927,3 @@ struct MacPeopleView: View {
     }
   }
 }
-
-

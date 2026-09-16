@@ -48,8 +48,18 @@ public enum SharedContainer {
 
   /// Group suite when present, else standard (server URL, import destination, agent flag —
   /// all non-secret cross-process settings live here).
+  ///
+  /// `UserDefaults(suiteName:)` practically never returns nil, even when the process's code
+  /// signature can't actually use the group suite (ad-hoc signing) — it hands back an instance
+  /// backed by a domain the process can't persist to. A plain set-then-read probe would still
+  /// report success (the in-memory cache echoes it back regardless), so force a real disk write
+  /// via `synchronize()` — the same probe pattern as `groupURL()`, just at the plist layer.
   public static var sharedDefaults: UserDefaults {
-    UserDefaults(suiteName: groupIdentifier) ?? .standard
+    guard let suite = UserDefaults(suiteName: groupIdentifier) else { return .standard }
+    suite.set(UUID().uuidString, forKey: ".heirloom-access-probe")
+    guard suite.synchronize() else { return .standard }
+    suite.removeObject(forKey: ".heirloom-access-probe")
+    return suite
   }
 }
 
