@@ -8,9 +8,12 @@ import VisionKit
 struct MacLiveTextView: NSViewRepresentable {
   var image: NSImage
   var analysis: ImageAnalysis?
+  /// Swipe-to-page (owner request): same `page(by:)` path as the zoom view.
+  var onPage: ((Int) -> Void)? = nil
 
   func makeNSView(context: Context) -> NSView {
-    let container = NSView()
+    let container = ViewerPageCatcherView()
+    container.onPage = onPage
     let imageView = NSImageView(image: image)
     imageView.imageScaling = .scaleProportionallyUpOrDown
     imageView.imageAlignment = .alignCenter
@@ -30,6 +33,7 @@ struct MacLiveTextView: NSViewRepresentable {
   func updateNSView(_ container: NSView, context: Context) {
     context.coordinator.imageView?.image = image
     context.coordinator.overlay?.analysis = analysis
+    (container as? ViewerPageCatcherView)?.onPage = onPage
   }
 
   func makeCoordinator() -> Coordinator { Coordinator() }

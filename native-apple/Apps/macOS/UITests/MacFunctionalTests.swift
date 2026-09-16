@@ -281,4 +281,57 @@ final class MacFunctionalTests: XCTestCase {
       XCTAssertTrue(el("toolbar-search").exists, "Search stays on \(title)")
     }
   }
+
+  // MARK: - Gesture viewer (owner request: no chevron buttons)
+
+  /// Inline viewer pages by horizontal scroll (swipeLeft/swipeRight) with no
+  /// Previous/Next chevron buttons, and vertical scroll does not page.
+  /// Honest gates: written for the host (`make test-macos-ui`) — cannot go green
+  /// in this environment (known sidebar-render gate). macOS XCUITest has no
+  /// pinch API (verified: `pinch` is not a member of macOS XCUIElement), so pinch
+  /// zoom itself is not scripted — it rides native NSScrollView magnification
+  /// (clamped 1–8× in `ViewerPagingScrollView`); the suite guards the paging
+  /// direction contract instead.
+  func testViewerGesturePaging() {
+    launchAndWaitForLibrary()
+
+    // Double-click opens the inline viewer on the newest photo.
+    let cell = el("grid-cell-asset-personal-1")
+    XCTAssertTrue(cell.waitForExistence(timeout: 10), "photo cell renders")
+    cell.doubleClick()
+
+    let buttons = app.descendants(matching: .button)
+    XCTAssertTrue(
+      buttons["Back"].waitForExistence(timeout: 10), "viewer opens with Back affordance")
+    XCTAssertFalse(buttons["Previous"].exists, "prev chevron removed")
+    XCTAssertFalse(buttons["Next"].exists, "next chevron removed")
+
+    // The window title is the photo's capture date: swipe left pages to a
+    // different photo (title changes), swipe right returns (title restores).
+    let before = windowTitle()
+    let viewer = app.windows.firstMatch
+    viewer.swipeLeft()
+    XCTAssertTrue(
+      waitForTitle(changeFrom: before, timeout: 10), "swipe left pages to the next photo")
+    viewer.swipeRight()
+    XCTAssertTrue(
+      waitForTitle(equalTo: before, timeout: 10), "swipe right pages back")
+
+    // Vertical scroll must not page (title stays put).
+    viewer.swipeUp()
+    Thread.sleep(forTimeInterval: 1.0)
+    XCTAssertEqual(windowTitle(), before, "vertical scroll does not page")
+  }
+
+  /// Polls the window title until it differs from (or returns to) a value.
+  private func waitForTitle(changeFrom before: String? = nil, equalTo match: String? = nil, timeout: TimeInterval) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      let title = windowTitle()
+      if let before, title != before { return true }
+      if let match, title == match { return true }
+      Thread.sleep(forTimeInterval: 0.5)
+    }
+    return false
+  }
 }
