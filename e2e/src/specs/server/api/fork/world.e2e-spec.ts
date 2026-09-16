@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { utils } from 'src/utils.js';
 import { auditDisk, expectFilesAt, personalLibraryPrefix, sharedLibraryPrefix, type DiskAsset } from './disk.js';
-import { buildWorld, getAsset, type World } from './world.js';
+import { auditToken, buildWorld, getAsset, type World } from './world.js';
 
 const withSidecar = new Set(['fork-06', 'fork-07', 'fork-08', 'fork-10']);
 
@@ -25,18 +25,10 @@ const toDiskAsset = async (token: string, entry: { id: string; manifestId: strin
   };
 };
 
-const tokenFor = (world: World, owner: string): string => {
+const tokenFor = (world: World, owner: string): Promise<string> =>
   // Placement audits read through the elevated audit sessions (locked assets
   // are unreadable on plain sessions).
-  if (Object.hasOwn(world.auditTokens, owner)) {
-    return world.auditTokens[owner];
-  }
-  const user = (world.users as Record<string, { login: { accessToken: string } }>)[owner];
-  if (!user) {
-    throw new Error(`unknown world owner ${owner}`);
-  }
-  return user.login.accessToken;
-};
+  auditToken(world, owner);
 
 describe.sequential.each(
   process.env.FORK_E2E_TEMPLATE === 'on' ? ([{ template: 'on' }] as const) : ([{ template: 'off' }] as const),
@@ -54,7 +46,7 @@ describe.sequential.each(
 
   it('places every asset at its expected paths', async () => {
     for (const entry of world.assets) {
-      const disk = await toDiskAsset(tokenFor(world, entry.owner), entry);
+      const disk = await toDiskAsset(await tokenFor(world, entry.owner), entry);
       const hostPrefix = disk.spaceId
         ? sharedLibraryPrefix()
         : disk.libraryId
@@ -68,7 +60,7 @@ describe.sequential.each(
     const { orphans, missing } = await auditDisk(async () =>
       Promise.all(
         world.assets.map(async (entry) => {
-          const disk = await toDiskAsset(tokenFor(world, entry.owner), entry);
+          const disk = await toDiskAsset(await tokenFor(world, entry.owner), entry);
           return { id: disk.id, originalPath: disk.originalPath, sidecarPath: disk.sidecarPath };
         }),
       ),

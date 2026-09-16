@@ -15,6 +15,7 @@ import {
   create as createSharedSpace,
   createLibrary,
   login,
+  setupPinCode,
   unlockAuthSession,
   updateAssets,
   updateConfig,
@@ -50,14 +51,39 @@ export interface World {
   albumTrip: { id: string };
   assets: WorldAsset[];
   template: 'on' | 'off';
-  /**
-   * Read tokens for the R17 placement audits. Locked assets (fork-10) are
-   * unreadable without an elevated session, so alice maps to a dedicated
-   * password-unlocked session; everyone else maps to their login token and
-   * the interactive sessions stay non-elevated.
-   */
-  auditTokens: Record<string, string>;
 }
+
+// PIN for alice's audit elevation (4-6 digits per the API contract) and the
+// unlock TTL guard: server unlocks last 15 minutes, so audit sessions refresh
+// well before that.
+const worldPin = '123456';
+const auditSessionTtlMs = 10 * 60_000;
+const auditSessions = new Map<World, { accessToken: string; unlockedAt: number }>();
+
+/**
+ * Read token for the R17 placement audits. Locked assets (fork-10) are
+ * unreadable without an elevated session, so alice reads through a dedicated
+ * PIN-unlocked session that is re-created once the unlock window nears
+ * expiry; everyone else reads through their login token and the interactive
+ * sessions stay non-elevated.
+ */
+export const auditToken = async (world: World, owner: string): Promise<string> => {
+  const user = (world.users as Record<string, WorldUser>)[owner];
+  if (!user) {
+    throw new Error(`unknown world owner ${owner}`);
+  }
+  if (owner !== 'alice') {
+    return user.login.accessToken;
+  }
+  const cached = auditSessions.get(world);
+  if (cached && Date.now() - cached.unlockedAt < auditSessionTtlMs) {
+    return cached.accessToken;
+  }
+  const fresh = await login({ loginCredentialDto: { email: user.email, password: 'Password123' } });
+  await unlockAuthSession({ sessionUnlockDto: { pinCode: worldPin } }, { headers: asBearerAuth(fresh.accessToken) });
+  auditSessions.set(world, { accessToken: fresh.accessToken, unlockedAt: Date.now() });
+  return fresh.accessToken;
+};
 
 const forkTables = [
   'shared_space',
@@ -327,18 +353,13 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
   await settle(admin.accessToken);
 
   // fork-10 is Locked: even the owner cannot read it without an elevated
-  // session (access.repository excludes locked without elevation), which the
-  // R17 placement audits need for its original/sidecar paths. Elevate a
-  // dedicated alice session by password-unlock; the world's interactive
-  // sessions stay non-elevated so timeline-visibility tests keep observing
-  // locked assets as hidden.
-  const aliceAudit = await login({
-    loginCredentialDto: { email: 'alice@test.com', password: 'Password123' },
-  });
-  await unlockAuthSession(
-    { sessionUnlockDto: { password: 'Password123' } },
-    { headers: asBearerAuth(aliceAudit.accessToken) },
-  );
+  // session, which the R17 placement audits need for its original/sidecar
+  // paths. Set the PIN here (credential only, no elevation side effect);
+  // auditToken() elevates a dedicated alice session lazily so a slow file
+  // never outruns the 15-minute server unlock window. Interactive sessions
+  // stay non-elevated so timeline-visibility tests keep observing locked
+  // assets as hidden.
+  await setupPinCode({ pinCodeSetupDto: { pinCode: worldPin } }, { headers: asBearerAuth(alice.login.accessToken) });
 
   return {
     users: { admin: { login: admin, email: 'admin@test.com' }, alice, bob, carol, dave },
@@ -347,13 +368,6 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
     albumTrip: { id: trip.id },
     assets,
     template: storageTemplate,
-    auditTokens: {
-      admin: admin.accessToken,
-      alice: aliceAudit.accessToken,
-      bob: bob.login.accessToken,
-      carol: carol.login.accessToken,
-      dave: dave.login.accessToken,
-    },
   };
 };
 
