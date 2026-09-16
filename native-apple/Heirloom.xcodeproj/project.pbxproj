@@ -33,6 +33,7 @@
 		370AE557563121FFF80BE746 /* MacMoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B95AF9F4C147A63DA1C1CE0 /* MacMoveSheet.swift */; };
 		4841ADB369541C4802C754D5 /* MacSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2968E433A0A5C31FDFAD3BB /* MacSidebar.swift */; };
 		48BB950DFCDB66078A1FF786 /* BackupSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644C38FC2FC62B250E305F5A /* BackupSettings.swift */; };
+		4B342E05068BB4A933AD9B55 /* SyncUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */; };
 		4E8A77F2491828E30DF42126 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 9AB46386FE5B2A5308366F35 /* CoreModel */; };
 		4E9B4B0407B784944C1E5F3A /* MacLiveText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */; };
 		53E7942979EBC875FE7FC595 /* BackgroundUploadExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF6BF761A8E96399365A01B /* BackgroundUploadExtension.swift */; };
@@ -176,6 +177,7 @@
 		958BD68C3B16A152746D63A5 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		992CA42FB885FED500B3D213 /* MacMapPlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMapPlacesView.swift; sourceTree = "<group>"; };
 		9A200B4479469DD4C3817B69 /* BackupScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupScanner.swift; sourceTree = "<group>"; };
+		9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncUITests.swift; sourceTree = "<group>"; };
 		9F8C9D9FECBF534C26B94DC2 /* FreeUpSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeUpSpaceView.swift; sourceTree = "<group>"; };
 		A2968E433A0A5C31FDFAD3BB /* MacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebar.swift; sourceTree = "<group>"; };
 		A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentLoginItem.swift; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
 			children = (
 				3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */,
 				317A308C324F67538E064057 /* A9ExtrasUITests.swift */,
+				9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */,
 			);
 			name = UITests;
 			path = Apps/iOS/UITests;
@@ -811,6 +814,7 @@
 			files = (
 				8094A44964D5F3C4BC5B7E23 /* A3SmokeUITests.swift in Sources */,
 				593799F9CE380A58B326FA1B /* A9ExtrasUITests.swift in Sources */,
+				4B342E05068BB4A933AD9B55 /* SyncUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1175,6 +1179,7 @@
 				);
 				INFOPLIST_KEY_CFBundleDisplayName = Heirloom;
 				INFOPLIST_KEY_CFBundleName = Heirloom;
+				INFOPLIST_KEY_HeirloomAppIdentifierPrefix = "$(AppIdentifierPrefix)";
 				INFOPLIST_KEY_UIBackgroundModes = processing;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1285,6 +1290,7 @@
 				);
 				INFOPLIST_KEY_CFBundleDisplayName = Heirloom;
 				INFOPLIST_KEY_CFBundleName = Heirloom;
+				INFOPLIST_KEY_HeirloomAppIdentifierPrefix = "$(AppIdentifierPrefix)";
 				INFOPLIST_KEY_UIBackgroundModes = processing;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (

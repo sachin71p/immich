@@ -42,7 +42,7 @@ enum SharedTokenStore {
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
-      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.heirloom.shared",
+      kSecAttrAccessGroup as String: SharedContainer.keychainAccessGroup,
       kSecValueData as String: Data(token.utf8),
     ]
     SecItemDelete(query as CFDictionary)

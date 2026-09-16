@@ -48,6 +48,9 @@ targets:
         INFOPLIST_KEY_UIBackgroundModes: processing
         INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers:
           - com.immich.heirloom.backup-processing
+        # S6: expanded by Info.plist processing (unlike Swift string literals) so the app can
+        # resolve its real Keychain access-group prefix at runtime via `Bundle.main`.
+        INFOPLIST_KEY_HeirloomAppIdentifierPrefix: $(AppIdentifierPrefix)
   Heirloom-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS

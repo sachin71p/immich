@@ -10,7 +10,22 @@ import Security
 /// local verify and fresh installs keep working without entitlements.
 public enum SharedContainer {
   public static let groupIdentifier = "group.com.immich.heirloom.shared"
-  public static let keychainAccessGroup = "$(AppIdentifierPrefix)com.immich.heirloom.shared"
+  /// S6: build-setting variables are NOT expanded in Swift string literals, so the historical
+  /// literal `"$(AppIdentifierPrefix)…"` was never a valid `kSecAttrAccessGroup` — every
+  /// group-scoped Keychain call failed and `saveBestEffort`/`loadBestEffort` silently survived
+  /// on the no-group fallback (which is why login worked at all). The real prefix is resolved
+  /// at runtime from the `HeirloomAppIdentifierPrefix` Info.plist key (set via `project.yml`,
+  /// where `$(AppIdentifierPrefix)` IS expanded during Info.plist processing). Callers keep
+  /// trying this group first, then no group, so tokens written by older builds keep working.
+  public static var keychainAccessGroup: String {
+    if let prefix = Bundle.main.object(forInfoDictionaryKey: "HeirloomAppIdentifierPrefix") as? String,
+      !prefix.isEmpty, !prefix.hasPrefix("$(")
+    {
+      let dotted = prefix.hasSuffix(".") ? prefix : prefix + "."
+      return dotted + "com.immich.heirloom.shared"
+    }
+    return "$(AppIdentifierPrefix)com.immich.heirloom.shared"
+  }
   public static let databaseFileName = "heirloom.sqlite"
   public static let serverURLKey = "Heirloom.serverURL"
 
