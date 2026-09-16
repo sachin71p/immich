@@ -370,9 +370,13 @@ export const utils = {
       void builder.field(key, String(value));
     }
 
-    const { body } = await builder;
+    const { body, status } = await builder;
 
-    return body as AssetMediaResponseDto;
+    // Keep the HTTP status available to fixture helpers. API error bodies do
+    // not consistently include `statusCode`, so otherwise e2e callers cannot
+    // distinguish an expected authorization denial from a generic upload
+    // failure. Successful callers continue to consume the normal DTO fields.
+    return { ...body, statusCode: status } as AssetMediaResponseDto;
   },
 
   createImageFile: (path: string) => {
@@ -684,12 +688,12 @@ export const utils = {
     return secret;
   },
 
-  scan: async (accessToken: string, id: string) => {
+  scan: async (accessToken: string, id: string, timeoutMs?: number) => {
     await scanLibrary({ id }, { headers: asBearerAuth(accessToken) });
 
-    await utils.waitForQueueFinish(accessToken, 'library');
-    await utils.waitForQueueFinish(accessToken, 'sidecar');
-    await utils.waitForQueueFinish(accessToken, 'metadataExtraction');
+    await utils.waitForQueueFinish(accessToken, 'library', timeoutMs);
+    await utils.waitForQueueFinish(accessToken, 'sidecar', timeoutMs);
+    await utils.waitForQueueFinish(accessToken, 'metadataExtraction', timeoutMs);
   },
 
   async poll<T>(cb: () => Promise<T>, validate: (value: T) => boolean, map?: (value: T) => any) {

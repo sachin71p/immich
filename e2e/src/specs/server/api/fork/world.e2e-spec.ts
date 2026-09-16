@@ -33,7 +33,9 @@ const tokenFor = (world: World, owner: string): string => {
   return user.login.accessToken;
 };
 
-describe.each([{ template: 'on' }, { template: 'off' }] as const)('[R17-01] fork world ($template)', ({ template }) => {
+describe.sequential.each(
+  process.env.FORK_E2E_TEMPLATE === 'on' ? ([{ template: 'on' }] as const) : ([{ template: 'off' }] as const),
+)('[R17-01] fork world ($template)', ({ template }) => {
   let world: World;
 
   beforeAll(async () => {

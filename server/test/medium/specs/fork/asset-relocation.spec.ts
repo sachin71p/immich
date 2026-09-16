@@ -73,6 +73,7 @@ describe('asset relocation (fork T1)', () => {
   it('[MV-02] a failed relocation keeps its row with attempts=1; retry completes with clean move_history', async () => {
     const { sut, ctx } = setup();
     const storage = ctx.getMock(StorageRepository);
+    storage.mkdirSync.mockImplementation(() => undefined);
     const { user } = await ctx.newUser();
     const uploadPath = join(tmpdir(), 'fork-reloc', newUuid());
     const library = await newLibrary(ctx, user.id, uploadPath);
@@ -108,6 +109,9 @@ describe('asset relocation (fork T1)', () => {
     const { sut, ctx } = setup();
     const jobs = ctx.getMock(JobRepository);
     const storage = ctx.getMock(StorageRepository);
+    jobs.queue.mockResolvedValue(undefined);
+    jobs.queueAll.mockResolvedValue(undefined);
+    storage.mkdirSync.mockImplementation(() => undefined);
     const { user } = await ctx.newUser();
     const uploadPath = join(tmpdir(), 'fork-reloc', newUuid());
     const library = await newLibrary(ctx, user.id, uploadPath);

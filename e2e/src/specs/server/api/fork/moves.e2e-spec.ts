@@ -35,7 +35,7 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const personalOriginals = (filename: string): string[] =>
   findUnder(forkDataDir, filename).filter((path) => !path.includes('shared'));
 
-describe.each([{ template: 'on' }, { template: 'off' }] as const)(
+describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
   'fork moves ($template)',
   ({ template }) => {
     let world: World;

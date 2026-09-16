@@ -90,6 +90,18 @@ export const getPreferencesPartial = (newPreferences: UserPreferences) => {
     set(partial, property, newValue);
   }
 
+  // `defaultUploadTarget` is a discriminated union. The default is the
+  // personal variant, whose key set does not contain `spaceId`; iterating only
+  // default keys therefore used to discard a selected shared-space id on
+  // persistence and later passed `undefined` to the membership query.
+  if (newPreferences.sharedLibraries.defaultUploadTarget.type === 'space') {
+    set(
+      partial,
+      'sharedLibraries.defaultUploadTarget.spaceId',
+      newPreferences.sharedLibraries.defaultUploadTarget.spaceId,
+    );
+  }
+
   return partial;
 };
 

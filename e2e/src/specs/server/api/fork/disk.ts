@@ -67,6 +67,23 @@ export const findUnder = (dir: string, filename: string): string[] => {
   return found;
 };
 
+/** Recursive basename-prefix search (nesting-agnostic; the server nests by filename hash). */
+export const findByPrefix = (dir: string, prefix: string): string[] => {
+  const found: string[] = [];
+  if (!existsSync(dir)) {
+    return found;
+  }
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) {
+      found.push(...findByPrefix(path, prefix));
+    } else if (entry.startsWith(prefix)) {
+      found.push(path);
+    }
+  }
+  return found;
+};
+
 export interface DiskAsset {
   id: string;
   ownerId: string;
@@ -103,10 +120,17 @@ export const expectFilesAt = (asset: DiskAsset, opts: ExpectFilesAtOptions): voi
     const stale = findUnder(prefix, asset.originalFileName);
     expect(stale, `stale file still present: ${stale.join(', ')}`).toEqual([]);
   }
-  // Derived files are keyed by storage key (space assets under shared/<spaceId>).
-  for (const folder of ['thumbs', 'encoded-video']) {
-    const dir = join(forkDataDir, folder, storageKey(asset));
-    expect(existsSync(dir), `derived folder missing: ${dir} for asset ${asset.id}`).toBe(true);
+  // Thumbnails are `<id>_<fileType>.<format>` under thumbs/<key> and the
+  // R17-01 caller settles thumbnailGeneration first, so every asset must have
+  // at least one. Encoded video (`<id>.mp4`) only exists for transcoded
+  // videos, so it is asserted by placement (any copy must live under the
+  // current key) rather than by existence.
+  const key = storageKey(asset);
+  const thumbs = findByPrefix(join(forkDataDir, 'thumbs', key), `${asset.id}_`);
+  expect(thumbs.length, `no thumbnails for asset ${asset.id} under thumbs/${key}`).toBeGreaterThan(0);
+  const encodedDir = join(forkDataDir, 'encoded-video', key);
+  for (const copy of findUnder(join(forkDataDir, 'encoded-video'), `${asset.id}.mp4`)) {
+    expect(copy.startsWith(`${encodedDir}/`), `encoded video misplaced: ${copy} (expected under ${encodedDir})`).toBe(true);
   }
 };
 

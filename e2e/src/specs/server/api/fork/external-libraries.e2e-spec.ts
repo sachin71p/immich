@@ -36,7 +36,7 @@ const searchIds = async (token: string, dto: Record<string, unknown> = {}): Prom
   return assets.items.map((asset: AssetResponseDto) => asset.id);
 };
 
-describe.each([{ template: 'on' }, { template: 'off' }] as const)(
+describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
   'fork external libraries ($template)',
   ({ template }) => {
     let world: World;

@@ -20,7 +20,7 @@ import {
   type LoginResponseDto,
   type SharedSpaceResponseDto,
 } from '@immich/sdk';
-import { cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 import { settle } from './jobs.js';
@@ -28,6 +28,7 @@ import { settle } from './jobs.js';
 export const forkAssetDir = join(testAssetDir, '..', 'fork-assets');
 export const generatedDir = join(forkAssetDir, 'generated');
 export const personalDir = join(forkAssetDir, 'personal');
+const forkDataDir = join(testAssetDir, '..', '.fork-data');
 
 export interface WorldUser {
   login: LoginResponseDto;
@@ -138,6 +139,17 @@ export interface BuildWorldOptions {
 }
 
 export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promise<World> => {
+  // The regular e2e database reset only cleans the upstream /data mount. The
+  // fork stack uses /fork-data, so stale files from an earlier world otherwise
+  // survive and make StorageCore treat a checksum-mismatched destination as an
+  // interrupted move. Reset both fork-owned media roots before seeding.
+  mkdirSync(forkDataDir, { recursive: true });
+  // Keep the bind-mount root itself alive. Replacing it while Docker has it
+  // mounted can leave the server attached to the old host inode.
+  for (const entry of ['library', 'upload', 'thumbs', 'encoded-video', 'profile', 'backups']) {
+    rmSync(join(forkDataDir, entry), { recursive: true, force: true });
+  }
+  utils.resetTempFolder();
   await resetForkDatabase();
   const admin = await utils.adminSetup();
   await utils.resetAdminConfig(admin.accessToken);
@@ -192,9 +204,9 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
   cpSync(join(generatedDir, manifestFile('fork-11')), join(testAssetDir, 'temp', 'fork', 'archive', 'fork-11.jpg'));
   cpSync(join(generatedDir, manifestFile('fork-12')), join(testAssetDir, 'temp', 'fork', 'archive', 'fork-12.jpg'));
   cpSync(join(generatedDir, manifestFile('fork-13')), join(testAssetDir, 'temp', 'fork', 'archive', 'fork-13.webp'));
-  await utils.scan(admin.accessToken, archive.id);
+  await utils.scan(admin.accessToken, archive.id, 120_000);
   cpSync(join(generatedDir, manifestFile('fork-14')), join(testAssetDir, 'temp', 'fork', 'nasro', 'fork-14.png'));
-  await utils.scan(admin.accessToken, nasro.id);
+  await utils.scan(admin.accessToken, nasro.id, 120_000);
 
   const assets: WorldAsset[] = [];
   const track = (id: string, manifestId: string, owner: string) => {

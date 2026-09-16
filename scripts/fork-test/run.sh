@@ -70,7 +70,9 @@ run_unit() {
 }
 
 run_medium() {
-  (cd "$ROOT/server" && CI=true pnpm run test:medium -- test/medium/specs/fork) \
+  # Invoke Vitest directly: passing a positional path through `pnpm run` inserts
+  # a `--` separator, which makes Vitest ignore the filter and run upstream specs.
+  (cd "$ROOT/server" && CI=true pnpm exec vitest --config test/vitest.config.medium.mjs test/medium/specs/fork) \
     && record medium PASS "" || record medium FAIL "see output"
 }
 
@@ -82,8 +84,17 @@ run_e2e_api() {
   fi
   stack_up
   # shellcheck disable=SC2164
-  (cd "$ROOT/e2e" && VITEST_DISABLE_DOCKER_SETUP=true pnpm test -- src/specs/server/api/fork) \
-    && record e2e-api PASS "template=$TEMPLATE" || record e2e-api FAIL "template=$TEMPLATE"
+  # The fork stack deliberately maps media at /fork-data. Keep upstream e2e
+  # specs (which assume /data) in the separate upstream tier.
+  # Every fork spec seeds by truncating the shared e2e database and clearing
+  # the shared /fork-data mount. Files must therefore run one at a time;
+  # Vitest's default file parallelism lets one world erase another mid-test.
+  local status=0
+  for template in on off; do
+    (cd "$ROOT/e2e" && FORK_E2E_TEMPLATE="$template" VITEST_DISABLE_DOCKER_SETUP=true \
+      pnpm exec vitest --run --maxWorkers=1 src/specs/server/api/fork) || status=1
+  done
+  [[ "$status" == 0 ]] && record e2e-api PASS "template=$TEMPLATE" || record e2e-api FAIL "template=$TEMPLATE"
   stack_down
 }
 

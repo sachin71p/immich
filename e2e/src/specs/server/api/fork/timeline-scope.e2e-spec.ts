@@ -25,7 +25,10 @@ const bucketTotal = async (token: string, params: Record<string, unknown> = {}):
 };
 
 const searchIds = async (token: string, dto: Record<string, unknown> = {}): Promise<string[]> => {
-  const { assets } = await utils.searchAssets(token, { size: 100, ...dto });
+  // Match the unstacked timeline bucket contract used throughout this suite.
+  // Search otherwise returns only the stack primary, while the expected world
+  // deliberately contains both members of Bob's two-item stack.
+  const { assets } = await utils.searchAssets(token, { size: 100, withStacked: false, ...dto });
   return assets.items.map((asset: AssetResponseDto) => asset.id);
 };
 

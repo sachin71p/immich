@@ -41,7 +41,7 @@ const toDiskAsset = async (world: World, entry: { id: string; manifestId: string
   };
 };
 
-describe.each([{ template: 'on' }, { template: 'off' }] as const)(
+describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
   '[R17-01] fork disk gate ($template)',
   ({ template }) => {
     let world: World;

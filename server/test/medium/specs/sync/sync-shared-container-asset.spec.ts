@@ -48,6 +48,7 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
+// [SY-06] This existing upstream sync suite remains part of the fork compatibility gate.
 describe('shared container asset sync (S6)', () => {
   it('[SY-01] [SY-02] [R16-04] syncs space create/update favorite, move-out removal, and excludes own contributions', async () => {
     const { auth, user, ctx } = await setup();

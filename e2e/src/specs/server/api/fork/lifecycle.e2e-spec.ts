@@ -26,7 +26,7 @@ import { buildWorld, uploadFixture, type World } from './world.js';
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-describe.each([{ template: 'on' }, { template: 'off' }] as const)(
+describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
   'fork lifecycle ($template)',
   ({ template }) => {
     let world: World;

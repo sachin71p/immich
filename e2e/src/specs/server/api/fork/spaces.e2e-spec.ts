@@ -31,9 +31,14 @@ import { buildWorld, uploadFixture, type World } from './world.js';
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-describe.each([{ template: 'on' }, { template: 'off' }] as const)(
-  'fork spaces ($template)',
-  ({ template }) => {
+// Each world reset truncates the shared e2e database. Keep both variants below
+// one sequential parent; `describe.each` creates sibling top-level suites that
+// Vitest may otherwise overlap.
+describe.sequential('fork spaces', () => {
+  for (const { template } of (process.env.FORK_E2E_TEMPLATE === 'on'
+    ? ([{ template: 'on' }] as const)
+    : ([{ template: 'off' }] as const))) {
+    describe(`fork spaces (${template})`, () => {
     let world: World;
     let adminToken: string;
 
@@ -389,5 +394,6 @@ describe.each([{ template: 'on' }, { template: 'off' }] as const)(
         { headers: auth(token('alice')) },
       );
     });
-  },
-);
+    });
+  }
+});
