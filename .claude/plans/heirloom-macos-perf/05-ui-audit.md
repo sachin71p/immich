@@ -35,7 +35,7 @@ partially = improved, needs visual; open = needs host/hands. No regressions obse
 | U27 | Grid | Grid Rotate: menu Image›Rotate is a no-op `rotate: {}`; toolbar Rotate only toasts. | P1 | fixed — persists via edits path |
 | U28 | Video badges | Server duration is ms, stored as seconds → badges 1000× (found Wave 3). | P1 | fixed — wire ms→s + v4 backfill, tested |
 | U29 | Prefetch storm | Idle prefetch churn (3,210 cancels, 138 404s/899 ids) → hang clusters (found Gate 3). | P0 | fixed — gated reload, window no-op, 404 hold, quiet cancels; re-gate 2/0.69 s |
-| U30 | Launch variance | GridLoad 5.5 s warm vs 3.9 s empty (server variance dominates n=1). | P1 | open — re-sample controlled server |
+| U30 | Launch variance | GridLoad 5.2→3.6 s after pool migration; attributed: 229 MB cold DB file, all-local fetch, main idle (page-cache IO wait). | P1 | open — last-mile is mmap/covering-index/prewarm, future work |
 | U31 | Main-thread warnings | "Should not be called on the main thread" runtime warnings in UI runs. | P2 | open — attribute harness vs app |
 | U32 | UI-test gate | Seeded app foregrounds but never renders sidebar/content in test env (13/13 gated; 3 pass past other gates). | P1 | open — environmental, host re-run |
 | — | Not exercised (destructive on real library) | Trash, Lock, Move-confirm, Add-to-album confirm, New Album, New shared library, Import. Verify on a test account. | — | open |

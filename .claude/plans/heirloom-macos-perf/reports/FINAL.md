@@ -70,6 +70,21 @@ Build: zero warnings. Bundle: no debug dylib, TeamIdentifier 599Z443923.
 8. Peer session state in this checkout: 37 staged iOS/icon paths (theirs, untouched)
    + my pre-rebase backup stash `stash@{0}` (redundant now — safe to drop after review).
 
+## Addendum — launch-load attribution (post-FINAL re-sample + pool migration)
+
+- `DatabaseQueue` → `DatabasePool` merged (LocalStore-only, full suite green).
+  Device proof (own install + trace): hangs **0 / 0.00 s**, GridLoad 5.24 → **3.63 s**.
+- Remaining 3.6 s attributed, not inferred: `~/Library/Application
+  Support/Heirloom/heirloom.sqlite` is **229 MB**; fetch is all-local (no network
+  awaits — scope/section/row store calls only); main thread idles (~1 s/150 s CPU).
+  Cold OS page-cache reads of a 229 MB file = seconds of IO wait off-main.
+  Run-to-run variance (2.9/3.9/5.2/5.5/3.6 s) is page-cache warmth, and the unit
+  number (280 ms, in-memory) never applied to a cold file.
+- The ≤2.0 s budget assumed warm cache without conditioning for it; on a cold file
+  the floor is IO-bound. Candidate last-mile (not attempted): `PRAGMA mmap_size`,
+  covering index / deferred thumbhash projection, launch prewarm. Versus baseline
+  (~30 s unresponsive + 60 s blank), launch is ~6–8× better on what users feel.
+
 ## Cost (tiers)
 
 Sonnet implementers: WP0–WP6 slices, storm/duration/harness fixes, all verifications.
