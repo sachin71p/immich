@@ -4,20 +4,31 @@ import GRDB
 import Rules
 
 /// The GRDB-backed, offline-first UI store — A0 Architecture: "The local DB is the UI's only data
-/// source; network fills it (sync) and the media cache." `GRDB.DatabaseQueue` is internally
-/// thread-safe/`Sendable`, so `PhotosLocalStore` just wraps it plus the schema-v1 migrator (`Schema.swift`).
+/// source; network fills it (sync) and the media cache." `GRDB.DatabasePool` (WAL, concurrent
+/// readers) backs the store so launch grid reads run alongside the sync session's write
+/// transactions instead of serializing behind them; writers keep queue semantics (a single
+/// serialized writer, each `write` its own transaction), so `PhotosLocalStore` just wraps the
+/// pool plus the schema migrator (`Schema.swift`). The pool is `Sendable`.
+/// The accessor keeps its historic `dbQueue` name (100+ `read`/`write` call sites share the
+/// `DatabaseWriter` API, which is identical on pool and queue).
 public final class PhotosLocalStore: Sendable {
-  let dbQueue: DatabaseQueue
+  let dbQueue: DatabasePool
 
-  /// Opens (creating if needed) the database at `path` and migrates it to schema v1.
+  /// Opens (creating if needed) the database at `path` and migrates it to the latest schema.
+  /// An existing rollback-journal owner DB is converted to WAL on open (GRDB pool default).
   public init(path: String) throws {
-    dbQueue = try DatabaseQueue(path: path)
+    dbQueue = try DatabasePool(path: path)
     try Schema.makeMigrator().migrate(dbQueue)
   }
 
-  /// An ephemeral, in-memory store — used by tests and previews.
+  /// An ephemeral store — used by tests and previews.
   public init(inMemory: Bool = true) throws {
-    dbQueue = try DatabaseQueue()
+    // A pool can not WAL-activate ":memory:" (SQLite refuses journal_mode=WAL there),
+    // so the ephemeral store is a temp-dir file: still private per instance, fully
+    // pooled, and never near the real library. The OS reclaims TMPDIR contents.
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("PhotosLocalStore-\(UUID().uuidString).sqlite")
+    dbQueue = try DatabasePool(path: url.path)
     try Schema.makeMigrator().migrate(dbQueue)
   }
 

@@ -13,10 +13,12 @@ public enum SidebarDestination: Sendable, Hashable {
   case recentlySaved
   case map
   case people
+  case person(String)
   case memories
   case mediaPhotos
   case mediaVideos
   case mediaScreenshots
+  case mediaPanoramas
   case media(NativeMediaCollection)
   case space(String)
   case externalLibrary(String)
@@ -40,10 +42,12 @@ public enum SidebarDestination: Sendable, Hashable {
     case .recentlySaved: return "Recently Saved"
     case .map: return "Map"
     case .people: return "People"
+    case .person: return "Person"
     case .memories: return "Memories"
     case .mediaPhotos: return "Photos"
     case .mediaVideos: return "Videos"
     case .mediaScreenshots: return "Screenshots"
+    case .mediaPanoramas: return "Panoramas"
     case .media(let collection): return collection.title
     case .space: return "Shared Library"
     case .externalLibrary: return "External Library"
@@ -60,6 +64,84 @@ public enum SidebarDestination: Sendable, Hashable {
     }
   }
 
+  /// Resolved display title (U24/U25): `.space`/`.album`/`.externalLibrary` carry only an
+  /// id, so the toolbar and window title resolve the live name from app state, falling back to
+  /// the generic label when the entry hasn't synced yet. Main-actor: state is `@Observable`.
+  @MainActor
+  func title(in state: MacAppState) -> String {
+    switch self {
+    case .space(let id):
+      return state.spaces.first { $0.space.id == id }?.space.name ?? title
+    case .album(let id):
+      return state.albums.first { $0.album.id == id }?.album.name ?? title
+    case .externalLibrary(let id):
+      return state.libraries.first { $0.library.id == id }?.library.name ?? title
+    default:
+      return title
+    }
+  }
+
+  /// Destinations that render the timeline grid (full grid toolbar). Map, People, Memories,
+  /// Collections, Search, All Albums and Duplicates render their own views with a minimal
+  /// toolbar (U15/U16/U18).
+  public var usesGridToolbar: Bool {
+    switch self {
+    case .map, .people, .person, .memories, .collections, .search, .allAlbums, .duplicates:
+      return false
+    default:
+      return true
+    }
+  }
+
+  /// Empty-state copy for grid destinations (U23): shown when the snapshot is empty and the
+  /// loader phase is `.loaded`. Nil for destinations with their own views.
+  @MainActor
+  func emptyState(in state: MacAppState) -> (title: String, message: String, symbol: String)? {
+    switch self {
+    case .library, .collections:
+      return ("No Photos", "Your library is empty.", "photo")
+    case .favorites:
+      return ("No Favorites", "Click ♡ on a photo to add it.", "heart")
+    case .recentlySaved:
+      return ("No Recent Saves", "Newly saved photos will appear here.", "tray.and.arrow.down")
+    case .mediaPhotos:
+      return ("No Photos", "No photos in this view.", "photo")
+    case .mediaVideos:
+      return ("No Videos", "No videos in this view.", "video")
+    case .mediaScreenshots:
+      return ("No Screenshots", "No screenshots in this view.", "camera.viewfinder")
+    case .mediaPanoramas:
+      return ("No Panoramas", "No panoramas in this view.", "pano")
+    case .media(let collection):
+      return ("No \(collection.title)", "Nothing here yet.", collection.systemImage)
+    case .space(let id):
+      let name = state.spaces.first { $0.space.id == id }?.space.name ?? "shared library"
+      return ("No Items", "No items in \(name) yet.", "person.2.circle")
+    case .externalLibrary(let id):
+      let name = state.libraries.first { $0.library.id == id }?.library.name ?? "external library"
+      return ("No Items", "No items in \(name) yet.", "externaldrive")
+    case .album(let id):
+      let name = state.albums.first { $0.album.id == id }?.album.name ?? "this album"
+      return ("Empty Album", "No photos in \(name) yet.", "rectangle.stack")
+    case .imports:
+      return ("No Imports", "Imported files will appear here.", "square.and.arrow.down")
+    case .recentlyDeleted:
+      return ("Trash Is Empty", "Deleted items appear here for 30 days.", "trash")
+    case .capturedByMe:
+      return ("No Photos by You", "Photos you captured will appear here.", "person.crop.circle.badge.checkmark")
+    case .camera(let model):
+      return ("No Photos", "No photos captured with \(model) yet.", "camera")
+    case .hidden:
+      return ("No Hidden Photos", "Hidden photos will appear here.", "eye.slash")
+    case .archive:
+      return ("No Archived Photos", "Archived photos will appear here.", "archivebox")
+    case .locked:
+      return ("Locked", "Unlock to view locked photos.", "lock")
+    case .map, .people, .person, .memories, .search, .allAlbums, .duplicates:
+      return nil
+    }
+  }
+
   /// SF Symbol per destination (system components only — A0 Architecture, App Review 5.2.5).
   public var systemImage: String {
     switch self {
@@ -70,10 +152,12 @@ public enum SidebarDestination: Sendable, Hashable {
     case .recentlySaved: return "tray.and.arrow.down"
     case .map: return "map"
     case .people: return "person.2"
+    case .person: return "person.circle"
     case .memories: return "clock"
     case .mediaPhotos: return "photo"
     case .mediaVideos: return "video"
     case .mediaScreenshots: return "camera.viewfinder"
+    case .mediaPanoramas: return "pano"
     case .media(let collection): return collection.systemImage
     case .space: return "person.2.circle"
     case .externalLibrary: return "externaldrive"
@@ -124,10 +208,12 @@ extension SidebarDestination {
     case .recentlySaved: return .recents(nil)
     case .map: return .map
     case .people: return .people
+    case .person: return .people
     case .memories: return .memories
     case .mediaPhotos: return .media(.photo, nil)
     case .mediaVideos: return .media(.video, nil)
     case .mediaScreenshots: return .media(.screenshot, nil)
+    case .mediaPanoramas: return .media(.panorama, nil)
     case .media(let collection): return .mediaCollection(collection, nil)
     case .space(let id): return .timeline(.space(id))
     case .externalLibrary(let id): return .timeline(.library(id))
@@ -198,8 +284,17 @@ public enum TimelineGrouping: String, Sendable, Hashable, CaseIterable {
   public var groupsByYear: Bool { self == .years }
 }
 
-/// Desktop timeline ordering for the native-style sort control.
-public enum TimelineOrder: String, Sendable, Hashable {
-  case newestFirst
-  case oldestFirst
+/// Desktop timeline ordering for the native-style sort control: unified on
+/// `CoreModel.TimelineOrder` (the app's old `String`-backed copy is deleted — nothing
+/// persisted the raw value). `Equatable` is spelled out here until PhotosCore adds it,
+/// so the sort menu can compare selections.
+extension TimelineOrder: Equatable {
+  public static func == (lhs: TimelineOrder, rhs: TimelineOrder) -> Bool {
+    switch (lhs, rhs) {
+    case (.newestFirst, .newestFirst), (.oldestFirst, .oldestFirst):
+      return true
+    case (.newestFirst, .oldestFirst), (.oldestFirst, .newestFirst):
+      return false
+    }
+  }
 }

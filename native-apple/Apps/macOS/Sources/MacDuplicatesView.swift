@@ -1,4 +1,5 @@
 import CoreModel
+import Media
 import SwiftUI
 import SyncEngine
 
@@ -32,9 +33,18 @@ struct MacDuplicatesView: View {
                   ForEach(group.assetIds, id: \.self) { id in
                     Button { openViewer(id) } label: {
                       VStack(alignment: .leading, spacing: 3) {
-                        Image(systemName: group.suggestedKeepAssetIds.contains(id) ? "checkmark.circle.fill" : "photo")
-                          .font(.title2)
-                          .foregroundStyle(group.suggestedKeepAssetIds.contains(id) ? .green : .secondary)
+                        ZStack(alignment: .topTrailing) {
+                          MacDuplicateThumb(
+                            assetId: id, thumbhash: assetsByID[id]?.thumbhash,
+                            pipeline: state.pipeline)
+                          if group.suggestedKeepAssetIds.contains(id) {
+                            Image(systemName: "checkmark.circle.fill")
+                              .font(.title3)
+                              .foregroundStyle(.green)
+                              .background(.white, in: Circle())
+                              .padding(6)
+                          }
+                        }
                         Text(assetsByID[id]?.originalFileName ?? "Loading photo…")
                           .lineLimit(2)
                           .frame(width: 130, alignment: .leading)
@@ -61,6 +71,51 @@ struct MacDuplicatesView: View {
     .navigationTitle("Duplicates")
     .task { await load() }
   }
+
+/// Group-item thumbnail: first pipeline yield (placeholder or cached tier) is enough,
+/// same pattern as the Collections cover tile. Resolution controls ("Keep best / Trash
+/// others") are deliberately absent: the generated API client only includes
+/// `getAssetDuplicates` — `resolveDuplicates`/`deleteDuplicates` are not in
+/// `openapi-generator-config.yaml`'s filter, and extending that filter means editing an
+/// existing PhotosCore file, which WP6 forbids. Per §6 the control isn't shown.
+private struct MacDuplicateThumb: View {
+  var assetId: String
+  var thumbhash: String?
+  var pipeline: MediaPipeline
+  @State private var image: NSImage?
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .quaternaryLabelColor))
+      if let image {
+        Image(nsImage: image)
+          .resizable()
+          .aspectRatio(contentMode: .fill)
+      } else {
+        Image(systemName: "photo")
+          .font(.title2)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .frame(width: 130, height: 96)
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .task(id: assetId) {
+      do {
+        for try await first in await pipeline.stream(
+          id: assetId, thumbhash: thumbhash, tier: .thumbnail
+        ) {
+          switch first.content {
+          case .placeholder(let img): image = img
+          case .tier(_, let img, _): image = img
+          }
+          break
+        }
+      } catch {
+        // Placeholder remains; the filename label below still identifies the item.
+      }
+    }
+  }
+}
 
   private func load() async {
     isLoading = true

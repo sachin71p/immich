@@ -143,7 +143,11 @@ final class MacCameraBrowser: NSObject, ObservableObject {
         if state.prefs.deleteAfterImport, let device = file.device as? ICCameraDevice {
           device.requestDeleteFiles([file])
         }
+      } catch is CancellationError {
+        // Cancellation isn't a failure: skip the item with no status noise.
       } catch {
+        HeirloomLog.ui.error(
+          "Camera import failed: \(error.localizedDescription, privacy: .public)")
         status = "Import failed for \(item.name ?? "item"): \(error.localizedDescription)"
       }
     }
@@ -240,6 +244,13 @@ struct MacCameraImportView: View {
       if browser.devices.isEmpty {
         Text("No cameras or SD cards found. Connect a device and make sure it is unlocked.")
           .foregroundStyle(.secondary)
+        // The Done row below only renders with devices: without this, a device-less sheet
+        // has no dismiss control at all (U12 pattern). Escape closes via `.cancelAction`.
+        HStack {
+          Spacer()
+          Button("Done") { dismiss() }
+            .keyboardShortcut(.cancelAction)
+        }
       } else {
         Picker("Device", selection: $selectedDeviceName) {
           ForEach(browser.devices, id: \.name) { device in
@@ -312,6 +323,7 @@ struct MacCameraImportView: View {
             Text("\(pendingCount) queued").font(.caption).foregroundStyle(.secondary)
           }
           Button("Done") { dismiss() }
+            .keyboardShortcut(.cancelAction)
         }
       }
       if let status = browser.status {
@@ -355,6 +367,8 @@ struct MacCameraImportView: View {
 
   private func refreshPending() async {
     pendingCount = (try? await state.store.pendingUploadCount()) ?? 0
+    // Best-known count for the WP4 quit guard (rechecked live before prompting).
+    HeirloomQuitGuard.shared.pendingUploads = pendingCount
   }
 }
 

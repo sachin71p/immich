@@ -17,7 +17,6 @@ struct MacVideoPageView: View {
   var onTrim: () -> Void
 
   @State private var player: AVPlayer?
-  @State private var isMuted = false
 
   var body: some View {
     ZStack {
@@ -28,28 +27,37 @@ struct MacVideoPageView: View {
           ProgressView().controlSize(.large)
         }
       }
-      .task {
+      // Per-asset task (WP5 item 9): paging away cancels this task, which pauses the old
+      // player before the new page's player is built — audio never bleeds across pages.
+      .task(id: asset.id) {
         guard let token = await state.connection.tokenStore.get() else { return }
         let url = MediaEndpoint(serverURL: state.serverURL, assetID: asset.id).videoPlaybackURL()
         let urlAsset = AVURLAsset(
           url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
         let created = AVPlayer(playerItem: AVPlayerItem(asset: urlAsset))
-        created.isMuted = isMuted
         player = created
         created.play()
+        // Release on close (item 9): when this task is cancelled the handler pauses the old
+        // player and drops the reference, so the AVPlayer deallocates with the page.
+        await withTaskCancellationHandler(operation: {
+          while !Task.isCancelled { try? await Task.sleep(for: .seconds(24 * 3600)) }
+        }, onCancel: {
+          Task { @MainActor in
+            created.pause()
+            if player === created { player = nil }
+          }
+        })
+      }
+      .onDisappear {
+        player?.pause()
+        player = nil
       }
       VStack {
         Spacer()
         HStack {
           Spacer()
-          Button {
-            isMuted.toggle()
-            player?.isMuted = isMuted
-          } label: {
-            Label(
-              isMuted ? "Unmute" : "Mute",
-              systemImage: isMuted ? "speaker.slash.fill" : "speaker.fill")
-          }
+          // Mute/volume live in the player view's own inline controls; Trim is app
+          // behavior (hands off to the editor), so it stays as an overlay button.
           Button(action: onTrim) {
             Label("Trim", systemImage: "scissors")
           }
@@ -68,7 +76,7 @@ private struct MacPlayerView: NSViewRepresentable {
   func makeNSView(context: Context) -> AVPlayerView {
     let view = AVPlayerView()
     view.player = player
-    view.controlsStyle = .floating
+    view.controlsStyle = .inline
     return view
   }
 
@@ -89,11 +97,25 @@ struct MacLivePhotoPageView: View {
   @State private var livePhoto: PHLivePhoto?
   @State private var still: NSImage?
   @State private var failed = false
+  /// Bumped on LIVE-badge hover; the inner view plays the hint on each bump (item 9).
+  @State private var hintTick = 0
 
   var body: some View {
     Group {
       if let livePhoto {
-        MacLivePhotoInnerView(livePhoto: livePhoto)
+        MacLivePhotoInnerView(livePhoto: livePhoto, hintTick: hintTick)
+          .overlay(alignment: .topLeading) {
+            Label("Live", systemImage: "livephoto")
+              .font(.caption.weight(.semibold))
+              .labelStyle(.titleAndIcon)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 5)
+              .background(.thinMaterial, in: Capsule())
+              .padding(12)
+              .onHover { hovering in
+                if hovering { hintTick += 1 }
+              }
+          }
       } else if let still {
         Image(nsImage: still)
           .resizable()
@@ -159,6 +181,7 @@ struct MacLivePhotoPageView: View {
 
 private struct MacLivePhotoInnerView: NSViewRepresentable {
   var livePhoto: PHLivePhoto
+  var hintTick: Int = 0
 
   func makeNSView(context: Context) -> PHLivePhotoView {
     let view = PHLivePhotoView()
@@ -175,6 +198,12 @@ private struct MacLivePhotoInnerView: NSViewRepresentable {
   func updateNSView(_ view: PHLivePhotoView, context: Context) {
     context.coordinator.view = view
     if view.livePhoto == nil { view.livePhoto = livePhoto }
+    // LIVE-badge hover (item 9): each tick replays the motion hint. Long-press still
+    // plays the full motion via the press recognizer below.
+    if hintTick != context.coordinator.lastHintTick {
+      context.coordinator.lastHintTick = hintTick
+      if hintTick > 0 { view.startPlayback(with: .hint) }
+    }
   }
 
   func makeCoordinator() -> Coordinator { Coordinator() }
@@ -182,6 +211,7 @@ private struct MacLivePhotoInnerView: NSViewRepresentable {
   @MainActor
   final class Coordinator: NSObject {
     weak var view: PHLivePhotoView?
+    var lastHintTick = 0
 
     @objc func playFull(_ gesture: NSPressGestureRecognizer) {
       guard gesture.state == .began else { return }

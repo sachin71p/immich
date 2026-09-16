@@ -97,6 +97,19 @@ public actor MediaPipeline {
   private var inFlight: [String: InFlightEntry] = [:]
   private var epochCounter: UInt64 = 0
 
+  /// Negative cache for permanent fetch failures (HTTP 400–499): id+tier → hold expiry.
+  /// A 404ing thumbnail would otherwise be refetched on every prefetch pass and every cell
+  /// configure — the Gate-3 flood (138 404s for 899 ids during pure idle). Holds last
+  /// `negativeCacheTTL`; transient failures (5xx, timeouts, cancellations) are never held.
+  private var negativeCache: [String: Date] = [:]
+  private static let negativeCacheTTL: TimeInterval = 600
+
+  /// Collapses identical failure logs to one error per id per minute (Gate-3's single id
+  /// logging dozens of 404s per millisecond): message key → last error-log time. Repeats
+  /// inside the window go to debug.
+  private var failureLogState: [String: Date] = [:]
+  private static let failureLogThrottle: TimeInterval = 60
+
   public init(
     service: any MediaImageService,
     diskCache: TieredMediaCache,
@@ -266,8 +279,13 @@ public actor MediaPipeline {
                   dynamicRange: format.dynamicRange))
               continuation.finish()
               return
+            } catch let error as CancellationError {
+              throw error
+            } catch is NegativeCacheHit {
+              // Under a negative-cache hold: skip the tier without network work and without
+              // poisoning `lastError` — a lower tier may still serve.
+              continue
             } catch {
-              if error is CancellationError { throw error }
               lastError = error
             }
           }
@@ -403,6 +421,29 @@ public actor MediaPipeline {
     }
   }
 
+  /// Remembers the last issued prefetch window so the grid's `prefetchPass` no-ops when the
+  /// settled visible-id window is unchanged since the last pass. Lives in PhotosCore (not the
+  /// app target) so the storm gate is unit-testable — the macOS app has no unit-test target.
+  /// The snapshot generation is part of the key: a reload re-issues even for the same window.
+  public struct PrefetchWindowTracker: Sendable {
+    private var lastWindow: Set<String> = []
+    private var lastGeneration: Int = -1
+    private var hasIssued = false
+
+    public init() {}
+
+    /// Returns false (and records nothing) for empty windows or exact repeats; otherwise records
+    /// the window and returns true.
+    public mutating func shouldIssue(window: Set<String>, generation: Int) -> Bool {
+      guard !window.isEmpty else { return false }
+      if hasIssued, window == lastWindow, generation == lastGeneration { return false }
+      lastWindow = window
+      lastGeneration = generation
+      hasIssued = true
+      return true
+    }
+  }
+
   /// Pre-WP1 entry points, kept until WP2/WP3 migrate (the app still calls `prefetch(ids:)`).
   /// Now routed through the same dedup/memory/disk path as the grid prefetcher.
   public func prefetch(ids: [String], tier: MediaTier, edited: Bool = false) async {
@@ -471,6 +512,117 @@ public actor MediaPipeline {
 
   private var serverBaseURL: URL { server.baseURL }
 
+  // MARK: - failure classification + negative cache
+
+  /// Thrown by `fetchTier` instead of network work when the id+tier is under a negative-cache
+  /// hold. Callers treat it as a silent tier miss (prefetch drops it, `stream` tries the next
+  /// lower tier); it is never error-logged.
+  struct NegativeCacheHit: Error {
+    var id: String
+  }
+
+  /// How a fetch failure is handled: cancellations log at debug, permanent HTTP failures
+  /// (4xx except 401, which must survive a silent token refresh) take a 10-minute
+  /// negative-cache hold, everything else just logs (throttled).
+  enum FetchFailureClass: Equatable {
+    case cancelled
+    case permanent(statusCode: Int)
+    case transient
+  }
+
+  /// Classifies a fetch error without touching the network. Real 404s arrive wrapped as
+  /// `ImagePipeline.Error.dataLoadingFailed(DataLoader.Error.statusCodeUnacceptable(404))`;
+  /// Nuke task cancellations can arrive as `ImagePipeline.Error.cancelled` rather than a
+  /// Swift `CancellationError`, so both are treated as cancellation.
+  static func classify(_ error: Error) -> FetchFailureClass {
+    if error is CancellationError { return .cancelled }
+    if let urlError = error as? URLError, urlError.code == .cancelled { return .cancelled }
+    if let pipelineError = error as? ImagePipeline.Error, case .cancelled = pipelineError {
+      return .cancelled
+    }
+    if let code = httpStatusCode(of: error) {
+      // 401 is transient: an in-place token refresh must retry within the hold window
+      // instead of staying suppressed until expiry/rebuild.
+      return code != 401 && (400..<500).contains(code) ? .permanent(statusCode: code) : .transient
+    }
+    return .transient
+  }
+
+  /// Extracts an HTTP status code from Nuke's error wrappers, unwrapping one level of
+  /// `NSUnderlyingErrorKey` chaining (typed-throws `data(for:)` wraps the `DataLoader` error
+  /// in `ImagePipeline.Error.dataLoadingFailed`).
+  static func httpStatusCode(of error: Error) -> Int? {
+    if let loaderError = error as? DataLoader.Error,
+      case .statusCodeUnacceptable(let code) = loaderError
+    {
+      return code
+    }
+    if let pipelineError = error as? ImagePipeline.Error,
+      let underlying = pipelineError.dataLoadingError,
+      let loaderError = underlying as? DataLoader.Error,
+      case .statusCodeUnacceptable(let code) = loaderError
+    {
+      return code
+    }
+    let ns = error as NSError
+    if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error {
+      return httpStatusCode(of: underlying)
+    }
+    return nil
+  }
+
+  private func negativeCacheKey(cacheID: String, tier: MediaTier, edited: Bool) -> String {
+    "\(cacheID)|\(tier.rawValue)|\(edited)"
+  }
+
+  /// Consulted by `fetchTier` — the single choke point both `prefetch` and the cell `stream`
+  /// path funnel through — before any network work is issued.
+  private func isNegativeCached(cacheID: String, tier: MediaTier, edited: Bool) -> Bool {
+    let key = negativeCacheKey(cacheID: cacheID, tier: tier, edited: edited)
+    guard let expiry = negativeCache[key] else { return false }
+    if expiry > Date() { return true }
+    negativeCache.removeValue(forKey: key)
+    return false
+  }
+
+  private func recordNegative(cacheID: String, tier: MediaTier, edited: Bool) {
+    if negativeCache.count > 20_000 {
+      let now = Date()
+      negativeCache = negativeCache.filter { $0.value > now }
+    }
+    negativeCache[negativeCacheKey(cacheID: cacheID, tier: tier, edited: edited)] =
+      Date().addingTimeInterval(Self.negativeCacheTTL)
+  }
+
+  /// Cancellation is routine (fast scroll, reuse, superseded passes) — debug, never error.
+  /// Anything else logs at error at most once per id per minute; repeats go to debug so one
+  /// bad asset can never flood the log again.
+  private func logFetchFailure(id: String, tier: MediaTier, error: Error) {
+    switch Self.classify(error) {
+    case .cancelled:
+      HeirloomLog.media.debug(
+        "fetch cancelled for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public)")
+      return
+    case .permanent, .transient:
+      break
+    }
+    let key = "\(id)|\(tier.rawValue)|\(String(describing: error))"
+    let now = Date()
+    if let last = failureLogState[key], now.timeIntervalSince(last) < Self.failureLogThrottle {
+      HeirloomLog.media.debug(
+        "fetch failed (repeat, throttled) for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public)"
+      )
+      return
+    }
+    if failureLogState.count > 5000 {
+      failureLogState = failureLogState.filter { now.timeIntervalSince($0.value) < Self.failureLogThrottle }
+    }
+    failureLogState[key] = now
+    HeirloomLog.media.error(
+      "fetch failed for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public): \(error, privacy: .public)"
+    )
+  }
+
   private func prefetchOne(id: String, tier: MediaTier, edited: Bool) async {
     // Memory hits need no work; a disk hit still warms the memory cache for the cell.
     if memory.cached(id: id, tier: tier, edited: edited) != nil { return }
@@ -489,9 +641,12 @@ public actor MediaPipeline {
         pixelSize: tier.defaultPixelSize, priority: .low, asPrefetch: true)
     } catch is CancellationError {
       // Scrolled past or superseded — routine, not a failure.
+      HeirloomLog.media.debug("prefetch cancelled for \(id, privacy: .public)")
+    } catch is NegativeCacheHit {
+      // Under a negative-cache hold after a permanent failure: no network issued, nothing to log.
     } catch {
-      HeirloomLog.media.error(
-        "prefetch failed for \(id, privacy: .public): \(error, privacy: .public)")
+      // Network/decode failures are already (throttle-)logged inside `fetchTier`; logging here
+      // too would double every prefetch failure.
     }
   }
 
@@ -505,45 +660,53 @@ public actor MediaPipeline {
     let diskCache = self.diskCache
     let server = self.server
     let memory = self.memory
+    // Permanent failures hold the id+tier for 10 minutes: every prefetch pass and cell
+    // configure funnels through here, so without this a single 404ing thumbnail refetches
+    // (and error-logs) forever.
+    if isNegativeCached(cacheID: cacheID, tier: tier, edited: edited) {
+      throw NegativeCacheHit(id: id)
+    }
     let key = "\(cacheID)|\(tier.rawValue)|\(edited)|\(pixelSize ?? -1)"
     return try await fetchDeduped(key: key, id: id, asPrefetch: asPrefetch) {
-      try Task.checkCancellation()
-      var urlRequest = URLRequest(url: url)
-      if let token = await server.tokenProvider() {
-        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-      }
-      // The Resize processor downsamples to the target pixel size at decode time so full
-      // files never inflate to full bitmaps for grid cells. Prefetch runs `.low`,
-      // visible loads `.high`.
-      var processors: [any ImageProcessing] = []
-      if let pixelSize {
-        processors.append(
-          ImageProcessors.Resize(
-            size: CGSize(width: pixelSize, height: pixelSize), unit: .pixels,
-            contentMode: .aspectFit))
-      }
-      let request = ImageRequest(
-        urlRequest: urlRequest, processors: processors, priority: priority)
-      let data: Data
       do {
-        data = try await HeirloomSignpost.interval(HeirloomSignpost.thumbnailFetch) {
+        try Task.checkCancellation()
+        var urlRequest = URLRequest(url: url)
+        if let token = await server.tokenProvider() {
+          urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        // The Resize processor downsamples to the target pixel size at decode time so full
+        // files never inflate to full bitmaps for grid cells. Prefetch runs `.low`,
+        // visible loads `.high`.
+        var processors: [any ImageProcessing] = []
+        if let pixelSize {
+          processors.append(
+            ImageProcessors.Resize(
+              size: CGSize(width: pixelSize, height: pixelSize), unit: .pixels,
+              contentMode: .aspectFit))
+        }
+        let request = ImageRequest(
+          urlRequest: urlRequest, processors: processors, priority: priority)
+        let data = try await HeirloomSignpost.interval(HeirloomSignpost.thumbnailFetch) {
           try await service.data(for: request)
         }
+        // Single network fetch (WP1 §4.2): bytes go to disk, then decode locally — the old
+        // `service.image(for:)` second fetch is gone.
+        try await diskCache.store(data, assetID: cacheID, tier: tier, edited: edited)
+        guard let cgImage = await Self.decodeOffActor(data, pixelSize: pixelSize) else {
+          throw MediaError.nothingLoaded
+        }
+        memory.store(cgImage, id: cacheID, tier: tier, edited: edited)
+        return cgImage
       } catch {
-        HeirloomLog.media.error(
-          "fetch failed for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public): \(error, privacy: .public)")
+        // Single logging site for every fetch failure (throttled to one error per id per
+        // minute; cancellations at debug): `prefetchOne` and `stream` stay silent so failures
+        // are never double-logged. Permanent HTTP failures also take a negative-cache hold.
+        if case .permanent = Self.classify(error) {
+          await self.recordNegative(cacheID: cacheID, tier: tier, edited: edited)
+        }
+        await self.logFetchFailure(id: id, tier: tier, error: error)
         throw error
       }
-      // Single network fetch (WP1 §4.2): bytes go to disk, then decode locally — the old
-      // `service.image(for:)` second fetch is gone.
-      try await diskCache.store(data, assetID: cacheID, tier: tier, edited: edited)
-      guard let cgImage = await Self.decodeOffActor(data, pixelSize: pixelSize) else {
-        HeirloomLog.media.error(
-          "decode failed for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public)")
-        throw MediaError.nothingLoaded
-      }
-      memory.store(cgImage, id: cacheID, tier: tier, edited: edited)
-      return cgImage
     }
   }
 

@@ -22,7 +22,11 @@ struct MacSearchView: View {
   @State private var hasLocation: Bool? = nil
   @State private var mediaType: AssetKind? = nil
   @State private var rows: [TimelineRow] = []
-  @State private var assetsById: [String: Asset] = [:]
+  @State private var assetMap: [String: Asset] = [:]
+  /// Snapshot driving the results grid. Rebuilt per search with a fresh generation so the
+  /// collection view reloads; the patch cursor stays empty (search never patches in place).
+  @State private var resultSnapshot: TimelineGridSnapshot = .empty
+  @State private var resultGeneration = 0
   @State private var isSearching = false
   @State private var searchError: String?
   @State private var hasSearched = false
@@ -43,7 +47,24 @@ struct MacSearchView: View {
     }
     .navigationTitle("Search")
     .accessibilityIdentifier("mac-search-view")
-    .task { await loadRecents() }
+    .task {
+      await loadRecents()
+      await consumePendingQuery()
+    }
+    .onChange(of: state.pendingSearchQuery) { _, newValue in
+      guard newValue != nil else { return }
+      Task { await consumePendingQuery() }
+    }
+  }
+
+  /// U16 toolbar handoff: Return in the toolbar search field stashes the query on
+  /// `state.pendingSearchQuery` and navigates here. Apply it, execute, and clear so a
+  /// later visit to Search starts clean.
+  private func consumePendingQuery() async {
+    guard let pending = state.pendingSearchQuery else { return }
+    state.pendingSearchQuery = nil
+    query = pending
+    await runSearch()
   }
 
   private var searchField: some View {
@@ -115,7 +136,9 @@ struct MacSearchView: View {
           Text("No location").tag(false as Bool?)
         }
         Button("Apply filters") { Task { await runSearch() } }
+        .accessibilityIdentifier("mac-search-apply-filters")
       }
+      .accessibilityIdentifier("mac-search-filters")
       if !recents.isEmpty {
         Section("Recent searches") {
           ForEach(Array(recents.enumerated()), id: \.offset) { _, recent in
@@ -145,10 +168,10 @@ struct MacSearchView: View {
           description: Text(searchError ?? "Try a different query or widen the scope."))
       } else {
         MacCollectionGridView(
-          sections: [MacGridSection(header: "Results", rows: rows)],
-          assetsById: assetsById,
-          rowDates: rows.map { Self.dateString($0.localDateTime) },
+          snapshot: resultSnapshot,
+          lastPatch: (revision: 0, indexes: []),
           pipeline: state.pipeline,
+          store: state.store,
           exporter: macExporter(),
           itemSize: 160,
           selectedIds: $selectedIds,
@@ -165,7 +188,7 @@ struct MacSearchView: View {
 
   private func toggleFavorite(_ id: String) {
     Task {
-      guard let asset = assetsById[id] else { return }
+      guard let asset = assetMap[id] else { return }
       try? await state.assetMutations().setFavorite(ids: [id], isFavorite: !asset.isFavorite)
       await runSearch()
     }
@@ -241,7 +264,11 @@ struct MacSearchView: View {
         localDateTime: asset.localDateTime)
     }
     rows = orderedRows
-    assetsById = byId
+    assetMap = byId
+    resultGeneration += 1
+    resultSnapshot = TimelineGridSnapshot.build(
+      sections: [TimelineSourceSection(kind: .none, rows: orderedRows)],
+      order: .newestFirst, include: { _ in true }, generation: resultGeneration)
   }
 
   private func macExporter() -> MacExporter {
@@ -252,13 +279,13 @@ struct MacSearchView: View {
   }
 
   private func openViewer(id: String) {
-    state.viewerContext = rows.map(\.id)
+    state.viewerContext = resultSnapshot
     onOpenViewer(id)
   }
 
   private func showPreview(id: String) {
     Task { @MainActor in
-      var asset = assetsById[id]
+      var asset = assetMap[id]
       if asset == nil { asset = try? await state.store.asset(id: id) }
       guard let asset else { return }
       MacPreviewPanel.show(asset: asset, pipeline: state.pipeline)
@@ -334,10 +361,6 @@ struct MacSearchView: View {
     recents = (try? await RecentSearchStore(store: state.store, userId: userId).recents()) ?? []
   }
 
-  private static func dateString(_ date: Date?) -> String {
-    guard let date else { return "" }
-    return DateFormatter.localizedString(from: date, dateStyle: .short, timeStyle: .none)
-  }
 }
 
 /// macOS all-metadata browser (A7 task 1) for `MacInfoPanel`: grouped DisclosureGroups with a

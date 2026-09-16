@@ -132,8 +132,11 @@ struct MacSettingsView: View {
       try MacAgentLoginItem.setEnabled(enabled)
       agentEnabled = enabled
       agentNote = MacAgentLoginItem.statusNote
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the toggle where it was.
     } catch {
-      self.error = error.localizedDescription
+      HeirloomLog.ui.error("Background agent failed: \(error.localizedDescription, privacy: .public)")
+      self.error = "Couldn't change the background agent."
     }
   }
 
@@ -151,8 +154,11 @@ struct MacSettingsView: View {
     do {
       try await state.prefsMutations().update(prefs, for: userId)
       state.prefs = prefs
+    } catch is CancellationError {
+      // Cancellation isn't a failure: keep the previous prefs.
     } catch {
-      self.error = error.localizedDescription
+      HeirloomLog.ui.error("Settings save failed: \(error.localizedDescription, privacy: .public)")
+      self.error = "Couldn't save settings."
     }
   }
 

@@ -45,8 +45,23 @@ final class MacAppState {
   var showingImportChooser = false
   var showingCameraImport = false
 
-  /// Row ids backing viewer paging (set when the viewer opens).
-  var viewerContext: [String] = []
+  /// Snapshot backing viewer paging, in display order (set when the viewer opens).
+  var viewerContext: TimelineGridSnapshot?
+  /// Toolbar-search handoff (WP6 slice C, U16): the toolbar field lives in `MacMainWindow`,
+  /// while the query executes in `MacSearchView`. Return in the toolbar stashes the trimmed
+  /// query here and navigates to `.search`; the search view consumes (applies, executes,
+  /// clears) it on appear. A plain String is safe on `@Observable` (PLAN rule 5 covers
+  /// large Equatable collections only).
+  var pendingSearchQuery: String?
+  /// Bumped by `syncNow` only when the session warrants a grid reload (see
+  /// `SyncCoordinator.SyncResult.shouldReloadTimeline`). The applied-changes signal is
+  /// `SyncResult.appliedChanges` — true when the session called `PhotosLocalStore.apply`
+  /// or `wipe` at least once. The grid's `reloadKey` includes this version so a reload
+  /// keeps the old snapshot until the new one is ready (same destination). Idle no-change
+  /// syncs skip the bump entirely, so they no longer rebuild the grid and re-issue the
+  /// prefetch storm behind the Gate-3 hangs. Mutations post change-center events and never
+  /// go through this path.
+  var timelineVersion = 0
 
   /// Connection, sync, upload queue and media pipeline all key off `serverURL`+token, so a
   /// server switch (fresh init, or a successful login to a different host in `completeLogin`)
@@ -186,14 +201,22 @@ final class MacAppState {
     }
   }
 
-  func syncNow() async {
+  /// - Parameter userInitiated: true for foreground, pull-to-refresh, Sync-Now, login and
+  ///   launch syncs (all current call sites) — those keep the historical always-reload
+  ///   behavior. A background timer (see `SyncCoordinator.startActiveTimer`, currently
+  ///   unwired) passes false so idle no-change sessions skip the grid rebuild.
+  func syncNow(userInitiated: Bool = true) async {
     guard !isSyncing else { return }
     isSyncing = true
     defer { isSyncing = false }
     do {
-      _ = try await sync.syncNow()
+      let result = try await sync.syncWithResult()
       lastSyncError = nil
       lastCompletedSyncAt = Date()
+      // No-change syncs leave the grid (and the metadata refresh feeding the sidebar)
+      // untouched: nothing in the mirror moved, so there is nothing to re-read.
+      guard result.shouldReloadTimeline(userInitiated: userInitiated) else { return }
+      timelineVersion += 1
       await refresh()
     } catch {
       lastSyncError = error.localizedDescription

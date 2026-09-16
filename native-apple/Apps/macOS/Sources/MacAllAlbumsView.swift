@@ -1,80 +1,114 @@
-import AppKit
 import CoreModel
-import Media
 import SwiftUI
 
 /// The main-pane counterpart to the sidebar's All Albums row. Album navigation is intentionally
 /// separated from the disclosure state, just as it is in Photos: expanding the sidebar never
 /// replaces the current timeline, while selecting All Albums presents every album here.
+///
+/// WP6 slice C (§6): the grid reuses the Collections `MacCoverTile` (single tile shape for
+/// albums everywhere), offers name/recent sorting, and creates albums through the existing
+/// `MacNewAlbumSheet` (same sheet as the sidebar flow — no forked creation path).
 struct MacAllAlbumsView: View {
   @Bindable var state: MacAppState
   var openAlbum: (Album) -> Void
 
-  private var albums: [Album] { state.albums.map(\.album).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+  private enum Sort: String, CaseIterable {
+    case name
+    case recent
+  }
+
+  @State private var sort = Sort.name
+  @State private var showingNewAlbum = false
+  @State private var entries: [AllAlbumsEntry] = []
+
+  private var sorted: [AllAlbumsEntry] {
+    switch sort {
+    case .name:
+      entries.sorted {
+        $0.album.name.localizedCaseInsensitiveCompare($1.album.name) == .orderedAscending
+      }
+    case .recent:
+      entries.sorted { $0.album.updatedAt > $1.album.updatedAt }
+    }
+  }
 
   var body: some View {
-    ScrollView {
-      LazyVGrid(
-        columns: [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 22)],
-        spacing: 22
-      ) {
-        ForEach(albums) { album in
-          Button { openAlbum(album) } label: {
-            MacAlbumCard(album: album, state: state)
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("all-albums-\(album.id)")
+    VStack(spacing: 0) {
+      HStack {
+        Picker("Sort", selection: $sort) {
+          Text("Name").tag(Sort.name)
+          Text("Recent").tag(Sort.recent)
         }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 220)
+        .accessibilityIdentifier("all-albums-sort")
+        Spacer()
+        Button {
+          showingNewAlbum = true
+        } label: {
+          Label("New Album", systemImage: "plus")
+        }
+        .accessibilityIdentifier("all-albums-new")
       }
-      .padding(24)
+      .padding(.horizontal, 24)
+      .padding(.vertical, 12)
+      ScrollView {
+        LazyVGrid(
+          columns: [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 22)],
+          spacing: 22
+        ) {
+          ForEach(sorted) { entry in
+            MacCoverTile(
+              title: entry.album.name,
+              subtitle: "\(entry.count) item\(entry.count == 1 ? "" : "s")",
+              coverId: entry.coverId,
+              pipeline: state.pipeline
+            ) { openAlbum(entry.album) }
+            .accessibilityIdentifier("all-albums-\(entry.album.id)")
+          }
+        }
+        .padding(24)
+      }
     }
     .overlay {
-      if albums.isEmpty {
+      if entries.isEmpty {
         ContentUnavailableView("No Albums", systemImage: "rectangle.stack")
       }
     }
     .navigationTitle("All Albums")
+    .task { await load() }
+    .onChange(of: state.albums.count) { _, _ in Task { await load() } }
+    .sheet(isPresented: $showingNewAlbum) {
+      MacNewAlbumSheet(state: state, seedAssetIds: []) {
+        showingNewAlbum = false
+        Task { await load() }
+      }
+    }
+  }
+
+  /// Counts and covers come from the store (same queries the Collections shelf uses);
+  /// covers stream their thumbnails inside `MacCoverTile`, so this only resolves ids.
+  private func load() async {
+    var built: [AllAlbumsEntry] = []
+    for entry in state.albums {
+      let album = entry.album
+      let ids = (try? await state.store.assetIds(inAlbum: album.id)) ?? []
+      built.append(AllAlbumsEntry(
+        album: album, count: ids.count,
+        coverId: album.thumbnailAssetId ?? ids.first))
+    }
+    entries = built
   }
 }
 
-private struct MacAlbumCard: View {
+/// One album row for `MacAllAlbumsView`: the `Album` plus the derived count/cover the
+/// shared tile needs. Kept separate from Collections' `AlbumShelfEntry` because the sort
+/// needs the full `Album` (name + `updatedAt`).
+private struct AllAlbumsEntry: Identifiable {
   var album: Album
-  @Bindable var state: MacAppState
-  @State private var image: NSImage?
-  @State private var count = 0
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .quaternaryLabelColor))
-        if let image {
-          Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-        } else {
-          Image(systemName: "photo.on.rectangle.angled")
-            .font(.system(size: 34))
-            .foregroundStyle(.secondary)
-        }
-      }
-      .frame(height: 150)
-      .clipShape(RoundedRectangle(cornerRadius: 12))
-      Text(album.name).font(.headline).lineLimit(1)
-      Text("\(count) item\(count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
-    }
-    .task(id: album.id) {
-      let ids = (try? await state.store.assetIds(inAlbum: album.id)) ?? []
-      count = ids.count
-      guard let id = ids.first,
-        let asset = try? await state.store.asset(id: id),
-        let loaded = try? await state.pipeline.load(asset: asset, tier: .thumbnail)
-      else { return }
-      switch loaded.content {
-      case .placeholder(let value): image = value
-      case .tier(_, let value, _): image = value
-      }
-    }
-  }
+  var count: Int
+  var coverId: String?
+  var id: String { album.id }
 }
 
 #Preview("All Albums") {

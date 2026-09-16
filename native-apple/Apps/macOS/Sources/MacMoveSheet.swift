@@ -14,6 +14,8 @@ struct MacMoveSheet: View {
   var onDone: (_ results: [MoveResult]) -> Void
 
   @State private var targets: [MoveTarget] = []
+  @State private var currentContainers: [MoveTarget] = []
+  @State private var selected: MoveTarget?
   @State private var pendingConfirm: MoveTarget?
   @State private var error: String?
   @State private var isWorking = false
@@ -26,30 +28,60 @@ struct MacMoveSheet: View {
       if let error {
         Text(error).foregroundStyle(.red).font(.caption)
       }
-      if isWorking {
-        ProgressView().controlSize(.small)
-      } else if targets.isEmpty {
+      if targets.isEmpty && !isWorking {
         Text("No available destinations for this selection.")
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("move-sheet-empty")
       } else {
-        List(targets, id: \.self) { target in
-          Button {
-            tapped(target)
-          } label: {
-            Label(Self.title(for: target, state: state), systemImage: Self.icon(for: target))
+        List {
+          ForEach(currentContainers, id: \.self) { current in
+            HStack {
+              Label(Self.title(for: current, state: state), systemImage: Self.icon(for: current))
+              Spacer()
+              Text("Current").font(.caption).foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("move-current-\(Self.key(for: current))")
           }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("move-target-\(Self.key(for: target))")
+          .disabled(true)
+          ForEach(targets, id: \.self) { target in
+            Button {
+              selected = target
+            } label: {
+              HStack {
+                Label(Self.title(for: target, state: state), systemImage: Self.icon(for: target))
+                Spacer()
+                if selected == target {
+                  Image(systemName: "checkmark")
+                }
+              }
+            }
+            .buttonStyle(.plain)
+            .disabled(isWorking)
+            .accessibilityIdentifier("move-target-\(Self.key(for: target))")
+          }
         }
         .frame(minHeight: 160)
+      }
+      HStack {
+        Spacer()
+        if isWorking {
+          ProgressView().controlSize(.small)
+        }
+        Button("Cancel") { onDone([]) }
+          .keyboardShortcut(.cancelAction)
+          .disabled(isWorking)
+        Button("Move") { confirmOrPerform() }
+          .keyboardShortcut(.defaultAction)
+          .disabled(selected == nil || isWorking)
+          .accessibilityIdentifier("move-sheet-confirm")
       }
     }
     .padding()
     .frame(minWidth: 320)
     .task { await computeTargets() }
     .alert(
-      "Move into external library?",
+      Self.confirmTitle(for: pendingConfirm, count: assetIds.count, state: state),
       isPresented: Binding(get: { pendingConfirm != nil }, set: { if !$0 { pendingConfirm = nil } })
     ) {
       Button("Move", role: .destructive) {
@@ -57,13 +89,34 @@ struct MacMoveSheet: View {
       }
       Button("Cancel", role: .cancel) { pendingConfirm = nil }
     } message: {
-      Text("Files leave the import path once moved. This cannot be undone automatically.")
+      Text(Self.confirmMessage(for: pendingConfirm, state: state))
     }
   }
 
-  private func tapped(_ target: MoveTarget) {
-    // Brief task 1: moves onto a library always confirm; space/personal moves apply directly.
-    if case .library = target { pendingConfirm = target } else { Task { await performMove(to: target) } }
+  private func confirmOrPerform() {
+    guard let target = selected else { return }
+    // WP4 Step 2: space moves confirm exactly like library moves; personal applies directly.
+    switch target {
+    case .space, .library: pendingConfirm = target
+    case .personal: Task { await performMove(to: target) }
+    }
+  }
+
+  /// WP4 Step 2: space moves use the same confirmation as library moves.
+  static func confirmTitle(for target: MoveTarget?, count: Int, state: MacAppState?) -> String {
+    guard let target else { return "Move?" }
+    if case .space = target {
+      return "Move \(count) item\(count == 1 ? "" : "s") to \(title(for: target, state: state))?"
+    }
+    return "Move into external library?"
+  }
+
+  static func confirmMessage(for target: MoveTarget?, state: MacAppState?) -> String {
+    guard let target else { return "" }
+    if case .space = target {
+      return "Members of \(title(for: target, state: state)) will see them."
+    }
+    return "Files leave the import path once moved. This cannot be undone automatically."
   }
 
   private func computeTargets() async {
@@ -84,20 +137,42 @@ struct MacMoveSheet: View {
         offered.formUnion(groupTargets ?? [])
       }
       targets = offered.sorted(by: Self.order)
+      currentContainers = Set(groups.flatMap { $0 }.map { Self.currentTarget(of: $0.container) })
+        .sorted(by: Self.order)
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet as-is with no error.
     } catch {
+      HeirloomLog.ui.error("Move targets failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
+    }
+  }
+
+  /// `MoveTargets.allowed` never offers the current container (rule 7), so the sheet
+  /// renders it separately as a disabled "Current" row (WP4 Step 2, U13 clarity).
+  static func currentTarget(of container: Container) -> MoveTarget {
+    switch container {
+    case .personal: return .personal
+    case .space(let id): return .space(id)
+    case .library(let id): return .library(id)
     }
   }
 
   private func performMove(to target: MoveTarget) async {
     isWorking = true
-    defer { isWorking = false }
+    HeirloomQuitGuard.shared.isMoveInProgress = true
+    defer {
+      isWorking = false
+      HeirloomQuitGuard.shared.isMoveInProgress = false
+    }
     do {
       let results = try await state.assetMutations().move(ids: assetIds, to: target)
       await state.refresh()
       pendingConfirm = nil
       onDone(results)
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Move failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
