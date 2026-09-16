@@ -686,7 +686,11 @@ class PersonAccess {
       .where('person.personGroupId', 'in', [...personGroupIds])
       .where((eb) =>
         eb.or([
-          eb('person.ownerId', '=', userId),
+          // fork: shared-libraries (PERM-11: a removed contributor keeps only their
+          // personal persons. ownerId alone must not grant a space person, so the
+          // owner branch is gated to spaceId IS NULL, mirroring the narrowed
+          // owner-access rule. Any current member still passes the branch below.)
+          eb.and([eb('person.ownerId', '=', userId), eb('person.spaceId', 'is', null)]),
           // fork: shared-libraries - any space member may read/rename/merge space people (S9).
           eb('person.spaceId', 'in', (sub) =>
             sub
@@ -714,7 +718,17 @@ class PersonAccess {
       .where('asset_face.id', 'in', [...assetFaceIds])
       .where((eb) =>
         eb.or([
-          eb('asset.ownerId', '=', userId),
+          // fork: shared-libraries (PERM-11: mirror the narrowed owner-access rule on
+          // the joined asset — personal ownership only, plus current membership.
+          // Library assets keep their upstream owner-only scope here (see
+          // NEEDS-DECISION in AUDIT-FINDINGS.md): person graphs are per-owner (§11)
+          // and S9 scopes sharing to spaces, so neither the member expansion nor
+          // the removal gate is applied to the library leg in this pass.)
+          eb.and([
+            eb('asset.ownerId', '=', userId),
+            eb('asset.spaceId', 'is', null),
+            eb('asset.libraryId', 'is', null),
+          ]),
           // fork: shared-libraries - members may manage faces on their spaces' assets (S9).
           eb('asset.spaceId', 'in', (sub) =>
             sub
@@ -722,6 +736,7 @@ class PersonAccess {
               .select('shared_space_member.spaceId')
               .where('shared_space_member.userId', '=', userId),
           ),
+          eb.and([eb('asset.ownerId', '=', userId), eb('asset.libraryId', 'is not', null)]),
         ]),
       )
       .execute()

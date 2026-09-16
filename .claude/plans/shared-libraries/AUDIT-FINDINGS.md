@@ -6,13 +6,27 @@
 
 ## P0 — confirmed visibility and authorization gaps
 
-| Contract | Location | Finding |
-|---|---|---|
-| PERM-11 | `server/src/repositories/access.repository.ts:246` | `checkOwnerAccess` treats every `spaceId IS NULL` asset as personal; it does not exclude `libraryId`, so an owner removed from a shared external library still receives direct asset access. |
-| PERM-11 | `server/src/repositories/access.repository.ts:351` | Direct asset-file owner access has no space/library membership condition, leaving a removed contributor able to fetch files of assets they own. |
-| PERM-01-nonmember | `server/src/utils/access.ts:119` | `AssetRead` tries partner access before container membership; the partner query lacks the required personal-container restriction and can reveal a partner's space or external-library assets. |
-| PERM-04-nonmember | `server/src/utils/access.ts:135` | The same unscoped partner branch grants `AssetShare`, allowing a non-member partner to add a container asset to a shared link. |
-| PERM-11 | `server/src/repositories/memory.repository.ts:73` | Memory asset expansion filters only visibility/deletion, not current container membership; a user-owned memory can return previously linked space/library assets after removal. The single-memory path repeats this at line 192. |
+| Contract | Location | Finding | Outcome |
+|---|---|---|---|
+| PERM-11 | `server/src/repositories/access.repository.ts:246` | `checkOwnerAccess` treats every `spaceId IS NULL` asset as personal; it does not exclude `libraryId`, so an owner removed from a shared external library still receives direct asset access. | pending (Task 6) |
+| PERM-11 | `server/src/repositories/access.repository.ts:351` | Direct asset-file owner access has no space/library membership condition, leaving a removed contributor able to fetch files of assets they own. | pending (Task 6) |
+| PERM-01-nonmember | `server/src/utils/access.ts:119` | `AssetRead` tries partner access before container membership; the partner query lacks the required personal-container restriction and can reveal a partner's space or external-library assets. | pending (Task 6) |
+| PERM-04-nonmember | `server/src/utils/access.ts:135` | The same unscoped partner branch grants `AssetShare`, allowing a non-member partner to add a container asset to a shared link. | pending (Task 6) |
+| PERM-11 | `server/src/repositories/memory.repository.ts:73` | Memory asset expansion filters only visibility/deletion, not current container membership; a user-owned memory can return previously linked space/library assets after removal. The single-memory path repeats this at line 192. | pending (Task 6) |
+| PERM-11 | `server/src/repositories/access.repository.ts:689` (PersonAccess.checkOwnerAccess; audit w1-2:699) | A removed contributor who owns a space person passed the `ownerId = userId` OR branch with no membership gate, retaining person read/update (PersonDelete/Merge, get/update/thumbnail). | FIXED — owner branch gated to `spaceId IS NULL`; space persons require current membership (S9 member branch unchanged). Test: `PERM-11 denies a removed contributor person and face access` in `server/test/medium/specs/repositories/access.repository.spec.ts` (host run pending; SQL-shape probe in sandbox confirms the gate). S9 unit `person-space.spec` 10/10 still pass. |
+| PERM-11 | `server/src/repositories/access.repository.ts:717` (PersonAccess.checkFaceOwnerAccess; audit w1-2:727) | A removed contributor who owns an asset passed the `asset.ownerId = userId` OR branch for its space asset's faces with no membership gate, retaining FaceDelete/PersonCreate/PersonReassign. | FIXED — asset leg is now personal-ownership (`ownerId` + `spaceId`/`libraryId` NULL) OR current space membership; library assets keep upstream owner-only scope (see NEEDS-DECISION). Same test as above; S9 `person-space` 10/10 + `person.service` unit 67/67 still pass. |
+
+## NEEDS-DECISION
+
+1. **Library face/person scope (Task 1 boundary).** The Task 1 fix gates the *space* leg of
+   person/face owner access but deliberately leaves the *library* leg at upstream owner-only:
+   a removed library member who owns a library asset retains face access to it, and a current
+   library member (non-owner) has none. PERM-10 grants library members contributor *asset* rights,
+   but face/person management is not in the §4 table; §11 keeps person graphs per-owner and S9
+   scopes person sharing to spaces. Neither the member expansion (shared predicate's library
+   branch) nor the removal gate was applied to the library leg — both directions would exceed the
+   decided contract. Owner decision needed: mirror PERM-11 for libraries (gate + member rights),
+   or keep upstream owner-only. The medium test above covers spaces only.
 
 ## P1–P2 — confirmed integrity and relocation gaps
 

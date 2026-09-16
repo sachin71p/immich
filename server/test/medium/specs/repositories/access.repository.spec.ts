@@ -115,6 +115,53 @@ describe(AccessRepository.name, () => {
     ]);
   });
 
+  it('PERM-11 denies a removed contributor person and face access', async () => {
+    const { access, ctx } = setup();
+    const { user: containerOwner } = await ctx.newUser();
+    const { user: contributor } = await ctx.newUser();
+    const space = await newSpace(ctx, containerOwner.id, contributor.id);
+    const { asset: spaceAsset } = await ctx.newAsset({ ownerId: contributor.id, spaceId: space.id });
+    const { person: spacePerson } = await ctx.newPerson({ ownerId: contributor.id, spaceId: space.id });
+    const { person: personalPerson } = await ctx.newPerson({ ownerId: contributor.id });
+    const { assetFace } = await ctx.newAssetFace({
+      assetId: spaceAsset.id,
+      personGroupId: spacePerson.personGroupId,
+    });
+
+    // While a member, the contributor reaches their space person and its faces,
+    // and so does the space owner through the S9 member branch.
+    await expect(access.person.checkOwnerAccess(contributor.id, new Set([spacePerson.personGroupId]))).resolves.toEqual(
+      new Set([spacePerson.personGroupId]),
+    );
+    await expect(
+      access.person.checkOwnerAccess(containerOwner.id, new Set([spacePerson.personGroupId])),
+    ).resolves.toEqual(new Set([spacePerson.personGroupId]));
+    await expect(access.person.checkFaceOwnerAccess(contributor.id, new Set([assetFace.id]))).resolves.toEqual(
+      new Set([assetFace.id]),
+    );
+
+    await ctx.database
+      .deleteFrom('shared_space_member')
+      .where('spaceId', '=', space.id)
+      .where('userId', '=', contributor.id)
+      .execute();
+
+    // After removal the contributor keeps only their own personal person.
+    await expect(access.person.checkOwnerAccess(contributor.id, new Set([spacePerson.personGroupId]))).resolves.toEqual(
+      new Set(),
+    );
+    await expect(access.person.checkFaceOwnerAccess(contributor.id, new Set([assetFace.id]))).resolves.toEqual(
+      new Set(),
+    );
+    await expect(
+      access.person.checkOwnerAccess(contributor.id, new Set([personalPerson.personGroupId])),
+    ).resolves.toEqual(new Set([personalPerson.personGroupId]));
+    // The remaining member still reaches the space person.
+    await expect(
+      access.person.checkOwnerAccess(containerOwner.id, new Set([spacePerson.personGroupId])),
+    ).resolves.toEqual(new Set([spacePerson.personGroupId]));
+  });
+
   it('PERM-01-nonmember denies partner access to space and library assets', async () => {
     const { access, ctx } = setup();
     const { user: containerOwner } = await ctx.newUser();
