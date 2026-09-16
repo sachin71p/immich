@@ -8,8 +8,8 @@ describe('[R8-04] container filter exclusivity', () => {
   it('rejects two container filters at once', () => {
     for (const dto of [
       { spaceId, libraryId },
-      { spaceId, personalOnly: 'true' },
-      { libraryId, personalOnly: 'false' },
+      { spaceId, personalOnly: true },
+      { libraryId, personalOnly: false },
     ]) {
       const result = MetadataSearchDto.schema.safeParse(dto);
       expect(result.success).toBe(false);
@@ -24,6 +24,6 @@ describe('[R8-04] container filter exclusivity', () => {
   it('accepts a single container filter', () => {
     expect(MetadataSearchDto.schema.safeParse({ spaceId }).success).toBe(true);
     expect(MetadataSearchDto.schema.safeParse({ libraryId }).success).toBe(true);
-    expect(MetadataSearchDto.schema.safeParse({ personalOnly: 'true' }).success).toBe(true);
+    expect(MetadataSearchDto.schema.safeParse({ personalOnly: true }).success).toBe(true);
   });
 });
