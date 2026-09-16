@@ -819,6 +819,7 @@ describe(MetadataService.name, () => {
         id: motionAsset.id,
         visibility: AssetVisibility.Hidden,
         libraryId: asset.libraryId,
+        spaceId: null,
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
@@ -836,6 +837,37 @@ describe(MetadataService.name, () => {
         name: JobName.AssetEncodeVideo,
         data: { id: motionAsset.id },
       });
+    });
+
+    it('[I3] creates extracted motion assets in the source shared space', async () => {
+      const asset = AssetFactory.create({ spaceId: 'space-id' });
+      const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.storage.stat.mockResolvedValue({
+        size: 123_456,
+        mtime: asset.fileModifiedAt,
+        mtimeMs: asset.fileModifiedAt.valueOf(),
+        birthtimeMs: asset.fileCreatedAt.valueOf(),
+      } as Stats);
+      mockReadTags({
+        Directory: 'foo/bar/',
+        MotionPhoto: 1,
+        MicroVideo: 1,
+        MicroVideoOffset: 1,
+      });
+      mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
+      mocks.asset.create.mockResolvedValue(motionAsset);
+      mocks.crypto.randomUUID.mockReturnValue(motionAsset.id);
+      mocks.storage.readFile.mockResolvedValue(randomBytes(512));
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          libraryId: null,
+          spaceId: asset.spaceId,
+        }),
+      );
     });
 
     it('should extract the EmbeddedVideo tag from Samsung JPEG motion photos', async () => {
@@ -871,6 +903,7 @@ describe(MetadataService.name, () => {
         id: motionAsset.id,
         visibility: AssetVisibility.Hidden,
         libraryId: asset.libraryId,
+        spaceId: null,
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
@@ -923,6 +956,7 @@ describe(MetadataService.name, () => {
         id: motionAsset.id,
         visibility: AssetVisibility.Hidden,
         libraryId: asset.libraryId,
+        spaceId: null,
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
@@ -1675,6 +1709,7 @@ describe(MetadataService.name, () => {
         ownerId: asset.ownerId,
         otherAssetId: asset.id,
         libraryId: null,
+        spaceId: null,
         type: AssetType.Image,
       });
       expect(mocks.asset.update).not.toHaveBeenCalledWith(
@@ -1695,6 +1730,7 @@ describe(MetadataService.name, () => {
       expect(mocks.assetJob.getForMetadataExtraction).toHaveBeenCalledWith(asset.id);
       expect(mocks.asset.findLivePhotoMatch).toHaveBeenCalledWith({
         libraryId: null,
+        spaceId: null,
         livePhotoCID: 'CID',
         ownerId: asset.ownerId,
         otherAssetId: asset.id,
@@ -1744,6 +1780,7 @@ describe(MetadataService.name, () => {
         otherAssetId: asset.id,
         livePhotoCID: 'CID',
         libraryId: 'library-id',
+        spaceId: null,
         type: AssetType.Video,
       });
     });

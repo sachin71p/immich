@@ -389,23 +389,31 @@ function moveFakes(world: World) {
       }
       return Promise.resolve([asset]);
     },
-    getByChecksum: ({
+    // Mirrors AssetRepository.getByChecksumInContainer (B3): personal targets stay
+    // owner-scoped; spaces and external libraries span owners. The move group is
+    // excluded so live pairs and stacks never self-collide.
+    getByChecksumInContainer: ({
       ownerId,
       checksum,
+      spaceId,
       libraryId,
       excludeIds,
     }: {
-      ownerId: string;
+      ownerId?: string;
       checksum: Buffer;
-      libraryId?: string;
+      spaceId?: string | null;
+      libraryId?: string | null;
       excludeIds?: string[];
     }) =>
       Promise.resolve(
         Object.values(world.assets).find(
           (candidate) =>
-            candidate.ownerId === ownerId &&
             candidate.checksum.equals(checksum) &&
-            (libraryId ? candidate.libraryId === libraryId : candidate.libraryId === null) &&
+            (!ownerId || candidate.ownerId === ownerId) &&
+            (libraryId
+              ? candidate.libraryId === libraryId
+              : (candidate.libraryId ?? null) === null &&
+                (spaceId ? candidate.spaceId === spaceId : (candidate.spaceId ?? null) === null)) &&
             !(excludeIds ?? []).includes(candidate.id),
         ),
       ),
@@ -514,10 +522,12 @@ describe.each(cases)('rules-cases.json [$id]', (row) => {
         return;
       }
       case 'own-role-change': {
+        // A viewer self-change is denied at the AlbumShare gate, which runs before the
+        // own-role guard (upstream :788 pins the share message for this shape).
         const { sut } = newTestService(AlbumService);
         await expect(
           sut.updateUser(auth, TRIP, U[row.actor as keyof typeof U], { role: AlbumUserRole.Editor } as never),
-        ).rejects.toThrow('Cannot change your own album role');
+        ).rejects.toThrow('Not found or no album.share access');
         return;
       }
       case 'move': {

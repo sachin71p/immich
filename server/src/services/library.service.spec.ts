@@ -1303,4 +1303,24 @@ describe(LibraryService.name, () => {
       });
     });
   });
+
+  describe('validateUploadPath', () => {
+    beforeEach(() => {
+      mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+    });
+
+    it('[R17] rejects traversal and a sibling-prefix upload path', async () => {
+      await expect(sut.validateUploadPath('/imports/family/../outside', ['/imports/family'])).resolves.toBe(
+        'Path must be inside an import path',
+      );
+      await expect(sut.validateUploadPath('/imports/family-2', ['/imports/family'])).resolves.toBe(
+        'Path must be inside an import path',
+      );
+    });
+
+    it('[R17] accepts an import root with trailing separators', async () => {
+      await expect(sut.validateUploadPath('/imports/family/', ['/imports/family/'])).resolves.toBeUndefined();
+    });
+  });
 });

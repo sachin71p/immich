@@ -41,6 +41,7 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+import { isResolvedPathInside } from 'src/utils/path.js';
 import { getPreferences, getPreferencesPartial } from 'src/utils/preferences.js';
 
 @Injectable()
@@ -343,7 +344,10 @@ export class LibraryService extends BaseService {
   // fork: shared-libraries - destination validation used by the library upload-path API.
   async validateUploadPath(uploadPath: string, importPaths: string[]): Promise<string | undefined> {
     if (!isAbsolute(uploadPath)) return 'Path must be absolute';
-    if (importPaths.every((importPath) => !uploadPath.startsWith(`${path.resolve(importPath)}${path.sep}`))) {
+    const containmentChecks = await Promise.all(
+      importPaths.map((importPath) => isResolvedPathInside(uploadPath, importPath, this.storageRepository.realpath)),
+    );
+    if (!containmentChecks.some(Boolean)) {
       return 'Path must be inside an import path';
     }
     if (StorageCore.isImmichPath(uploadPath)) return 'Cannot use media upload folder';

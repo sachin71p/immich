@@ -483,6 +483,49 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ spaceId: 'space-1' }));
     });
 
+    it('[I6] creates a relocation row for a direct shared-space upload before metadata extraction', async () => {
+      const asset = AssetFactory.create({ spaceId: 'space-1' });
+      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+
+      await expect(
+        sut.uploadAsset(authStub.user1, { ...createDto, spaceId: 'space-1' }, fileStub.photo),
+      ).resolves.toEqual({ status: AssetMediaStatus.CREATED, id: asset.id });
+
+      expect(mocks.asset.createRelocations).toHaveBeenCalledWith([asset.id], authStub.user1.user.id);
+      expect(mocks.asset.createRelocations.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queue.mock.invocationCallOrder.find(
+          (callOrder, index) => mocks.job.queue.mock.calls[index]?.[0]?.name === JobName.AssetExtractMetadata,
+        )!,
+      );
+    });
+
+    it('[R17-01] creates a relocation row for a personal upload carrying a sidecar', async () => {
+      const asset = AssetFactory.create({ spaceId: null });
+      mocks.asset.create.mockResolvedValueOnce(asset);
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, fileStub.photo, fileStub.photoSidecar)).resolves.toEqual({
+        status: AssetMediaStatus.CREATED,
+        id: asset.id,
+      });
+
+      expect(mocks.asset.createRelocations).toHaveBeenCalledWith([asset.id], authStub.user1.user.id);
+    });
+
+    it('[I7] rejects a Locked visibility upload into a shared space', async () => {
+      mocks.access.space.checkMemberAccess.mockResolvedValue(new Set(['space-1']));
+
+      await expect(
+        sut.uploadAsset(
+          authStub.user1,
+          { ...createDto, spaceId: 'space-1', visibility: AssetVisibility.Locked },
+          fileStub.photo,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
     it('should reject an explicit space the caller is not a member of', async () => {
       mocks.access.space.checkMemberAccess.mockResolvedValue(new Set());
 

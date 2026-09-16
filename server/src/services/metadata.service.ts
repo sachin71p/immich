@@ -173,7 +173,7 @@ export class MetadataService extends BaseService {
   }
 
   private async linkLivePhotos(
-    asset: { id: string; type: AssetType; ownerId: string; libraryId: string | null },
+    asset: { id: string; type: AssetType; ownerId: string; libraryId: string | null; spaceId: string | null },
     exifInfo: Insertable<AssetExifTable>,
   ): Promise<void> {
     if (!exifInfo.livePhotoCID) {
@@ -185,6 +185,7 @@ export class MetadataService extends BaseService {
       livePhotoCID: exifInfo.livePhotoCID,
       ownerId: asset.ownerId,
       libraryId: asset.libraryId,
+      spaceId: asset.spaceId ?? null,
       otherAssetId: asset.id,
       type: otherType,
     });
@@ -726,6 +727,7 @@ export class MetadataService extends BaseService {
           motionAsset = await this.assetRepository.create({
             id: motionAssetId,
             libraryId: asset.libraryId,
+            spaceId: asset.spaceId ?? null,
             type: AssetType.Video,
             fileCreatedAt: dates.dateTimeOriginal,
             fileModifiedAt: stats.mtime,

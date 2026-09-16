@@ -156,15 +156,21 @@ export class AssetMediaService extends BaseService {
         }
       } else {
         const preferences = getPreferences(await this.userRepository.getMetadata(auth.user.id));
-        if (preferences.sharedLibraries.defaultUploadTarget.type === 'space') {
-          const preferredSpaceId = preferences.sharedLibraries.defaultUploadTarget.spaceId;
+        // fork: shared-libraries - rows persisted before the spaceId persistence fix may
+        // carry a space variant without an id; treat those as personal, never query with undefined.
+        const target = preferences.sharedLibraries.defaultUploadTarget;
+        if (target.type === 'space' && target.spaceId) {
           const allowed = await this.checkAccess({
             auth,
             permission: Permission.SharedSpaceRead,
-            ids: [preferredSpaceId],
+            ids: [target.spaceId],
           });
-          spaceId = allowed.size === 0 ? undefined : preferredSpaceId;
+          spaceId = allowed.size === 0 ? undefined : target.spaceId;
         }
+      }
+
+      if (spaceId && dto.visibility === AssetVisibility.Locked) {
+        throw new BadRequestException('Shared assets cannot be locked');
       }
 
       if (dto.livePhotoVideoId) {
@@ -194,6 +200,14 @@ export class AssetMediaService extends BaseService {
         livePhotoVideoId: dto.livePhotoVideoId,
         originalFileName: dto.filename || file.originalName,
       });
+
+      // fork: shared-libraries - the container column changes at insert time, so record the
+      // pending physical move immediately rather than waiting for metadata extraction.
+      // Personal uploads carrying sidecars also relocate: with the template off nothing
+      // else moves the staging sidecar next to the original (R17-01).
+      if (spaceId || sidecarFile) {
+        await this.assetRepository.createRelocations([asset.id], auth.user.id);
+      }
 
       if (dto.metadata?.length) {
         await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
