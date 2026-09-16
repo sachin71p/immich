@@ -356,12 +356,14 @@ struct MacLibraryBrowser: View {
   @ToolbarContentBuilder
   private var toolbarContent: some ToolbarContent {
     ToolbarItem(placement: .navigation) {
-      VStack(alignment: .leading, spacing: 0) {
-        // U5: fixed width + truncation so toolbar items never shift when the subtitle changes.
-        Text(resolvedTitle).font(.headline).lineLimit(1).truncationMode(.tail)
-        Text(librarySubtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
-      }
-      .frame(width: 260, alignment: .leading)
+      // Single-title fix: the page name already renders once as the centered
+      // `.navigationTitle` (resolvedTitle here; identical per-view titles for
+      // Search/Collections/All Albums/Duplicates), which also drives the window
+      // title. A second title here duplicated it on every destination, so the
+      // leading block keeps only the subtitle.
+      // U5: fixed width + truncation so toolbar items never shift when the subtitle changes.
+      Text(librarySubtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+        .frame(width: 260, alignment: .leading)
     }
     .sharedBackgroundVisibility(.hidden)
     if isGridToolbar {
