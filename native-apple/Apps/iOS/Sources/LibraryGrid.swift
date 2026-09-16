@@ -364,7 +364,7 @@ final class PhotoGridViewController: UIViewController {
     let asset = model.assetsById[id]
     // Badges (brief task 1): video duration, live, favorite, container icon.
     if let asset, asset.type == .video, let duration = asset.durationSeconds {
-      cell.badgeLabel.text = Self.formatDuration(duration)
+      cell.badgeLabel.text = VideoDurationFormat.string(seconds: duration)
     } else if row?.mediaKind == .livePhoto {
       cell.badgeLabel.text = "LIVE"
     } else {
@@ -401,10 +401,6 @@ final class PhotoGridViewController: UIViewController {
         // Offline with nothing cached (or a fixture asset with no bytes): the placeholder stays.
       }
     }
-  }
-
-  static func formatDuration(_ seconds: Int) -> String {
-    String(format: "%d:%02d", seconds / 60, seconds % 60)
   }
 
   private func selectAll(in section: Int) {
