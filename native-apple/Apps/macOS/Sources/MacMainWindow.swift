@@ -1113,6 +1113,7 @@ extension SidebarDestination {
     case .recentlySaved: return "recents"
     case .map: return "map"
     case .people: return "people"
+    case .person(let id): return "person:"+id
     case .memories: return "memories"
     case .mediaPhotos: return "media-photos"
     case .mediaVideos: return "media-videos"
@@ -1159,6 +1160,7 @@ extension SidebarDestination {
     case "space": self = .space(parts[1])
     case "extlib": self = .externalLibrary(parts[1])
     case "album": self = .album(parts[1])
+    case "person": self = .person(parts[1])
     case "camera": self = .camera(parts[1])
     default: return nil
     }
@@ -1233,18 +1235,4 @@ extension NSItemProvider {
 
 enum MacPreviewError: Error { case noURL }
 
-/// Sidebar People (per-owner clustering — DECISIONS §11).
-struct MacPeopleView: View {
-  @Bindable var state: MacAppState
-  @State private var people: [Person] = []
-
-  var body: some View {
-    List(people, id: \.id) { person in
-      Label(person.name.isEmpty ? "Unnamed" : person.name, systemImage: "person.circle")
-    }
-    .task {
-      guard let userId = state.userId else { return }
-      people = (try? await state.store.people(forOwner: userId)) ?? []
-    }
-  }
-}
+/// Sidebar People lives in MacPeopleView.swift (WP6 slice A).

@@ -13,6 +13,7 @@ public enum SidebarDestination: Sendable, Hashable {
   case recentlySaved
   case map
   case people
+  case person(String)
   case memories
   case mediaPhotos
   case mediaVideos
@@ -40,6 +41,7 @@ public enum SidebarDestination: Sendable, Hashable {
     case .recentlySaved: return "Recently Saved"
     case .map: return "Map"
     case .people: return "People"
+    case .person: return "Person"
     case .memories: return "Memories"
     case .mediaPhotos: return "Photos"
     case .mediaVideos: return "Videos"
@@ -82,7 +84,7 @@ public enum SidebarDestination: Sendable, Hashable {
   /// toolbar (U15/U16/U18).
   public var usesGridToolbar: Bool {
     switch self {
-    case .map, .people, .memories, .collections, .search, .allAlbums, .duplicates:
+    case .map, .people, .person, .memories, .collections, .search, .allAlbums, .duplicates:
       return false
     default:
       return true
@@ -131,7 +133,7 @@ public enum SidebarDestination: Sendable, Hashable {
       return ("No Archived Photos", "Archived photos will appear here.", "archivebox")
     case .locked:
       return ("Locked", "Unlock to view locked photos.", "lock")
-    case .map, .people, .memories, .search, .allAlbums, .duplicates:
+    case .map, .people, .person, .memories, .search, .allAlbums, .duplicates:
       return nil
     }
   }
@@ -146,6 +148,7 @@ public enum SidebarDestination: Sendable, Hashable {
     case .recentlySaved: return "tray.and.arrow.down"
     case .map: return "map"
     case .people: return "person.2"
+    case .person: return "person.circle"
     case .memories: return "clock"
     case .mediaPhotos: return "photo"
     case .mediaVideos: return "video"
@@ -200,6 +203,7 @@ extension SidebarDestination {
     case .recentlySaved: return .recents(nil)
     case .map: return .map
     case .people: return .people
+    case .person: return .people
     case .memories: return .memories
     case .mediaPhotos: return .media(.photo, nil)
     case .mediaVideos: return .media(.video, nil)
