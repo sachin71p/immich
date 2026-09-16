@@ -274,6 +274,7 @@ struct MacLibraryBrowser: View {
       itemSize: zoom,
       usesSquareThumbnails: usesSquareThumbnails,
       isSelectionMode: isSelecting,
+      actions: gridActions,
       selectedIds: Binding(
         get: { selectionModel.selected },
         set: { selectionModel.selected = $0 }
@@ -794,6 +795,10 @@ struct MacTimelineGridPane: View {
   var itemSize: CGFloat
   var usesSquareThumbnails = false
   var isSelectionMode = false
+  /// WP3 slice 2 (REQUIRED, minimal): context-menu source for the grid. Defaults to
+  /// nil so every other `MacTimelineGridPane` construction site keeps compiling.
+  /// Flagged loudly in WP3-REPORT for the WP4 merge review.
+  var actions: MacAssetActions? = nil
   @Binding var selectedIds: Set<String>
   var syncStatusText: String
   var onSelectionChange: ([String]) -> Void
@@ -831,6 +836,7 @@ struct MacTimelineGridPane: View {
         itemSize: itemSize,
         usesSquareThumbnails: usesSquareThumbnails,
         isSelectionMode: isSelectionMode,
+        actions: actions,
         selectedIds: $selectedIds,
         onSelectionChange: onSelectionChange,
         onOpen: onOpen,

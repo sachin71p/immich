@@ -7,7 +7,6 @@ import SwiftUI
 // MARK: - NSCollectionView grid
 
 final class MacThumbnailContainerView: NSView {
-  var onHover: ((Bool) -> Void)?
   /// Explicit hit-testing for the favorite button, rather than relying on AppKit routing the
   /// click to the button subview: NSCollectionViewItem's custom-built view sits inside
   /// NSCollectionView's own click/selection machinery, which in practice swallows clicks meant
@@ -17,21 +16,10 @@ final class MacThumbnailContainerView: NSView {
   /// plain, shift, and command clicks keep AppKit's native selection handling untouched.
   var favoriteButton: NSButton?
   var onFavoriteHit: (() -> Void)?
-  private var trackingArea: NSTrackingArea?
 
-  override func updateTrackingAreas() {
-    super.updateTrackingAreas()
-    if let trackingArea { removeTrackingArea(trackingArea) }
-    let area = NSTrackingArea(
-      rect: .zero, options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
-      owner: self, userInfo: nil
-    )
-    addTrackingArea(area)
-    trackingArea = area
-  }
-
-  override func mouseEntered(with event: NSEvent) { onHover?(true) }
-  override func mouseExited(with event: NSEvent) { onHover?(false) }
+  // No per-cell tracking areas (WP3 slice 2): the collection view owns one hover
+  // area and the coordinator drives `MacGridCell.setHover`. Hover affordances keep
+  // working through the same favorite-button alpha the old onHover closure set.
 
   override func mouseDown(with event: NSEvent) {
     if let favoriteButton, favoriteButton.alphaValue > 0 {
@@ -102,15 +90,18 @@ final class MacGridCell: NSCollectionViewItem {
       favoriteButton.widthAnchor.constraint(equalToConstant: 28),
       favoriteButton.heightAnchor.constraint(equalToConstant: 28),
     ])
-    container.onHover = { [weak self] hovering in
-      self?.favoriteButton.animator().alphaValue = hovering ? 1 : 0
-    }
     container.favoriteButton = favoriteButton
     container.onFavoriteHit = { [weak self] in self?.toggleFavorite() }
     view = container
   }
 
   var photoView: NSImageView { view.subviews.first as! NSImageView }
+
+  /// Hover affordance, driven by the coordinator's single collection-view tracking
+  /// area (WP3 §3). Replaces the removed per-cell `onHover` closure.
+  func setHover(_ hovering: Bool) {
+    favoriteButton.animator().alphaValue = hovering ? 1 : 0
+  }
 
   func setFavorite(_ isFavorite: Bool) {
     favoriteButton.image = NSImage(systemSymbolName: isFavorite ? "heart.fill" : "heart", accessibilityDescription: "Favorite")
