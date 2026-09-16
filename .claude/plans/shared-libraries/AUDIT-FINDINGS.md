@@ -399,3 +399,77 @@ Verdict: **do not deploy.** Conjunction status: canary-green YES (stale HEAD) / 
 and this is short by two plus a red fork tier. Runner fixes recommended before re-run: bash-3.2-safe
 `keep` array at `run.sh:128`, `stack_up` before the upstream tier, `--maxWorkers=1` + `/data` stack
 for the upstream tier, bracket tags for S10 shell gates.
+
+## Re-verification (host, 16-Sep, second pass — HEAD `464f9122b`, no fresh tiers)
+
+HEAD is now `464f9122b` (`final`, feat/shared-libraries; tree clean except untracked `e2e/test-assets`;
+no upstream branch). The gate report 20260916-012553 ran at dangling `e01b0c856`+dirt, and `e01b0c856`
+is not an ancestor of HEAD (merge-base `a0d19cf01`). Diff `e01..HEAD` is 4 files (this findings record,
+103-line `Makefile`, `mise.lock`, `project.yml`); the functional code the tiers exercise — email layouts,
+native-apple connection/tests — is identical between the two. So the red tier failures carry over by
+inspection, but HEAD itself has zero fresh tier evidence: **no host tier ran this session**, and the
+re-run the new HEAD requires is still owed. Canary remains the stale 40/40 PASS at `e3dd5532d`.
+
+§2f ESM (verified inline, not just via sweep): the email fix is effective. The remaining `require(...)`
+hits (`immich.layout.tsx:19`, `futo.layout.tsx:32`) go through `const require =
+createRequire(import.meta.url)` (`node:module`), so `require` is defined and the
+`ReferenceError: require is not defined` crash is gone — converting them to static default imports
+would be cosmetic strictening, not a fix. `__dirname`/`__filename`: 0 hits in `server/src/emails`.
+Email render was green at e01 (unit `renderEmail` asserts) and the layouts are byte-identical at HEAD,
+so that evidence applies but is stale; an end-to-end `NotifyAlbumInvite` render on a live stack has
+still never been observed.
+
+§1 correction: the pinned `ffprobe` 7.1.3-6 **does exist on this host** at
+`~/.local/share/mise/installs/github-jellyfin-jellyfin-ffmpeg/7.1.3-6/ffprobe` — only the bare-PATH
+resolution is wrong (Homebrew 9.0.1 wins). Next gate must run under the mise toolchain (`mise exec` /
+mise shims first on PATH) so the pinned binary resolves; that may clear the two audio-video golden
+failures without touching goldens.
+
+Verdict: **do not deploy** (unchanged). Conjunction: canary-green stale-YES / no-failing-fork NO /
+INV-02·INV-03-green NO (never ran) / S9-rerun-green stale-YES. Prior downgrades (R4-01, R17-03,
+unit-web imports, audio-video goldens) stand. Still owed for a flip: fresh full gate on this HEAD
+with mise-PATH ffprobe, true upstream-e2e on `/data`, S10 regen + INV-02/INV-03, live-email render,
+C7 exercise, and the f6bd80b62 split at push-prep time.
+
+## Re-verification (host, 16-Sep, third pass — flip attempt; still NO-FLIP, blockers narrowed)
+
+Program: 7 parallel fix tracks (runner, r4-01, r17-03, unit-web, apple, s10, c7) + a
+conditional gate. HEAD still `464f9122b`; tree is dirty (~30 files, staged+unstaged agent
+edits, unreviewed). `origin/feat/shared-libraries` now EXISTS — the §0 split must be a
+follow-up commit at push-prep, **never a rebase**. (Decision recorded.)
+
+Proven green, verified inline this session (logs + own runs, not agent word):
+
+- Canary FRESH green: `/tmp/canary-2a.log` 02:14, 1 file / 40 tests passed. The auth-server
+  `[ELIFECYCLE]` line is container-teardown noise after the pass, not a test failure.
+- INV-02 PASS (`gate-openapi-diff.log`: no removals/renames/type changes, +12 paths/+23 schemas).
+- UP-01 PASS (`gate-upgrade.log`: data intact, reserved-label guard works).
+- `run.sh:128` fix reviewed (branch instead of empty-array expansion under bash-3.2 `set -u`)
+  and proven by execution — upgrade + openapi-diff ran through it.
+- exif audio-video 3/3 PASS under pinned ffprobe 7.1.3-6 (own run just now via
+  `vitest.config.medium.mjs`) → the prior red was pure PATH drift, never a regression.
+  `run.sh` hardened in this pass (mise shims first on PATH; `bash -n` clean, resolves the
+  pinned ffprobe) to kill the whole footgun class.
+- Fork lifecycle subset 43/43 on both templates — subset only, not the full fork gate.
+
+Not proven / still owed (verdict stays red):
+
+- INV-03: the upstream-e2e run is methodologically VOID — the log mixes fork-oracle
+  `.fork-data` assertions with upstream specs failing in the zeros-pattern of a wrong-stack
+  run (brief §1.5). Not product-red; the true `/data`-stack run is still owed.
+- S9: person service/unit/e2e have no log evidence this session — unknown. (exif/trash are
+  NOT the S9 suites; the trash failures belong to the same void run.)
+- Full fork e2e-api gate on the final tree: not run.
+- Email live render (2f), C7 status: no evidence produced.
+- Coverage-matrix §2d DECIDED (owner, overriding the agent's marker-based version): gate-tier
+  IDs (INV-02/UP-01/INV-03) count as covered by host-tier execution evidence, not by
+  script-existence markers; invisible tags (`[C3]`/`[R16]`/`[I6]`/`[I7]`/`PERM-11`) stay
+  advisory-but-reported, plus disappearance detection (fail if a previously-seen advisory tag
+  vanishes — no invented phase ownership, no silent loss). Implementation of the refinement
+  is owed.
+
+Conjunction: canary-green YES (fresh) / no-failing-fork NOT PROVEN / INV-02 green + INV-03
+void / S9 unknown. Narrowed path to flip: (1) review + per-phase commit of the dirty tree;
+(2) full `run.sh all upgrade --template both` under the hardened runner; (3) true
+upstream-e2e on `/data`; (4) S9 trio evidence; (5) email render + C7 evidence; (6) coverage
+refinement; (7) split as follow-up commit.
