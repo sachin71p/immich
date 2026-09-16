@@ -175,6 +175,8 @@ struct MacLibraryBrowser: View {
     .sheet(item: $moveSheetIds) { item in
       MacMoveSheet(state: state, assetIds: item.ids) { results in
         moveSheetIds = nil
+        // Sheet Cancel reports an empty result: close silently, no toast.
+        guard !results.isEmpty else { return }
         showToast(Self.moveSummary(results))
         let moved = Set(results.filter { $0.status == .moved }.map(\.assetId))
         if !moved.isEmpty {
@@ -793,14 +795,21 @@ struct MacLibraryBrowser: View {
   }
 
   private func performMove(ids: [String], to target: MoveTarget) async {
+    // Sidebar/file-drop moves bypass the sheet: track them for the WP4 quit guard here.
+    HeirloomQuitGuard.shared.isMoveInProgress = true
+    defer { HeirloomQuitGuard.shared.isMoveInProgress = false }
     do {
       let results = try await state.assetMutations().move(ids: ids, to: target)
       await state.refresh()
       MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
       pendingDropMove = nil
       showToast(Self.moveSummary(results))
+    } catch is CancellationError {
+      // Cancellation isn't a failure: no toast.
+      pendingDropMove = nil
     } catch {
       pendingDropMove = nil
+      HeirloomLog.ui.error("Move failed: \(error.localizedDescription, privacy: .public)")
       showToast(error.localizedDescription)
     }
   }
