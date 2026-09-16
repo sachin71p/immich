@@ -26,6 +26,11 @@ const toDiskAsset = async (token: string, entry: { id: string; manifestId: strin
 };
 
 const tokenFor = (world: World, owner: string): string => {
+  // Placement audits read through the elevated audit sessions (locked assets
+  // are unreadable on plain sessions).
+  if (Object.hasOwn(world.auditTokens, owner)) {
+    return world.auditTokens[owner];
+  }
   const user = (world.users as Record<string, { login: { accessToken: string } }>)[owner];
   if (!user) {
     throw new Error(`unknown world owner ${owner}`);

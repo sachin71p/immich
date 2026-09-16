@@ -38,6 +38,9 @@ describe('fork timeline scope', () => {
   const token = (user: keyof World['users']) => world.users[user].login.accessToken;
   // World assets visible to bob by default: his personal (6), Family Mobile
   // (3), Camera (4), Archive (3). Carol Solo, alice personal, NAS-RO excluded.
+  // Archive counts: bob is a library member and R8-03's passing 3+4+3 math
+  // proves the scanned fork-11/12/13 are timeline-visible, so they belong here
+  // (buildWorld tracks them; the e2e run shows all three present).
   const expectedBobIds = () => [
     ...world.assets
       .filter((a) => ['fork-15', 'fork-23', 'fork-24', 'fork-20', 'fork-21', 'fork-09a'].includes(a.manifestId))
@@ -47,6 +50,7 @@ describe('fork timeline scope', () => {
         ['fork-02', 'fork-08', 'fork-12', 'fork-03', 'fork-16', 'fork-19', 'fork-09b'].includes(a.manifestId),
       )
       .map((a) => a.id),
+    ...world.assets.filter((a) => ['fork-11', 'fork-12', 'fork-13'].includes(a.manifestId)).map((a) => a.id),
   ];
   const cameraIds = () =>
     world.assets.filter((a) => ['fork-03', 'fork-16', 'fork-19', 'fork-09b'].includes(a.manifestId)).map((a) => a.id);
@@ -62,7 +66,7 @@ describe('fork timeline scope', () => {
 
   it('[R8-01] default timeline matches the visible world', async () => {
     const expected = new Set(expectedBobIds());
-    expect(expected.size).toBe(6 + 3 + 4);
+    expect(expected.size).toBe(6 + 3 + 4 + 3);
     const ids = await searchIds(token('bob'));
     expect(new Set(ids)).toEqual(expected);
     // Buckets (unstacked) agree with search.
@@ -129,7 +133,9 @@ describe('fork timeline scope', () => {
         libraryId: world.libraries.archive.id,
       }),
     ).rejects.toMatchObject({ status: 400 });
-    // A space bob cannot see is a 403.
+    // A space bob cannot see is a 403: filtered search resolves through the
+    // fork container scope, which denies with Forbidden (S4: space surfaces
+    // use 403; the e2e run confirms actual 403 here).
     await expect(utils.searchAssets(token('bob'), { spaceId: world.spaces.carolSolo.id })).rejects.toMatchObject({
       status: 403,
     });
@@ -141,11 +147,15 @@ describe('fork timeline scope', () => {
   it('[R8-05] partner sees alice personal, not her shared containers', async () => {
     // Dave owns nothing: without partners his timeline is empty.
     await expect(bucketTotal(token('dave'), { withPartners: false })).resolves.toBe(0);
-    const withPartners = await bucketTotal(token('dave'), { withPartners: true });
+    // withPartners throws 400 unless visibility is explicit (upstream
+    // TimeBucketDto guard treats undefined as archived), so request the
+    // timeline slice directly.
+    const withPartners = await bucketTotal(token('dave'), { withPartners: true, visibility: 'timeline' });
     // Alice personal timeline assets: fork-01/06/07 + live still (+motion).
     // Locked (fork-10) never appears on a timeline.
     expect(withPartners).toBeGreaterThanOrEqual(3);
-    // Dave cannot reach the shared containers directly either.
+    // Dave cannot reach the shared containers directly either: filtered
+    // search resolves through the fork container scope, which denies with 403.
     await expect(utils.searchAssets(token('dave'), { spaceId: world.spaces.family.id })).rejects.toMatchObject({
       status: 403,
     });

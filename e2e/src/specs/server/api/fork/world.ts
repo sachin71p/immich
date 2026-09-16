@@ -14,6 +14,8 @@ import {
   addMembers2 as addSpaceMembers,
   create as createSharedSpace,
   createLibrary,
+  login,
+  unlockAuthSession,
   updateAssets,
   updateConfig,
   type AssetResponseDto,
@@ -21,7 +23,7 @@ import {
   type SharedSpaceResponseDto,
 } from '@immich/sdk';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, parse } from 'node:path';
 import { testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 import { settle } from './jobs.js';
 
@@ -48,6 +50,13 @@ export interface World {
   albumTrip: { id: string };
   assets: WorldAsset[];
   template: 'on' | 'off';
+  /**
+   * Read tokens for the R17 placement audits. Locked assets (fork-10) are
+   * unreadable without an elevated session, so alice maps to a dedicated
+   * password-unlocked session; everyone else maps to their login token and
+   * the interactive sessions stay non-elevated.
+   */
+  auditTokens: Record<string, string>;
 }
 
 const forkTables = [
@@ -213,6 +222,20 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
     assets.push({ id, manifestId, owner });
   };
 
+  // External-library scans are not uploads: record the scanned assets so the
+  // R8/R17 oracles account for every file the world owns (originals and their
+  // derived thumbs). The seeded filenames match the fixtures, so the manifest
+  // id is the file stem. Owners read their own library: alice owns Archive,
+  // admin owns NAS-RO.
+  const archived = await utils.searchAssets(alice.login.accessToken, { libraryId: archive.id });
+  for (const item of archived.assets.items) {
+    track(item.id, parse(item.originalFileName).name, 'alice');
+  }
+  const nasroScanned = await utils.searchAssets(admin.accessToken, { libraryId: nasro.id });
+  for (const item of nasroScanned.assets.items) {
+    track(item.id, parse(item.originalFileName).name, 'admin');
+  }
+
   // Per-container assets: >=3 synthetic fixtures each, incl. a sidecar one and a GPS one.
   for (const manifestId of ['fork-01', 'fork-06', 'fork-07']) {
     const asset = await uploadFixture(alice.login.accessToken, manifestId);
@@ -274,11 +297,14 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
   );
   track(locked.id, 'fork-10', 'alice');
 
-  // Duplicate pair split between bob personal and Camera.
+  // Duplicate pair split between bob personal and Camera. dupB must be a DISTINCT
+  // asset with identical bytes (R10-06's duplicate premise, R8's counts): same-owner
+  // same-checksum uploads collapse into the existing asset at upload time, so alice
+  // (a Camera member) contributes it instead.
   const dupA = await uploadFixture(bob.login.accessToken, 'fork-09a');
   track(dupA.id, 'fork-09a', 'bob');
-  const dupB = await uploadFixture(bob.login.accessToken, 'fork-09b', { spaceId: camera.id });
-  track(dupB.id, 'fork-09b', 'bob');
+  const dupB = await uploadFixture(alice.login.accessToken, 'fork-09b', { spaceId: camera.id });
+  track(dupB.id, 'fork-09b', 'alice');
 
   // Album Trip (alice owner, bob viewer) with alice-personal + Family Mobile assets.
   const trip = await utils.createAlbum(alice.login.accessToken, { albumName: 'Trip' });
@@ -300,6 +326,20 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
 
   await settle(admin.accessToken);
 
+  // fork-10 is Locked: even the owner cannot read it without an elevated
+  // session (access.repository excludes locked without elevation), which the
+  // R17 placement audits need for its original/sidecar paths. Elevate a
+  // dedicated alice session by password-unlock; the world's interactive
+  // sessions stay non-elevated so timeline-visibility tests keep observing
+  // locked assets as hidden.
+  const aliceAudit = await login({
+    loginCredentialDto: { email: 'alice@test.com', password: 'Password123' },
+  });
+  await unlockAuthSession(
+    { sessionUnlockDto: { password: 'Password123' } },
+    { headers: asBearerAuth(aliceAudit.accessToken) },
+  );
+
   return {
     users: { admin: { login: admin, email: 'admin@test.com' }, alice, bob, carol, dave },
     spaces: { family, camera, carolSolo },
@@ -307,6 +347,13 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
     albumTrip: { id: trip.id },
     assets,
     template: storageTemplate,
+    auditTokens: {
+      admin: admin.accessToken,
+      alice: aliceAudit.accessToken,
+      bob: bob.login.accessToken,
+      carol: carol.login.accessToken,
+      dave: dave.login.accessToken,
+    },
   };
 };
 

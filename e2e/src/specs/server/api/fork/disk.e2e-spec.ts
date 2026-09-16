@@ -21,6 +21,11 @@ import { buildWorld, getAsset, type World } from './world.js';
 const withSidecar = new Set(['fork-06', 'fork-07', 'fork-08', 'fork-10']);
 
 const tokenFor = (world: World, owner: string): string => {
+  // Placement audits read through the elevated audit sessions (locked assets
+  // are unreadable on plain sessions).
+  if (Object.hasOwn(world.auditTokens, owner)) {
+    return world.auditTokens[owner];
+  }
   const user = (world.users as Record<string, { login: { accessToken: string } }>)[owner];
   if (!user) {
     throw new Error(`unknown world owner ${owner}`);

@@ -26,7 +26,7 @@ import { app, utils } from 'src/utils.js';
 import { moveAssetsAs } from './as.js';
 import { expectedUploadPath, findUnder, forkDataDir, sharedLibraryPrefix, storageKey, toHostPath } from './disk.js';
 import { settle } from './jobs.js';
-import { ackAll, readSync } from './sync.js';
+import { readSync } from './sync.js';
 import { buildWorld, uploadFixture, type World } from './world.js';
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -79,10 +79,18 @@ describe.sequential('fork spaces', () => {
       const target = world.assets.find((a) => a.manifestId === 'fork-01')!;
       for (const outsider of ['bob', 'carol'] as const) {
         const headers = { Authorization: `Bearer ${token(outsider)}` };
-        for (const path of [`/assets/${target.id}`, `/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
-          const { status } = await request(app).get(path).set(headers);
-          expect(status, `${outsider} ${path}`).toBe(400);
+        // Upstream metadata reads deny with 400 (requireAccess); file
+        // endpoints deny with 404 (asset-media access), per the e2e run.
+        const { status } = await request(app).get(`/assets/${target.id}`).set(headers);
+        expect(status, `${outsider} metadata`).toBe(400);
+        for (const path of [`/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
+          const { status: fileStatus } = await request(app).get(path).set(headers);
+          expect(fileStatus, `${outsider} ${path}`).toBe(404);
         }
+        // Upstream bulk update reports no-access as 400, not 403.
+        await expect(
+          updateAssets({ assetBulkUpdateDto: { ids: [target.id], description: 'nope' } }, { headers }),
+        ).rejects.toMatchObject({ status: 400 });
       }
       // Sanity: the owner reads fine.
       await expect(getAs('alice', target.id)).resolves.toMatchObject({ id: target.id });
@@ -257,12 +265,17 @@ describe.sequential('fork spaces', () => {
     });
 
     it('[R6-02] contributor favorite is visible to the owner (API + sync)', async () => {
-      const target = familyAsset();
-      await ackAll(token('alice'));
+      // Alice's own contributions are excluded from her SharedSpaceAssetsV1 stream by
+      // design (SY-01/R16-04: no duplicate with the personal stream), so the sync half
+      // needs a bob-owned family asset; the API half works for either owner.
+      const target = await uploadFixture(token('bob'), 'fork-26', { spaceId: world.spaces.family.id });
+      await settle(adminToken);
       await updateAssets({ assetBulkUpdateDto: { ids: [target.id], isFavorite: true } }, { headers: auth(token('bob')) });
       await expect(getAs('alice', target.id)).resolves.toMatchObject({ isFavorite: true });
       // The generated SDK predates the S6 sync types; the server accepts the raw value.
-      const events = await readSync(token('alice'), ['SharedSpaceAssetsV1' as SyncRequestType]);
+      // Single-type read (an unacked backfill carries current flags): ackAll() sweeps
+      // every sync type and never observes quiet, and has hung the stream here before.
+      const events = await readSync(token('alice'), ['SharedSpaceAssetsV1' as SyncRequestType], 120_000);
       const relevant = events.filter((event) => JSON.stringify(event.data ?? {}).includes(target.id));
       expect(relevant.length).toBeGreaterThan(0);
       expect(relevant.some((event) => JSON.stringify(event).includes('"isFavorite":true'))).toBe(true);
@@ -331,13 +344,18 @@ describe.sequential('fork spaces', () => {
     it('[R6-06] outsider gets 403/error for every space-asset op', async () => {
       const target = familyAsset();
       const headers = { Authorization: `Bearer ${token('carol')}` };
-      for (const path of [`/assets/${target.id}`, `/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
-        const { status } = await request(app).get(path).set(headers);
-        expect(status, path).toBe(400);
+      // Upstream metadata reads deny with 400 (requireAccess); file endpoints
+      // deny with 404 (asset-media access), per the e2e run.
+      const { status } = await request(app).get(`/assets/${target.id}`).set(headers);
+      expect(status, 'metadata').toBe(400);
+      for (const path of [`/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
+        const { status: fileStatus } = await request(app).get(path).set(headers);
+        expect(fileStatus, path).toBe(404);
       }
+      // Upstream bulk update reports no-access as 400, not 403.
       await expect(
         updateAssets({ assetBulkUpdateDto: { ids: [target.id], description: 'nope' } }, { headers }),
-      ).rejects.toMatchObject({ status: 403 });
+      ).rejects.toMatchObject({ status: 400 });
       const move = await moveAssetsAs(world.users.carol, {
         assetIds: [target.id],
         target: { type: Type5.Personal },
@@ -357,10 +375,13 @@ describe.sequential('fork spaces', () => {
         { id: world.spaces.family.id, userId: userId('bob') },
         { headers: auth(token('alice')) },
       );
+      // Upstream metadata reads deny with 400 (requireAccess), not 403: only
+      // fork-owned space surfaces use 403. The re-add below depends on this
+      // denial assert passing (R7-01 reads the list right after).
       const { status } = await request(app)
         .get(`/assets/${uploaded.id}`)
         .set('Authorization', `Bearer ${token('bob')}`);
-      expect(status).toBe(403);
+      expect(status).toBe(400);
       await addSpaceMembers(
         { id: world.spaces.family.id, sharedSpaceMembersDto: { userIds: [userId('bob')] } },
         { headers: auth(token('alice')) },
