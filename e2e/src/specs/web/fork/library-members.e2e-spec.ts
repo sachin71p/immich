@@ -34,14 +34,25 @@ test.describe('[W-09] external library members and upload path', () => {
     await utils.setAuthCookies(context, adminToken);
     await page.goto(`/admin/library-management/${libraryId}`);
 
+    // The page renders three exact-'Add' buttons (folders, exclusion patterns,
+    // members, in DOM order): scope to the members one, failing loudly if that
+    // ever changes instead of clicking the wrong action.
+    const membersAdd = async () => {
+      const adds = page.getByRole('button', { name: 'Add', exact: true });
+      await expect(adds).toHaveCount(3);
+      return adds.nth(2);
+    };
+
     // Add bob through the members modal.
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    const openMembers = await membersAdd();
+    await openMembers.click();
     const dialog = page.getByRole('dialog');
     await dialog.getByPlaceholder('Search').fill('bob');
     await dialog.getByText('bob@example.com').click();
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
     // Reopening lists bob as a member with a Remove action.
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    const reopenMembers = await membersAdd();
+    await reopenMembers.click();
     await expect(page.getByRole('dialog').getByText('bob', { exact: true })).toBeVisible();
     await expect(page.getByRole('dialog').getByRole('button', { name: 'Remove' })).toBeVisible();
     await page.keyboard.press('Escape');

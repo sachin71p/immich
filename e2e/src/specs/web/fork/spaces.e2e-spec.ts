@@ -50,9 +50,13 @@ test.describe('[W-01] shared libraries', () => {
     await dialog.getByPlaceholder('Search').fill('bob');
     await dialog.getByText('bob@example.com').click();
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-    // Reopening shows no candidates left: bob is now a member.
+    // Reopening no longer offers bob: he is now a member. The admin remains a
+    // candidate, so anchor on the populated list (admin visible, bob absent)
+    // rather than the empty-list text.
     await page.getByRole('button', { name: 'Members' }).click();
-    await expect(page.getByRole('dialog').getByText('No users are available')).toBeVisible();
+    const membersDialog = page.getByRole('dialog');
+    await expect(membersDialog.getByText('admin@immich.cloud')).toBeVisible();
+    await expect(membersDialog.getByText('bob@example.com')).not.toBeVisible();
     await page.keyboard.press('Escape');
     const spaceId = page.url().split('/').pop() as string;
     const members = await getSpaceMembers(

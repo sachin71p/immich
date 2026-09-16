@@ -6,13 +6,15 @@ import { utils } from 'src/utils.js';
 // persist and affect /photos. Needs the fork compose stack
 // (scripts/fork-test/run.sh e2e-web).
 test.describe('[W-02] library settings', () => {
+  let adminToken: string;
   let aliceToken: string;
 
   test.beforeAll(async () => {
     utils.initSdk();
     await utils.resetDatabase();
     const admin = await utils.adminSetup();
-    ({ accessToken: aliceToken } = await utils.userSetup(admin.accessToken, {
+    adminToken = admin.accessToken;
+    ({ accessToken: aliceToken } = await utils.userSetup(adminToken, {
       email: 'alice@example.com',
       password: 'Password123',
       name: 'alice',
@@ -29,19 +31,37 @@ test.describe('[W-02] library settings', () => {
     const asset = await utils.createAsset(aliceToken, {
       assetData: { bytes: Buffer.from('w-02', 'utf8'), filename: 'w-02.jpg' },
     });
-    await utils.waitForQueueFinish(aliceToken, 'metadataExtraction');
+    // Queue status is an admin endpoint: alice's token gets a 403 here.
+    await utils.waitForQueueFinish(adminToken, 'metadataExtraction');
 
     await page.goto('/user-settings');
+    // Library settings live in a collapsed accordion: expand it first.
+    await page.getByRole('heading', { name: /^libraries$/i }).click();
     await expect(page.getByText('Default upload target')).toBeVisible();
 
-    // Default target starts personal; switch it to the space and back.
-    await page.getByRole('button', { name: 'Personal library' }).click();
-    await page.getByRole('button', { name: 'Family Mobile' }).click();
-    await expect(page.getByRole('button', { name: 'Family Mobile' })).toBeVisible();
+    // Default target starts personal; switch it to the space and back. The space
+    // name also labels its timeline-source switch row, so scope every dropdown
+    // interaction: the selected value is the data-button-root Button, options
+    // live in the open absolute-positioned menu (selection leaves it open).
+    const displayValue = (name: string) => page.locator('button[data-button-root]').filter({ hasText: name });
+    const menuOption = (name: string) =>
+      page.locator('div.absolute').getByRole('button', { name, exact: true });
+    await displayValue('Personal library').click();
+    // The save fires async on selection: reloading before it lands aborts the
+    // request and the preference silently reverts.
+    const firstSave = page.waitForResponse(
+      (response) => response.url().includes('preferences') && response.request().method() !== 'GET',
+    );
+    await menuOption('Family Mobile').click();
+    const saveResult = await firstSave;
+    expect(saveResult.ok()).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(displayValue('Family Mobile')).toBeVisible();
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Family Mobile' })).toBeVisible();
-    await page.getByRole('button', { name: 'Family Mobile' }).click();
-    await page.getByRole('button', { name: 'Personal library' }).click();
+    await expect(displayValue('Family Mobile')).toBeVisible();
+    await displayValue('Family Mobile').click();
+    await menuOption('Personal library').click();
+    await page.keyboard.press('Escape');
 
     // Hiding personal removes the asset from the default timeline scope that
     // /photos renders, while the explicit personal filter still finds it.
