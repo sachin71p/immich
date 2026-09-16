@@ -113,6 +113,7 @@ struct MacImportChooserSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
         Button(staged ? "Done" : "Upload") {
           if staged {
             onDone()
@@ -139,7 +140,13 @@ struct MacImportChooserSheet: View {
         ? "Nothing new — these files are already queued or uploaded."
         : "Queued \(rows.count) file\(rows.count == 1 ? "" : "s") for upload."
       staged = true
+      // Best-known count for the WP4 quit guard; the delegate rechecks the live
+      // queue before prompting, so staleness here never prompts spuriously.
+      HeirloomQuitGuard.shared.pendingUploads = (try? await state.store.pendingUploadCount()) ?? 0
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Enqueue import failed: \(error.localizedDescription, privacy: .public)")
       importError = error.localizedDescription
     }
   }

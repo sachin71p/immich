@@ -21,6 +21,7 @@ struct MacNewSpaceSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
         Button("Create") { Task { await create() } }
           .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
           .accessibilityIdentifier("new-space-create")
@@ -41,7 +42,10 @@ struct MacNewSpaceSheet: View {
       )
       await state.refresh()
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Create space failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -95,6 +99,7 @@ struct MacSpaceManageSheet: View {
         }
         Spacer()
         Button("Done") { onDone() }
+          .keyboardShortcut(.cancelAction)
       }
       if let error { Text(error).foregroundStyle(.red).font(.caption) }
     }
@@ -115,7 +120,10 @@ struct MacSpaceManageSheet: View {
         description: description == space.description ? nil : description
       )
       await state.refresh()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Update space failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -125,7 +133,10 @@ struct MacSpaceManageSheet: View {
       try await state.spaceMutations().addMembers(userIds: [newMemberId], toSpace: space.id)
       newMemberId = ""
       members = (try? await state.store.spaceMembers(spaceId: space.id)) ?? []
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Add member failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -135,7 +146,10 @@ struct MacSpaceManageSheet: View {
       try await state.spaceMutations().removeMember(userId: userId, fromSpace: space.id)
       members = (try? await state.store.spaceMembers(spaceId: space.id)) ?? []
       await state.refresh()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Remove member failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -151,7 +165,10 @@ struct MacSpaceManageSheet: View {
       try await state.spaceMutations().deleteSpace(id: space.id)
       await state.refresh()
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Delete space failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -172,6 +189,7 @@ struct MacNewAlbumSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
         Button("Create") { Task { await create() } }
           .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
           .keyboardShortcut(.defaultAction)
@@ -188,7 +206,10 @@ struct MacNewAlbumSheet: View {
       )
       await state.refresh()
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Create album failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -215,6 +236,11 @@ struct MacAddToAlbumSheet: View {
       }
       .frame(minHeight: 160)
       if let error { Text(error).foregroundStyle(.red).font(.caption) }
+      HStack {
+        Spacer()
+        Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
+      }
     }
     .padding()
     .frame(minWidth: 300)
@@ -224,7 +250,10 @@ struct MacAddToAlbumSheet: View {
     do {
       _ = try await state.albumMutations().addAssets(assetIds, toAlbum: albumId)
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Add to album failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }

@@ -143,7 +143,11 @@ final class MacCameraBrowser: NSObject, ObservableObject {
         if state.prefs.deleteAfterImport, let device = file.device as? ICCameraDevice {
           device.requestDeleteFiles([file])
         }
+      } catch is CancellationError {
+        // Cancellation isn't a failure: skip the item with no status noise.
       } catch {
+        HeirloomLog.ui.error(
+          "Camera import failed: \(error.localizedDescription, privacy: .public)")
         status = "Import failed for \(item.name ?? "item"): \(error.localizedDescription)"
       }
     }
@@ -312,6 +316,7 @@ struct MacCameraImportView: View {
             Text("\(pendingCount) queued").font(.caption).foregroundStyle(.secondary)
           }
           Button("Done") { dismiss() }
+            .keyboardShortcut(.cancelAction)
         }
       }
       if let status = browser.status {
@@ -355,6 +360,8 @@ struct MacCameraImportView: View {
 
   private func refreshPending() async {
     pendingCount = (try? await state.store.pendingUploadCount()) ?? 0
+    // Best-known count for the WP4 quit guard (rechecked live before prompting).
+    HeirloomQuitGuard.shared.pendingUploads = pendingCount
   }
 }
 
