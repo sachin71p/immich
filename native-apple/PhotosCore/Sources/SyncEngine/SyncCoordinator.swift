@@ -27,18 +27,49 @@ public actor SyncCoordinator {
     self.batchInterval = batchInterval
   }
 
+  /// Outcome of one sync session: whether it ran, and whether it changed the local mirror.
+  /// `appliedChanges` is the cheapest such signal — it counts `PhotosLocalStore.apply`/`wipe`
+  /// calls, not row diffs. The macOS grid keys its reload off it (`MacAppState.syncNow` bumps
+  /// `timelineVersion` only when a session applied something or the user asked), so idle
+  /// no-change syncs no longer rebuild the grid, re-issue prefetches, and hang the main thread.
+  public struct SyncResult: Sendable {
+    /// False when the call was dropped because a session was already running.
+    public var didRun: Bool
+    /// True when the session applied at least one change batch (or a reset wipe) to the store.
+    public var appliedChanges: Bool
+
+    public init(didRun: Bool, appliedChanges: Bool) {
+      self.didRun = didRun
+      self.appliedChanges = appliedChanges
+    }
+
+    /// Grid reloads only when the session ran AND (it changed the mirror OR the user asked):
+    /// timer-driven no-change syncs skip the reload; dropped syncs never reload.
+    public func shouldReloadTimeline(userInitiated: Bool) -> Bool {
+      didRun && (appliedChanges || userInitiated)
+    }
+  }
+
   /// Runs one full sync session. Safe to call repeatedly (foreground, pull-to-refresh, timer); concurrent
-  /// calls while a session is already running are dropped.
+  /// calls while a session is already running are dropped. Kept for existing callers (iOS
+  /// `AppSession`, `syncOnDemand`); new callers that gate UI reloads want `syncWithResult`.
   @discardableResult
   public func syncNow(reset: Bool = false) async throws -> Bool {
-    guard !isSyncing else { return false }
+    try await syncWithResult(reset: reset).didRun
+  }
+
+  /// Same session as `syncNow`, additionally reporting whether anything was applied.
+  public func syncWithResult(reset: Bool = false) async throws -> SyncResult {
+    guard !isSyncing else { return SyncResult(didRun: false, appliedChanges: false) }
     isSyncing = true
     defer { isSyncing = false }
 
+    var appliedChanges = false
     let currentUserId = try await connection.currentUserId()
     if reset {
       try await localStore.wipe()
       try await localStore.clearSyncAcks()
+      appliedChanges = true
     }
 
     let client = SyncStreamClient(connection: connection)
@@ -54,20 +85,22 @@ public actor SyncCoordinator {
         }
       case .reset:
         // A mid-stream reset: discard whatever we haven't durably applied yet and start clean; the
-        // server keeps streaming a full resync on the same connection afterwards.
+        // server keeps streaming a full resync on the same connection afterwards. A wipe visibly
+        // changes the mirror even if the resync that follows is empty.
         batch = SyncBatch()
         try await localStore.wipe()
         try await localStore.clearSyncAcks()
+        appliedChanges = true
       case .complete:
-        try await flush(&batch, currentUserId: currentUserId)
+        if try await flush(&batch, currentUserId: currentUserId) > 0 { appliedChanges = true }
       }
 
       if batch.pending.count >= batchSize || Date().timeIntervalSince(batch.lastFlush) >= batchInterval {
-        try await flush(&batch, currentUserId: currentUserId)
+        if try await flush(&batch, currentUserId: currentUserId) > 0 { appliedChanges = true }
       }
     }
-    try await flush(&batch, currentUserId: currentUserId)
-    return true
+    if try await flush(&batch, currentUserId: currentUserId) > 0 { appliedChanges = true }
+    return SyncResult(didRun: true, appliedChanges: appliedChanges)
   }
 
   private struct SyncBatch {
@@ -76,8 +109,12 @@ public actor SyncCoordinator {
     var lastFlush = Date()
   }
 
-  private func flush(_ batch: inout SyncBatch, currentUserId: String) async throws {
-    guard !batch.pending.isEmpty else { return }
+  /// Applies the pending batch, returning the applied change count (0 when the batch was
+  /// empty). `syncWithResult` sums these into `SyncResult.appliedChanges`.
+  @discardableResult
+  private func flush(_ batch: inout SyncBatch, currentUserId: String) async throws -> Int {
+    guard !batch.pending.isEmpty else { return 0 }
+    let applied = batch.pending.count
     try await localStore.apply(batch.pending, currentUserId: currentUserId)
     batch.pending.removeAll(keepingCapacity: true)
     if !batch.pendingAcks.isEmpty {
@@ -85,6 +122,7 @@ public actor SyncCoordinator {
       batch.pendingAcks.removeAll(keepingCapacity: true)
     }
     batch.lastFlush = Date()
+    return applied
   }
 
   private func postAcks(_ acks: [String]) async throws {

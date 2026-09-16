@@ -19,6 +19,10 @@ private actor StubImageService: MediaImageService {
   var imageRequests: [ImageRequest] = []
   var dataByURL: [String: Data] = [:]
   var failingURLs: Set<String> = []
+  /// URL → HTTP status: throws the exact Nuke error chain the real pipeline produces for HTTP
+  /// failures (`ImagePipeline.Error.dataLoadingFailed(DataLoader.Error.statusCodeUnacceptable)`),
+  /// so negative-cache/classifier tests exercise the production unwrapping path.
+  var statusFailures: [String: Int] = [:]
   var delayNanoseconds: UInt64 = 0
   let cannedImage: PlatformImage
 
@@ -30,6 +34,10 @@ private actor StubImageService: MediaImageService {
 
   func fail(urls: [String]) {
     failingURLs.formUnion(urls)
+  }
+
+  func failWithStatus(url: String, status: Int) {
+    statusFailures[url] = status
   }
 
   func setDelay(_ nanoseconds: UInt64) {
@@ -51,6 +59,10 @@ private actor StubImageService: MediaImageService {
     dataRequests.append(request)
     if delayNanoseconds > 0 { try await Task.sleep(nanoseconds: delayNanoseconds) }
     guard let url = request.url?.absoluteString else { throw StubError.failed }
+    if let status = statusFailures[url] {
+      throw ImagePipeline.Error.dataLoadingFailed(
+        error: DataLoader.Error.statusCodeUnacceptable(status))
+    }
     if failingURLs.contains(url) { throw StubError.failed }
     return dataByURL[url] ?? Data("bytes-for-\(url)".utf8)
   }
@@ -357,5 +369,108 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
     #expect(MediaPipeline.memoryCacheCostLimit(physicalMemoryBytes: 8_000_000_000) == 256 * 1024 * 1024)
     let host = MediaPipeline.memoryCacheCostLimit()
     #expect(host >= 32 * 1024 * 1024 && host <= 256 * 1024 * 1024)
+  }
+
+  @Test("[WP3FIX] classify: cancellations stay below Error, 4xx permanent, 5xx/timeout transient")
+  func failureClassification() {
+    // Cancelled completions log at debug, never error — all three cancellation carriers.
+    #expect(MediaPipeline.classify(CancellationError()) == .cancelled)
+    #expect(MediaPipeline.classify(URLError(.cancelled)) == .cancelled)
+    #expect(MediaPipeline.classify(ImagePipeline.Error.cancelled) == .cancelled)
+    // Permanent failures, bare and through the typed-throws `data(for:)` wrapper.
+    #expect(
+      MediaPipeline.classify(DataLoader.Error.statusCodeUnacceptable(404)) == .permanent(statusCode: 404))
+    #expect(
+      MediaPipeline.classify(
+        ImagePipeline.Error.dataLoadingFailed(
+          error: DataLoader.Error.statusCodeUnacceptable(403))) == .permanent(statusCode: 403))
+    // Transient failures are never negatively cached (401 exempt so a token refresh can retry).
+    #expect(MediaPipeline.classify(DataLoader.Error.statusCodeUnacceptable(401)) == .transient)
+    #expect(MediaPipeline.classify(DataLoader.Error.statusCodeUnacceptable(500)) == .transient)
+    #expect(MediaPipeline.classify(URLError(.timedOut)) == .transient)
+    #expect(MediaPipeline.classify(StubError.failed) == .transient)
+  }
+
+  @Test("[WP3FIX] 404 thumbnails are negatively cached: repeat prefetch + stream issue zero network")
+  func negativeCache404() async throws {
+    let h = try await Harness.make()
+    await h.service.failWithStatus(url: h.thumbnailURL(id: "gone"), status: 404)
+    await h.pipeline.prefetch([(id: "gone", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 1)
+    // A second prefetch pass for the same id issues zero network requests.
+    await h.pipeline.prefetch([(id: "gone", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 1)
+    // The cell stream path consults the same hold: zero new requests, tier miss, no 404 refetch.
+    var steps: [MediaLoadedImage] = []
+    await #expect(throws: MediaError.nothingLoaded) {
+      for try await step in await h.pipeline.stream(id: "gone", thumbhash: nil, tier: .thumbnail) {
+        steps.append(step)
+      }
+    }
+    #expect(steps.isEmpty)
+    #expect(await h.service.dataRequests.count == 1)
+  }
+
+  @Test("[WP3FIX] transient failures (5xx) are NOT negatively cached")
+  func noNegativeCacheTransient() async throws {
+    let h = try await Harness.make()
+    await h.service.failWithStatus(url: h.thumbnailURL(id: "flaky"), status: 500)
+    await h.pipeline.prefetch([(id: "flaky", thumbhash: nil)], tier: .thumbnail)
+    await h.pipeline.prefetch([(id: "flaky", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 2)
+  }
+
+  @Test("[WP3FIX] 401 is NOT negatively cached (silent refresh recovery); 403 still held")
+  func noNegativeCache401() async throws {
+    let h = try await Harness.make()
+    await h.service.failWithStatus(url: h.thumbnailURL(id: "unauth"), status: 401)
+    await h.pipeline.prefetch([(id: "unauth", thumbhash: nil)], tier: .thumbnail)
+    await h.pipeline.prefetch([(id: "unauth", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 2)
+    // Control: 403 stays under the negative hold — one request total.
+    await h.service.failWithStatus(url: h.thumbnailURL(id: "denied"), status: 403)
+    await h.pipeline.prefetch([(id: "denied", thumbhash: nil)], tier: .thumbnail)
+    await h.pipeline.prefetch([(id: "denied", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 3)
+  }
+
+  @Test("[WP3FIX] cancelPrefetch never cancels a task with a live visible consumer")
+  func cancelPrefetchKeepsVisible() async throws {
+    let h = try await Harness.make()
+    try await h.seedPNG(url: h.thumbnailURL(id: "v"))
+    await h.service.setDelay(1_000_000_000)
+    let prefetchTask = Task {
+      await h.pipeline.prefetch([(id: "v", thumbhash: nil)], tier: .thumbnail)
+    }
+    // Wait until the fetch is actually in flight (poll, not a fixed sleep).
+    var waited = 0
+    while await h.service.dataRequests.isEmpty, waited < 50 {
+      try await Task.sleep(nanoseconds: 50_000_000)
+      waited += 1
+    }
+    #expect(await h.service.dataRequests.count == 1)
+    // A cell scrolling into view joins the in-flight prefetch (same bytes, visible refcount);
+    // the window then moves, releasing the prefetch hold but keeping the visible consumer. The
+    // sleep lets the visible task reach the in-flight join (microseconds + one local disk probe)
+    // well inside the 1 s network delay, so the cancel below tests the joined state, not a race.
+    let visibleTask = Task { try await h.pipeline.load(asset: h.asset(id: "v"), tier: .thumbnail) }
+    try await Task.sleep(nanoseconds: 300_000_000)
+    await h.pipeline.cancelPrefetch(keeping: [])
+    let loaded = try await visibleTask.value
+    await prefetchTask.value
+    #expect(tierOf(loaded) == TierStep(tier: .thumbnail, fromCache: false))
+    #expect(await h.service.dataRequests.count == 1)
+  }
+
+  @Test("[WP3FIX] PrefetchWindowTracker: same settled window no-ops, moves and reloads re-issue")
+  func prefetchWindowTracker() {
+    var tracker = MediaPipeline.PrefetchWindowTracker()
+    #expect(tracker.shouldIssue(window: ["a", "b"], generation: 1) == true)
+    #expect(tracker.shouldIssue(window: ["a", "b"], generation: 1) == false)
+    #expect(tracker.shouldIssue(window: ["b", "a"], generation: 1) == false)
+    #expect(tracker.shouldIssue(window: ["a", "c"], generation: 1) == true)
+    #expect(tracker.shouldIssue(window: ["a", "c"], generation: 1) == false)
+    #expect(tracker.shouldIssue(window: ["a", "c"], generation: 2) == true)
+    #expect(tracker.shouldIssue(window: [], generation: 2) == false)
   }
 }
