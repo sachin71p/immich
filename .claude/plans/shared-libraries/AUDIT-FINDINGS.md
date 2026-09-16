@@ -269,6 +269,69 @@ What conflicted (9 files) and how each bolded collision was resolved:
 Sandbox re-verification of the merged tree: see `## Re-verification`
 (session-merge entry to follow).
 
+## Re-verification (reconcile + §§3a–3c, 16-Sep — sandbox unblocked)
+
+Verdict: **unchanged — do not deploy.** But the evidence base moved
+substantially: the sandbox's Docker daemon and loopback network now work
+(both were hard-blocked at audit time), so the medium tier, the DB-backed
+§3a/§3c evidence, and the full controller set ran for real. e2e-api,
+coverage, upgrade/S10, and the C7 filesystem exercise still need a host.
+
+Sandbox runs (measured at `a64fced5d` for the merge, `39199677c` after
+§§3a–3c; three verifier passes, all read-only, lockfiles untouched):
+- Merge tiers: server tsc PASS, e2e tsc+lint PASS, web tsc + svelte-check
+  0/0 PASS, non-controller unit 80 files / 2199 passed / 0 failed —
+  NO-WORSE-THAN-BASELINE at `a64fced5d`.
+- Final tiers at `39199677c`: all of the above green plus server lint
+  **0 errors / 0 warnings** (post-§3b gate green) and non-controller unit
+  80 / 2199 / 0.
+- Full medium tree (`test:medium`, testcontainers Postgres, real
+  migrations incl. ClusterGroups/SharedLibraries/SpacePeople): **72/74
+  files, 645 passed / 2 failed / 22 skipped**. Both failures are known
+  ENV/harness, not product: `audio-video.spec.ts` ffmpeg golden drift
+  (`keyframeAccDuration` off by tens) and `workflow-core-plugin.spec.ts`
+  setup error (wasm missing, `mise` absent in sandbox) — both match the
+  prior triage classification. Every fork, repository, service, and sync
+  spec is green.
+- Full controller unit: **35 files / 231 passed + 1 expected-fail, zero
+  failures, zero `listen EPERM`** across two runs — the sandbox network
+  block is lifted.
+- §3a gate evidence (real DB runs, not pending): PERM-11 spaces + partner
+  + **new library sibling
+  `PERM-11 denies a removed library member face access to owned library
+  assets`** 4/4 in `access.repository.spec.ts`; person merge tests
+  (`should merge people of multiple users`,
+  `should not merge into person another user does not have`) inside
+  medium `person.service.spec.ts` 21/21 (S9 re-run 1 of 3 done);
+  person-space 10/10 + person.service unit 67/67 in sandbox (S9 re-run
+  2 of 3 done); `person.e2e-spec` 16/16 still host-owned (S9 re-run 3).
+- §3c evidence: `cluster-group-interaction.spec.ts` 1/1 PASS (real run,
+  re-confirmed) — no duplicates, no leaks, naming independent; no S9
+  bypass found. S9-adjacent medium: `[LC-01]/[C3]` container-delete 2/2,
+  `[I6]/[I7]` integrity 2/2, `[R16]` favorites 1/1.
+- Sandbox caveat (do not over-read): the §3c PASS and medium greens ran
+  against sandbox Postgres; the host medium re-run still owns release
+  confirmation, and `searchFaces` in the §3c test needs vchord in the
+  host template DB.
+
+Still host-only (nothing below has run anywhere since the fixes landed):
+controller verdict already closed in sandbox; remaining are the 5 S2
+album canary specs (upstream `album.e2e-spec.ts`, R11-aligned — run
+FIRST, stop on regression), full fork `run.sh e2e-api` (both templates),
+`run.sh medium` re-run for S3/S4/S6/S9 engine areas, coverage gate
+(R13-04/W-01/W-02/W-09 still T1-owned; new PERM-11/[C3]/[R16]/[I6]/[I7]
+tags deliberately invisible to the matrix — matrix-gain decision open),
+`run.sh upgrade`/S10 carrying the `updateMyTimeline`→
+`updateMySpaceTimeline` rename + SQL/OpenAPI regen (incl. the now-stale
+`access.repository.sql` from the §3a gate), and the C7 real crash /
+two-filesystem exercise (EXDEV recovery, partial-copy resumption, unlink
+propagation — unit mocks do not prove these).
+
+Open non-blockers carried forward: the 5 unattributed unit tests (2197
+vs 2190; scout could not reproduce a 2190 full-tree baseline — needs the
+§3c scope/baseline-commit to close exactly); web eslint still crashes
+environmentally (tscompat/TS6, untouched files).
+
 ## Contradictions in plan documentation
 
 - ~~`STATUS.md` describes the S0 base as v3.1.0, while this audit brief describes upstream base `e55ac299a` as v3.2.0 plus 98 commits.~~ — RESOLVED 16-Sep: `git describe` gives `v3.1.0-379-ge55ac299a`; S0 row corrected to the describe output (package 3.2.0 is the dev version, not a tag).

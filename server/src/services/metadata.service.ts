@@ -516,9 +516,11 @@ export class MetadataService extends BaseService {
 
     await this.metadataRepository.writeTags(sidecarPath, exif);
 
-    if (asset.files.length === 0) {
-      await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
-    }
+    // fork: shared-libraries (R4-01) - always register a written sidecar. An
+    // unregistered sidecar is invisible to relocation, so a move strands it and
+    // the follow-up re-extraction reads back empty tags, wiping just-added user
+    // tags in applyTagList. upsertFile is a no-op when the row already exists.
+    await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
 
     await this.assetRepository.unlockProperties(asset.id, lockedProperties);
 
