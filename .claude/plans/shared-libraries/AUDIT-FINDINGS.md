@@ -95,6 +95,19 @@ DEFERRED item (OpenAPI rename → S10 regen) remain open. The verdict flips only
    decided contract. Owner decision needed: mirror PERM-11 for libraries (gate + member rights),
    or keep upstream owner-only. The medium test above covers spaces only.
 
+   **RESOLVED 16-Sep (owner decision §3a: gate only, grant refused).** Gate FIXED — the library
+   owner leg of `checkFaceOwnerAccess` now additionally requires current library owner-or-membership
+   (the shared predicate's library-branch EXISTS shape), so a removed member who owns a library asset
+   loses face access to it; a current non-owner member still gets nothing. `checkOwnerAccess` is
+   unchanged owner-only (person rows carry no `libraryId`, so a gate there is vacuous). Evidence:
+   medium test `PERM-11 denies a removed library member face access to owned library assets`
+   (`server/test/medium/specs/repositories/access.repository.spec.ts`; host run pending).
+   Grant NOT-A-DEFECT — face/person rights follow cluster-group membership, not container membership
+   (DECISIONS §4/§11): external libraries have no `clusterGroupId`, so a membership grant would expose
+   the owner's entire personal face graph; the supported cross-user mechanism is the upstream
+   cluster-group-request flow (`cluster-group.service.ts`). Interaction coverage:
+   `server/test/medium/specs/repositories/cluster-group-interaction.spec.ts` (host run pending).
+
 ## P1–P2 — confirmed integrity and relocation gaps
 
 | Severity | Contract | Location | Finding | Outcome |

@@ -73,6 +73,10 @@ Space roles: `owner` (exactly one per space), `contributor`.
   An update request whose only field is `isFavorite` requires `AssetFavorite`; anything else requires `AssetUpdate`.
 - Sync shows the real `isFavorite` to album/space/library viewers (upstream forces false for non-owners).
   Partner streams keep upstream behaviour.
+- Faces/people follow cluster-group membership, not container membership. Space table rights confer
+  no face/person rights beyond S9 space-scoped rows; library membership confers none. A removed
+  library member loses face access to owned library assets (the owner leg additionally requires
+  current library owner-or-membership); a current non-owner library member gains nothing.
 
 ## §5 New permissions (enum `Permission`, usable as API-key scopes)
 `sharedSpace.create`, `sharedSpace.read`, `sharedSpace.update`, `sharedSpace.delete`,
@@ -154,7 +158,15 @@ Known behaviour change: partners no longer see a partner's external-library asse
 the library instead).
 
 ## §11 Out of scope / known limitations
-- People/faces stay per-owner: faces in a space asset cluster under the contributor's People. Optional phase S9.
+- People/faces are partitioned by cluster group (`user.clusterGroupId`, one per user). S9 space-scoped
+  rows live in each space's universe (`shared_space.clusterGroupId`, lazily via `createSpaceGroup`).
+  External libraries have no `clusterGroupId`, so their faces stay in the owner's personal cluster
+  group. The supported cross-user mechanism is the upstream cluster-group-request flow
+  (`cluster_group_request` unique `(clusterGroupId, userId)`; request/accept in
+  `cluster-group.service.ts`, `ClusterGroupRequestCreate` permission, notification event). The
+  library-membership face grant was considered and refused: it would expose the owner's entire
+  personal face graph, and no container-scoped graph exists without new schema, a migration, and
+  re-clustering.
 - Duplicate detection (ML) stays per-owner.
 - Upstream Flutter app gains no new UI (must keep working).
 - Per-user favorites.

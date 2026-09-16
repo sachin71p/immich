@@ -162,6 +162,50 @@ describe(AccessRepository.name, () => {
     ).resolves.toEqual(new Set([spacePerson.personGroupId]));
   });
 
+  it('PERM-11 denies a removed library member face access to owned library assets', async () => {
+    const { access, ctx } = setup();
+    const { user: libOwner } = await ctx.newUser();
+    const { user: contributor } = await ctx.newUser();
+    const { user: member } = await ctx.newUser();
+    const library = await newLibrary(ctx, libOwner.id, contributor.id);
+    await ctx.database.insertInto('library_member').values({ libraryId: library.id, userId: member.id }).execute();
+    const { asset: libraryAsset } = await ctx.newAsset({ ownerId: contributor.id, libraryId: library.id });
+    const { person: personalPerson } = await ctx.newPerson({ ownerId: contributor.id });
+    const { assetFace } = await ctx.newAssetFace({
+      assetId: libraryAsset.id,
+      personGroupId: personalPerson.personGroupId,
+    });
+
+    // While a member, the contributor reaches faces on their owned library asset
+    // and keeps their personal person; a current non-owner member gains nothing
+    // (the refused library-membership face grant, DECISIONS §4).
+    await expect(access.person.checkFaceOwnerAccess(contributor.id, new Set([assetFace.id]))).resolves.toEqual(
+      new Set([assetFace.id]),
+    );
+    await expect(
+      access.person.checkOwnerAccess(contributor.id, new Set([personalPerson.personGroupId])),
+    ).resolves.toEqual(new Set([personalPerson.personGroupId]));
+    await expect(access.person.checkFaceOwnerAccess(member.id, new Set([assetFace.id]))).resolves.toEqual(new Set());
+    await expect(access.person.checkOwnerAccess(member.id, new Set([personalPerson.personGroupId]))).resolves.toEqual(
+      new Set(),
+    );
+
+    await ctx.database
+      .deleteFrom('library_member')
+      .where('libraryId', '=', library.id)
+      .where('userId', '=', contributor.id)
+      .execute();
+
+    // After removal the contributor loses face access to the owned library asset
+    // (the gate) but keeps their own personal person (no over-deny).
+    await expect(access.person.checkFaceOwnerAccess(contributor.id, new Set([assetFace.id]))).resolves.toEqual(
+      new Set(),
+    );
+    await expect(
+      access.person.checkOwnerAccess(contributor.id, new Set([personalPerson.personGroupId])),
+    ).resolves.toEqual(new Set([personalPerson.personGroupId]));
+  });
+
   it('PERM-01-nonmember denies partner access to space and library assets', async () => {
     const { access, ctx } = setup();
     const { user: containerOwner } = await ctx.newUser();
