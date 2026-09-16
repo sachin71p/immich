@@ -8,7 +8,8 @@ import Search
 import SwiftUI
 import VisionKit
 
-/// Asset viewer (brief task 3): in-window and full-screen, arrow-key paging, pinch/scroll zoom
+/// Asset viewer (brief task 3): in-window and full-screen, arrow-key and horizontal-scroll
+/// paging (trackpad swipe / wheel-x; chevron buttons removed per owner request), pinch zoom
 /// with tier upgrade (thumbnail → preview → original through `MediaPipeline`), floating Info
 /// inspector (⌘I), favorite (.), rotate (⌘R, persisted through the edit path for photos),
 /// delete (⌘⌫), move to… (⌘⇧M), add to album.
@@ -117,12 +118,6 @@ struct MacViewerView: View {
     return min(max(0, raw), context.rows.count - 1)
   }
 
-  private var canGoPrevious: Bool { (index ?? 0) > 0 }
-  private var canGoNext: Bool {
-    guard let index, let context = effectiveContext else { return false }
-    return index < context.rows.count - 1
-  }
-
   var body: some View {
     ZStack {
       if let asset, asset.type == .video {
@@ -138,11 +133,12 @@ struct MacViewerView: View {
         GeometryReader { proxy in
           Group {
             if liveTextEnabled {
-              MacLiveTextView(image: image, analysis: liveText)
+              MacLiveTextView(image: image, analysis: liveText, onPage: { page(by: $0) })
             } else {
               MacZoomableImageView(
                 image: image, onZoomBeyondPreview: upgradeTier,
-                onMagnification: { magnification = $0 }
+                onMagnification: { magnification = $0 },
+                onPage: { page(by: $0) }
               )
             }
           }
@@ -176,15 +172,8 @@ struct MacViewerView: View {
           Button { onClose() } label: { Label("Back", systemImage: "chevron.left") }
         }
       }
-      // Paging affordances (WP5 item 1): clamped, disabled at the ends. No keyboard
-      // shortcuts here — arrows arrive via `.onKeyPress` below, and giving the
-      // buttons arrow shortcuts too would page twice per keystroke.
-      ToolbarItemGroup(placement: .navigation) {
-        Button { page(by: -1) } label: { Label("Previous", systemImage: "chevron.left") }
-          .disabled(!canGoPrevious)
-        Button { page(by: 1) } label: { Label("Next", systemImage: "chevron.right") }
-          .disabled(!canGoNext)
-      }
+      // No chevron paging buttons (owner request): horizontal scroll pages prev/next
+      // and Esc/Back exits. Arrows arrive via `.onKeyPress` below.
       ToolbarItemGroup {
         Button { toggleFavorite() } label: {
           Label("Favorite", systemImage: (asset?.isFavorite ?? false) ? "heart.fill" : "heart")
@@ -609,6 +598,71 @@ private struct ViewerSizeKey: PreferenceKey {
   static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 
+/// One shared swipe-to-page interpreter for both viewer scroll containers below.
+/// Dominant-x scroll (trackpad swipe or mouse-wheel-x) maps to a page delta with
+/// Photos direction: swipe left (dx < 0) advances, swipe right goes back. Trackpad
+/// gestures accumulate precise points and fire once per swipe; discrete wheels fire
+/// one page per detent. Vertical scroll and momentum coasting return false so the
+/// caller passes them through untouched.
+final class PageSwipeTracker {
+  private var pendingX: CGFloat = 0
+  private var consumed = false
+  /// Precise points of dominant-x travel that trigger a page.
+  private static let travel: CGFloat = 80
+
+  /// Page delta (-1/0/+1) for a horizontal scroll event; 0 means "not a page gesture".
+  func delta(for event: NSEvent) -> Int {
+    let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+    guard dx != 0, abs(dx) > abs(dy), event.momentumPhase.isEmpty else { return 0 }
+    if !event.hasPreciseScrollingDeltas { return dx > 0 ? -1 : 1 }
+    if event.phase.contains(.began) { pendingX = 0; consumed = false }
+    defer {
+      if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+        pendingX = 0; consumed = false
+      }
+    }
+    guard !consumed else { return 0 }
+    pendingX += dx
+    guard abs(pendingX) >= Self.travel else { return 0 }
+    consumed = true
+    let dir = pendingX > 0 ? -1 : 1
+    pendingX = 0
+    return dir
+  }
+}
+
+/// Plain-view paging catcher for the Live Text photo path (no zoom there, so no
+/// magnification gate): unhandled scrolls bubble up the responder chain to this
+/// container, which pages on dominant-x and forwards everything else.
+final class ViewerPageCatcherView: NSView {
+  var onPage: ((Int) -> Void)?
+  private let tracker = PageSwipeTracker()
+
+  override func scrollWheel(with event: NSEvent) {
+    let dir = tracker.delta(for: event)
+    guard dir != 0 else { super.scrollWheel(with: event); return }
+    onPage?(dir)
+  }
+}
+
+/// NSScrollView magnifier with swipe-to-page: pinch zoom is native
+/// (`allowsMagnification`, clamped to min/max below); a dominant-x scroll at 1.0×
+/// pages through `onPage` instead, reusing the viewer's `page(by:)` path. Past 1.0×
+/// the scroll pans (Photos behavior), so zoom never fights paging.
+final class ViewerPagingScrollView: NSScrollView {
+  var onPage: ((Int) -> Void)?
+  private let tracker = PageSwipeTracker()
+
+  override func scrollWheel(with event: NSEvent) {
+    // Zoomed: pan. Everything else delegates to the tracker; non-page scrolls
+    // (vertical, momentum, zoomed horizontal) keep native behavior.
+    if magnification > 1.001 { super.scrollWheel(with: event); return }
+    let dir = tracker.delta(for: event)
+    guard dir != 0 else { super.scrollWheel(with: event); return }
+    onPage?(dir)
+  }
+}
+
 /// NSScrollView magnifier: pinch/scroll zoom; crossing 1.5× fires `onZoomBeyondPreview`
 /// once so the viewer upgrades to the fullsize tier (WP5 item 2). Every magnification
 /// change is also reported through `onMagnification` so the viewer can decide the
@@ -617,12 +671,17 @@ struct MacZoomableImageView: NSViewRepresentable {
   var image: NSImage
   var onZoomBeyondPreview: () -> Void
   var onMagnification: (Double) -> Void = { _ in }
+  /// Swipe-to-page (owner request): routed into the viewer's `page(by:)`, so the
+  /// neighbor-preload and no-blank-flash invariants hold for gestures exactly as
+  /// for buttons and arrow keys — no second paging implementation.
+  var onPage: ((Int) -> Void)? = nil
 
   func makeNSView(context: Context) -> NSScrollView {
-    let scrollView = NSScrollView()
+    let scrollView = ViewerPagingScrollView()
     scrollView.allowsMagnification = true
     scrollView.minMagnification = 1
     scrollView.maxMagnification = 8
+    scrollView.onPage = onPage
     let imageView = NSImageView(image: image)
     imageView.imageScaling = .scaleProportionallyUpOrDown
     imageView.imageAlignment = .alignCenter
@@ -633,12 +692,16 @@ struct MacZoomableImageView: NSViewRepresentable {
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.update(
-      action: onZoomBeyondPreview, magnification: onMagnification, image: image)
+      action: onZoomBeyondPreview, magnification: onMagnification, image: image,
+      onPage: onPage)
+    (scrollView as? ViewerPagingScrollView)?.onPage = onPage
     (scrollView.documentView as? NSImageView)?.image = image
   }
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(action: onZoomBeyondPreview, magnification: onMagnification, image: image)
+    Coordinator(
+      action: onZoomBeyondPreview, magnification: onMagnification, image: image,
+      onPage: onPage)
   }
 
   /// Main-thread-confined zoom state carried across the @Sendable notification closure.
@@ -646,6 +709,7 @@ struct MacZoomableImageView: NSViewRepresentable {
     weak var scrollView: NSScrollView?
     var onZoom: () -> Void = {}
     var onMagnification: (Double) -> Void = { _ in }
+    var onPage: ((Int) -> Void)? = nil
     weak var lastImage: NSImage?
     var fired = false
   }
@@ -653,20 +717,25 @@ struct MacZoomableImageView: NSViewRepresentable {
   final class Coordinator: NSObject {
     private let state = ZoomState()
     private var observer: NSObjectProtocol?
+    private var boundsObserver: NSObjectProtocol?
 
     init(
-      action: @escaping () -> Void, magnification: @escaping (Double) -> Void, image: NSImage
+      action: @escaping () -> Void, magnification: @escaping (Double) -> Void, image: NSImage,
+      onPage: ((Int) -> Void)? = nil
     ) {
       state.onZoom = action
       state.onMagnification = magnification
+      state.onPage = onPage
       state.lastImage = image
     }
 
     func update(
-      action: @escaping () -> Void, magnification: @escaping (Double) -> Void, image: NSImage
+      action: @escaping () -> Void, magnification: @escaping (Double) -> Void, image: NSImage,
+      onPage: ((Int) -> Void)? = nil
     ) {
       state.onZoom = action
       state.onMagnification = magnification
+      state.onPage = onPage
       // The scroll view persists across pages (only its image swaps), so re-arm the
       // once-per-page fullsize trigger when a new page's image arrives.
       if state.lastImage !== image {
@@ -675,24 +744,42 @@ struct MacZoomableImageView: NSViewRepresentable {
       }
     }
 
+    /// Reports one magnification step: continuous zoom feedback plus the
+    /// once-per-page > 1.5× fullsize trigger. Runs SwiftUI-side outside the
+    /// rotation re-fit, so pinch zoom composes with rotation instead of fighting it.
+    /// Static so the @Sendable notification closures never send the coordinator.
+    private static func reportMagnification(_ state: ZoomState) {
+      guard let view = state.scrollView else { return }
+      let mag = Double(view.magnification)
+      state.onMagnification(mag)
+      guard !state.fired, mag > 1.5 else { return }
+      state.fired = true
+      state.onZoom()
+    }
+
     func observe(scrollView: NSScrollView) {
       state.scrollView = scrollView
+      if let paging = scrollView as? ViewerPagingScrollView { paging.onPage = state.onPage }
       let state = self.state
       observer = NotificationCenter.default.addObserver(
         forName: NSScrollView.didEndLiveMagnifyNotification, object: scrollView, queue: .main
       ) { _ in
-        MainActor.assumeIsolated {
-          guard let view = state.scrollView else { return }
-          state.onMagnification(Double(view.magnification))
-          guard !state.fired, view.magnification > 1.5 else { return }
-          state.fired = true
-          state.onZoom()
-        }
+        MainActor.assumeIsolated { Self.reportMagnification(state) }
+      }
+      // Continuous pinch feedback (the notification above fires only at gesture
+      // end): the clip view's bounds move throughout a live magnify.
+      scrollView.contentView.postsBoundsChangedNotifications = true
+      boundsObserver = NotificationCenter.default.addObserver(
+        forName: NSView.boundsDidChangeNotification, object: scrollView.contentView,
+        queue: .main
+      ) { _ in
+        MainActor.assumeIsolated { Self.reportMagnification(state) }
       }
     }
 
     deinit {
       if let observer { NotificationCenter.default.removeObserver(observer) }
+      if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
     }
   }
 }
