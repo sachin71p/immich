@@ -281,4 +281,22 @@ final class MacFunctionalTests: XCTestCase {
       XCTAssertTrue(el("toolbar-search").exists, "Search stays on \(title)")
     }
   }
+
+  // MARK: - Single page title per toolbar
+
+  /// The destination name renders exactly once: the centered `.navigationTitle`.
+  /// (The leading toolbar block now shows only the subtitle, so no second title
+  /// may appear anywhere in the toolbar.) Covers one full-toolbar page (Library)
+  /// and one minimal-toolbar page (Map). Host-only: needs a rendering app, which
+  /// the sandbox sidebar-render gate blocks — not run green in this environment.
+  func testPageTitleAppearsOncePerToolbar() {
+    launchAndWaitForLibrary()
+    for (row, title) in [("sidebar-library", "Library"), ("sidebar-map", "Map")] {
+      el(row).click()
+      XCTAssertEqual(windowTitle(), title, "window keeps the resolved title for \(title)")
+      let toolbarTitles = app.toolbars.descendants(matching: .staticText)
+        .matching(NSPredicate(format: "label == %@", title))
+      XCTAssertEqual(toolbarTitles.count, 1, "\(title) appears exactly once in the toolbar")
+    }
+  }
 }
