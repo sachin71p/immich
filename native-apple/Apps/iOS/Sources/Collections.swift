@@ -266,7 +266,8 @@ struct CollectionsView: View {
       personCounts = counts
       placeCount = try await store.locatedAssets(scope: scope).count
     } catch {
-      session.lastError = error.localizedDescription
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { session.lastError = error.localizedDescription }
     }
   }
 }
