@@ -13,6 +13,14 @@ TEMPLATE=both
 PERSONAL=0
 TIERS=()
 
+# HOST-VERIFICATION-BRIEF §1 / TESTING.md §8: medium/upstream specs need the
+# pinned mise toolchain (notably jellyfin-ffmpeg ffprobe, a bare-PATH lookup
+# in media.repository.ts). Prefer mise shims so a Homebrew ffmpeg on PATH
+# cannot silently win and drift the audio-video goldens.
+if [[ -d "${MISE_SHIM_DIR:-$HOME/.local/share/mise/shims}" ]]; then
+  export PATH="${MISE_SHIM_DIR:-$HOME/.local/share/mise/shims}:$PATH"
+fi
+
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --keep-stack) KEEP_STACK=1; shift ;;
@@ -123,9 +131,13 @@ run_upgrade() {
   # fork: shared-libraries (S10) - UP-01 base-tag upgrade gate plus the INV-02
   # OpenAPI compatibility gate. Both run in an isolated compose project and
   # never touch the e2e stack volumes.
-  local keep=()
-  [[ "$KEEP_STACK" == 1 ]] && keep=(--keep-stack)
-  "$ROOT/scripts/fork-test/upgrade.sh" "${keep[@]}" && record upgrade PASS "" || record upgrade FAIL "see output"
+  # No "${keep[@]}" indirection: empty-array expansion under `set -u` is an
+  # unbound-variable error on bash 3.2 (macOS /bin/bash), so branch instead.
+  if [[ "$KEEP_STACK" == 1 ]]; then
+    "$ROOT/scripts/fork-test/upgrade.sh" --keep-stack && record upgrade PASS "" || record upgrade FAIL "see output"
+  else
+    "$ROOT/scripts/fork-test/upgrade.sh" && record upgrade PASS "" || record upgrade FAIL "see output"
+  fi
   "$ROOT/scripts/fork-test/openapi-diff.sh" && record openapi-diff PASS "" || record openapi-diff FAIL "see output"
 }
 
