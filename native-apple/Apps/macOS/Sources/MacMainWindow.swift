@@ -164,7 +164,7 @@ struct MacLibraryBrowser: View {
     case .search:
       MacSearchView(state: state)
     case .map:
-      MacMapView(state: state)
+      MacMapPlacesView(state: state, openViewer: openViewer)
     case .people:
       MacPeopleView(state: state)
     case .memories:
@@ -549,45 +549,6 @@ extension NSItemProvider {
 
 enum MacPreviewError: Error { case noURL }
 
-/// Sidebar Map: markers for geotagged assets in the timeline scope.
-struct MacMapView: View {
-  @Bindable var state: MacAppState
-  @State private var pins: [MacMapPin] = []
-  @State private var position = MapCameraPosition.automatic
-
-  var body: some View {
-    Map(position: $position) {
-      ForEach(pins) { pin in
-        Marker(pin.id, coordinate: pin.coordinate)
-      }
-    }
-    .overlay(alignment: .bottomLeading) {
-      Text("\(pins.count) located photo\(pins.count == 1 ? "" : "s")")
-        .padding(8)
-        .background(.thinMaterial, in: Capsule())
-        .padding()
-    }
-    .task { await load() }
-  }
-
-  private func load() async {
-    guard let userId = state.userId else { return }
-    do {
-      let ctx = try await state.store.timelineContext(for: userId)
-      let scope = TimelineScope.resolve(purpose: .timeline, context: ctx)
-      pins = try await state.store.mapPoints(scope: scope).map { MacMapPin(point: $0) }
-    } catch {}
-  }
-}
-
-struct MacMapPin: Identifiable, Hashable {
-  var point: MapPoint
-  var id: String { point.id }
-  var coordinate: CLLocationCoordinate2D {
-    CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
-  }
-}
-
 /// Sidebar People (per-owner clustering — DECISIONS §11).
 struct MacPeopleView: View {
   @Bindable var state: MacAppState
@@ -604,23 +565,4 @@ struct MacPeopleView: View {
   }
 }
 
-/// Sidebar Memories.
-struct MacMemoriesView: View {
-  @Bindable var state: MacAppState
-  @State private var memories: [Memory] = []
 
-  var body: some View {
-    List(memories, id: \.id) { memory in
-      VStack(alignment: .leading) {
-        Text(memory.type).font(.headline)
-        Text(memory.memoryAt.formatted(date: .abbreviated, time: .omitted))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-    }
-    .task {
-      guard let userId = state.userId else { return }
-      memories = (try? await state.store.savedMemories(forOwner: userId)) ?? []
-    }
-  }
-}

@@ -1,4 +1,4 @@
-name: PhotosFork
+name: Heirloom
 options:
   minimumXcodeGenVersion: 2.44.0
   deploymentTarget:
@@ -13,7 +13,7 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     GENERATE_INFOPLIST_FILE: YES
 targets:
-  PhotosFork-iOS:
+  Heirloom-iOS:
     type: application
     platform: iOS
     sources: [Apps/Shared, Apps/iOS/Sources]
@@ -38,24 +38,26 @@ targets:
         product: Search
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.ios
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.ios
+        INFOPLIST_KEY_CFBundleDisplayName: Heirloom
+        INFOPLIST_KEY_CFBundleName: Heirloom
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIBackgroundModes: processing
         INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers:
-          - com.immich.photosfork.backup-processing
-  PhotosFork-iOS-UITests:
+          - com.immich.heirloom.backup-processing
+  Heirloom-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS
     sources: [Apps/iOS/UITests]
     dependencies:
-      - target: PhotosFork-iOS
+      - target: Heirloom-iOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.ios
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.ios
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-  PhotosFork-macOS:
+  Heirloom-macOS:
     type: application
     platform: macOS
     sources: [Apps/Shared, Apps/macOS/Sources]
@@ -80,18 +82,20 @@ targets:
         product: Search
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.macos
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
-  PhotosFork-macOS-UITests:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.macos
+        INFOPLIST_KEY_CFBundleDisplayName: Heirloom
+        INFOPLIST_KEY_CFBundleName: Heirloom
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
+  Heirloom-macOS-UITests:
     type: bundle.ui-testing
     platform: macOS
     sources: [Apps/macOS/UITests]
     dependencies:
-      - target: PhotosFork-macOS
+      - target: Heirloom-macOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.macos.uitests
-  PhotosFork-BackgroundUpload:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.macos.uitests
+  Heirloom-BackgroundUpload:
     type: app-extension
     platform: iOS
     sources: [Apps/iOS/Extensions/BackgroundUpload/Sources]
@@ -108,38 +112,65 @@ targets:
         product: Upload
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.background-upload
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.background-upload
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.photos.background-resource-upload
-        INFOPLIST_KEY_NSExtension_NSExtensionPrincipalClass: PhotosForkBackgroundUploadHandler
-  PhotosFork-PhotoEditing:
+        INFOPLIST_KEY_NSExtension_NSExtensionPrincipalClass: HeirloomBackgroundUploadHandler
+  Heirloom-PhotoEditing:
     type: app-extension
     platform: iOS
     sources: [Apps/iOS/Extensions/PhotoEditing/Sources]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.photo-editing
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.photo-editing
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.photo-editing
-  PhotosFork-Share:
+  Heirloom-Share:
     type: app-extension
     platform: iOS
     sources: [Apps/iOS/Extensions/Share/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: LocalStore
+      - package: PhotosCore
+        product: Upload
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.share
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.share
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.share-services
-  PhotosFork-Widgets:
+        INFOPLIST_KEY_NSExtension_NSExtensionPrincipalClass: HeirloomShareViewController
+  Heirloom-Widgets:
     type: app-extension
     platform: iOS
     sources: [Apps/iOS/Extensions/Widgets/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: CoreModel
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.widgets
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.widgets
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
-  PhotosFork-Agent:
+  Heirloom-Intents:
+    type: app-extension
+    platform: iOS
+    sources: [Apps/iOS/Intents/Sources]
+    dependencies:
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: LocalStore
+      - package: PhotosCore
+        product: Upload
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.intents
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.appintents-extension
+  Heirloom-Agent:
     type: app-extension
     platform: macOS
     sources: [Apps/macOS/Agent/Sources]
@@ -156,19 +187,19 @@ targets:
         product: Upload
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.immich.photosfork.agent
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/PhotosFork.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.agent
+        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
 schemes:
-  PhotosFork-iOS:
+  Heirloom-iOS:
     build:
       targets:
-        PhotosFork-iOS: all
+        Heirloom-iOS: all
     test:
-      targets: [PhotosFork-iOS-UITests]
-  PhotosFork-macOS:
+      targets: [Heirloom-iOS-UITests]
+  Heirloom-macOS:
     build:
       targets:
-        PhotosFork-macOS: all
+        Heirloom-macOS: all
     test:
       targets:
-        - PhotosFork-macOS-UITests
+        - Heirloom-macOS-UITests

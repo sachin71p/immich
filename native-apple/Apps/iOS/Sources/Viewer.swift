@@ -10,11 +10,17 @@ import Search
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import VisionKit
 
 // MARK: - zoomable image (brief task 4: pinch / double-tap zoom, progressive tier upgrade)
 
+/// Zoomable still image with VisionKit Live Text (A9.2): the interaction is attached once
+/// and the SwiftUI side feeds it the `ImageAnalysis` computed after each tier upgrade, so
+/// text selection, data detectors, Visual Look Up, and subject lift (long-press to copy)
+/// work on the viewer image.
 struct ZoomableImageView: UIViewRepresentable {
   var image: UIImage?
+  var analysis: ImageAnalysis?
   var onSingleTap: (() -> Void)? = nil
 
   func makeUIView(context: Context) -> UIScrollView {
@@ -27,6 +33,8 @@ struct ZoomableImageView: UIViewRepresentable {
     imageView.isUserInteractionEnabled = true
     scroll.addSubview(imageView)
     context.coordinator.imageView = imageView
+    context.coordinator.interaction.preferredInteractionTypes = .automatic
+    imageView.addInteraction(context.coordinator.interaction)
     let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.zoomToggle(_:)))
     doubleTap.numberOfTapsRequired = 2
     imageView.addGestureRecognizer(doubleTap)
@@ -39,6 +47,10 @@ struct ZoomableImageView: UIViewRepresentable {
   func updateUIView(_ scroll: UIScrollView, context: Context) {
     context.coordinator.imageView?.image = image
     context.coordinator.onSingleTap = onSingleTap
+    if context.coordinator.appliedAnalysis !== analysis {
+      context.coordinator.appliedAnalysis = analysis
+      context.coordinator.interaction.analysis = analysis
+    }
     if let imageView = context.coordinator.imageView {
       imageView.frame = scroll.bounds
       imageView.contentMode = .scaleAspectFit
@@ -50,6 +62,8 @@ struct ZoomableImageView: UIViewRepresentable {
   final class Coordinator: NSObject, UIScrollViewDelegate {
     var imageView: UIImageView?
     var onSingleTap: (() -> Void)?
+    let interaction = ImageAnalysisInteraction()
+    var appliedAnalysis: ImageAnalysis?
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
@@ -67,17 +81,21 @@ struct ZoomableImageView: UIViewRepresentable {
 struct ViewerPage: View {
   @EnvironmentObject var session: AppSession
   var assetId: String
+  var onTrim: (Asset) -> Void = { _ in }
 
   @State private var asset: Asset?
   @State private var image: UIImage?
+  @State private var liveText: ImageAnalysis?
 
   var body: some View {
     ZStack {
       Color.black.ignoresSafeArea()
       if let asset, asset.type == .video {
-        VideoPage(asset: asset)
+        VideoPage(asset: asset, onTrim: onTrim)
+      } else if let asset, let motionId = asset.livePhotoVideoId {
+        LivePhotoPageView(asset: asset, motionAssetId: motionId)
       } else if let image {
-        ZoomableImageView(image: image)
+        ZoomableImageView(image: image, analysis: liveText)
       } else {
         ProgressView()
           .tint(.white)
@@ -102,38 +120,28 @@ struct ViewerPage: View {
         case .placeholder(let img): img
         case .tier(_, let img, _): img
         }
-        if let next { image = next }
+        if let next {
+          image = next
+          await analyzeLiveText(next)
+        }
         if tier == .fullsize { break }
       } catch {
         break
       }
     }
   }
-}
 
-/// Video playback with the bearer token attached (media routes are authenticated).
-struct VideoPage: View {
-  @EnvironmentObject var session: AppSession
-  var asset: Asset
-  @State private var player: AVPlayer?
-
-  var body: some View {
-    Group {
-      if let player {
-        VideoPlayer(player: player)
-      } else {
-        ProgressView().tint(.white)
-      }
-    }
-    .task {
-      guard let base = session.serverURL,
-        let token = await session.bearerToken()
-      else { return }
-      let url = MediaEndpoint(serverURL: base, assetID: asset.id).videoPlaybackURL()
-      let urlAsset = AVURLAsset(
-        url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
-      let item = AVPlayerItem(asset: urlAsset)
-      player = AVPlayer(playerItem: item)
+  /// A9.2: analyze the latest still for Live Text. Failures leave `liveText` nil and the
+  /// viewer keeps working — Live Text is an enhancement, never a gate.
+  private func analyzeLiveText(_ uiImage: UIImage) async {
+    guard let cgImage = uiImage.cgImage else { return }
+    do {
+      let analyzer = ImageAnalyzer()
+      liveText = try await analyzer.analyze(
+        cgImage, orientation: .up,
+        configuration: ImageAnalyzer.Configuration([.text, .machineReadableCode, .visualLookUp]))
+    } catch {
+      liveText = nil
     }
   }
 }
@@ -163,7 +171,7 @@ struct ViewerView: View {
         Color.black.ignoresSafeArea()
         TabView(selection: $currentId) {
           ForEach(ids, id: \.self) { id in
-            ViewerPage(assetId: id)
+            ViewerPage(assetId: id, onTrim: { openEdit($0) })
               .tag(id as String?)
           }
         }

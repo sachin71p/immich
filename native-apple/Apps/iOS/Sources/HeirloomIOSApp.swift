@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct PhotosForkIOSApp: App {
+struct HeirloomIOSApp: App {
   @StateObject private var session: AppSession
 
   init() {
@@ -45,32 +45,43 @@ struct RootView: View {
     .task { await session.reload() }
     .onChange(of: scenePhase) { _, new in
       if new == .active {
-        Task { await session.reload() }
+        Task {
+          await session.reload()
+          session.checkPendingRoute()
+        }
       }
     }
   }
 }
 
 struct MainTabs: View {
+  @EnvironmentObject var session: AppSession
+
   var body: some View {
-    TabView {
+    // A9.6: selection binding so `OpenSearchIntent` can land on the Search tab.
+    TabView(selection: $session.requestedTab) {
       LibraryView()
-        .tabItem { Label("Library", systemImage: "photo") }
-        .accessibilityIdentifier("tab-library")
+        .tag("library")
+        .tabItem { Label("Library", systemImage: "photo").accessibilityIdentifier("tab-library") }
       CollectionsView()
-        .tabItem { Label("Collections", systemImage: "square.grid.2x2") }
-        .accessibilityIdentifier("tab-collections")
+        .tag("collections")
+        .tabItem {
+          Label("Collections", systemImage: "square.grid.2x2").accessibilityIdentifier(
+            "tab-collections")
+        }
       SearchView()
-        .tabItem { Label("Search", systemImage: "magnifyingglass") }
-        .accessibilityIdentifier("tab-search")
+        .tag("search")
+        .tabItem {
+          Label("Search", systemImage: "magnifyingglass").accessibilityIdentifier("tab-search")
+        }
       NavigationStack {
         SpacesListView()
       }
-      .tabItem { Label("Shared", systemImage: "person.2") }
-      .accessibilityIdentifier("tab-shared")
+      .tag("shared")
+      .tabItem { Label("Shared", systemImage: "person.2").accessibilityIdentifier("tab-shared") }
       SettingsView()
-        .tabItem { Label("Settings", systemImage: "gear") }
-        .accessibilityIdentifier("tab-settings")
+        .tag("settings")
+        .tabItem { Label("Settings", systemImage: "gear").accessibilityIdentifier("tab-settings") }
     }
   }
 }

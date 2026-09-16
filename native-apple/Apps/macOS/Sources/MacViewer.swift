@@ -6,6 +6,7 @@ import Media
 import Rules
 import Search
 import SwiftUI
+import VisionKit
 
 /// Asset viewer (brief task 3): in-window and full-screen, arrow-key paging, pinch/scroll zoom
 /// with tier upgrade (thumbnail → preview → original through `MediaPipeline`), floating Info
@@ -23,6 +24,8 @@ struct MacViewerView: View {
   @State private var showingEdit = false
   @State private var showingAddToAlbum = false
   @State private var error: String?
+  @State private var liveTextEnabled = true
+  @State private var liveText: ImageAnalysis?
   @Environment(\.openWindow) private var openWindow
 
   private var assetActions: MacAssetActions {
@@ -43,9 +46,20 @@ struct MacViewerView: View {
 
   var body: some View {
     ZStack {
-      if let image {
-        MacZoomableImageView(image: image, onZoomBeyondPreview: upgradeTier)
-          .rotationEffect(.degrees(rotation))
+      if let asset, asset.type == .video {
+        MacVideoPageView(asset: asset, state: state) {
+          if canEdit(asset) { showingEdit = true }
+        }
+      } else if let asset, let motionId = asset.livePhotoVideoId {
+        MacLivePhotoPageView(asset: asset, motionAssetId: motionId, state: state)
+      } else if let image {
+        if liveTextEnabled {
+          MacLiveTextView(image: image, analysis: liveText)
+            .rotationEffect(.degrees(rotation))
+        } else {
+          MacZoomableImageView(image: image, onZoomBeyondPreview: upgradeTier)
+            .rotationEffect(.degrees(rotation))
+        }
       } else {
         ProgressView().controlSize(.large)
       }
@@ -69,6 +83,7 @@ struct MacViewerView: View {
           Button { showingEdit = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
         }
         Button { showingInspector.toggle() } label: { Label("Info", systemImage: "info.circle") }
+        Toggle("Live Text", isOn: $liveTextEnabled)
       }
     }
     .inspector(isPresented: $showingInspector) {
@@ -116,6 +131,7 @@ struct MacViewerView: View {
       case .tier(_, let image, _): self.image = image
       }
       loadedTier = tier
+      await analyzeLiveText()
     } catch {
       self.error = error.localizedDescription
     }
@@ -161,6 +177,24 @@ struct MacViewerView: View {
     let libs = (try? await state.store.librariesForUser(uid)) ?? []
     editSpaceIds = Set(spaces.map { $0.id })
     editLibraryIds = Set(libs.map { $0.id })
+  }
+
+  /// A9.2: analyze the loaded still for Live Text. Failures leave `liveText` nil and the
+  /// viewer keeps working — Live Text is an enhancement, never a gate.
+  private func analyzeLiveText() async {
+    guard liveTextEnabled, let image,
+      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else {
+      if !liveTextEnabled { liveText = nil }
+      return
+    }
+    do {
+      liveText = try await ImageAnalyzer().analyze(
+        cgImage, orientation: .up,
+        configuration: ImageAnalyzer.Configuration([.text, .machineReadableCode, .visualLookUp]))
+    } catch {
+      liveText = nil
+    }
   }
 
   private func downloadOriginal(_ asset: Asset) async throws -> Data {

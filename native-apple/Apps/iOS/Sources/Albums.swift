@@ -376,26 +376,68 @@ struct PersonDetailView: View {
 
 // MARK: - places (map of GPS assets)
 
+/// A9.4: clustered map (annotations from the shared `MapClusterer`, driven by the
+/// `MKMapView` controller) + a selection grid for the tapped marker/cluster.
 struct PlacesView: View {
   @EnvironmentObject var session: AppSession
   @State private var pins: [LocatedAsset] = []
   @State private var rows: [TimelineRow] = []
+  @State private var zoomLevel: Double = 3
+  @State private var selectedIds: [String] = []
+  @State private var viewerRequest: ViewerRequest?
+
+  private var clusters: [MapCluster] {
+    MapClusterer.cluster(
+      pins.map { MapClusterItem(id: $0.id, latitude: $0.latitude, longitude: $0.longitude) },
+      zoomLevel: zoomLevel)
+  }
+
+  private var selectedRows: [TimelineRow] {
+    let wanted = Set(selectedIds)
+    return rows.filter { wanted.contains($0.id) }
+  }
 
   var body: some View {
     List {
       Section("Map") {
-        PlacesMap(pins: pins)
-          .frame(height: 280)
-          .clipShape(RoundedRectangle(cornerRadius: 10))
+        ClusteredMapView(
+          clusters: clusters,
+          onSelect: { selectedIds = $0 },
+          onZoomChange: { zoomLevel = $0 }
+        )
+        .frame(height: 280)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityIdentifier("places-map")
+      }
+      if !selectedIds.isEmpty {
+        Section("Selection (\(selectedRows.count))") {
+          ForEach(selectedRows) { row in
+            Button {
+              viewerRequest = ViewerRequest(ids: selectedIds, initialId: row.id)
+            } label: {
+              HStack {
+                RowThumbnail(rowId: row.id)
+                  .frame(width: 44, height: 44)
+                  .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
+                  .font(.subheadline)
+              }
+            }
+          }
+        }
       }
       Section("Located Assets (\(rows.count))") {
         ForEach(rows) { row in
-          HStack {
-            RowThumbnail(rowId: row.id)
-              .frame(width: 44, height: 44)
-              .clipShape(RoundedRectangle(cornerRadius: 6))
-            Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
-              .font(.subheadline)
+          Button {
+            viewerRequest = ViewerRequest(ids: rows.map(\.id), initialId: row.id)
+          } label: {
+            HStack {
+              RowThumbnail(rowId: row.id)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+              Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
+                .font(.subheadline)
+            }
           }
         }
       }
@@ -414,20 +456,8 @@ struct PlacesView: View {
           isTrashed: false, isArchived: false, localDateTime: $0.localDateTime)
       }
     }
-  }
-}
-
-struct PlacesMap: View {
-  var pins: [LocatedAsset]
-
-  var body: some View {
-    Map(initialPosition: .automatic) {
-      ForEach(pins) { pin in
-        Marker(
-          coordinate: CLLocationCoordinate2D(latitude: pin.latitude, longitude: pin.longitude)
-        ) {}
-      }
+    .fullScreenCover(item: $viewerRequest) { request in
+      ViewerView(ids: request.ids, initialId: request.initialId)
     }
-    .mapStyle(.standard)
   }
 }

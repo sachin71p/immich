@@ -24,6 +24,8 @@ final class AppSession: ObservableObject {
   @Published var spaces: [Space] = []
   @Published var libraries: [Library] = []
   @Published var lastError: String?
+  /// A9.6: tab the app should land on (set from the intents pending route).
+  @Published var requestedTab = "library"
 
   var connection: ImmichConnection?
   var store: PhotosLocalStore?
@@ -31,7 +33,7 @@ final class AppSession: ObservableObject {
   var sync: SyncCoordinator?
   var uploadQueue: UploadQueue?
 
-  static let serverURLKey = "PhotosFork.serverURL"
+  static let serverURLKey = "Heirloom.serverURL"
 
   var assetMutations: AssetMutations? {
     guard let connection, let store else { return nil }
@@ -143,6 +145,8 @@ final class AppSession: ObservableObject {
     prefs = try await store.prefs(for: userId)
     spaces = try await store.spacesForUser(userId)
     libraries = try await store.librariesForUser(userId)
+    // A9.5: publish the extension snapshot (never throws; refresh must not fail on it).
+    await ExtensionSnapshotWriter.refreshIfNeeded(session: self)
   }
 
   func timelineScope(explicit filter: ExplicitContainerFilter? = nil) async throws -> ContainerScope {
@@ -178,6 +182,15 @@ final class AppSession: ObservableObject {
     signedIn = false
   }
 
+  /// A9.6: consume the intent pending route written by `OpenSearchIntent` into the
+  /// shared defaults (cleared after reading so each intent lands once).
+  func checkPendingRoute() {
+    let defaults = SharedContainer.sharedDefaults
+    guard let route = defaults.string(forKey: "Heirloom.pendingRoute") else { return }
+    defaults.removeObject(forKey: "Heirloom.pendingRoute")
+    if route == "search" { requestedTab = "search" }
+  }
+
   /// Bearer [REDACTED] for out-of-pipeline authorized requests (video playback, share downloads).
   func bearerToken() async -> String? {
     guard let connection else { return nil }
@@ -189,9 +202,9 @@ extension SharedTokenStore {
   static func load() throws -> String? {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
-      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.photosfork.shared",
+      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.heirloom.shared",
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
     ]
@@ -208,9 +221,9 @@ extension SharedTokenStore {
   static func delete() throws {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
-      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.photosfork.shared",
+      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.heirloom.shared",
     ]
     SecItemDelete(query as CFDictionary)
   }

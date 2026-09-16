@@ -140,6 +140,14 @@ struct CollectionsView: View {
             }
           }
         }
+        Section("Memories") {
+          NavigationLink {
+            MemoriesView()
+          } label: {
+            Label("Memories", systemImage: "clock")
+          }
+          .accessibilityIdentifier("collections-memories")
+        }
         Section("Places") {
           NavigationLink {
             PlacesView()
