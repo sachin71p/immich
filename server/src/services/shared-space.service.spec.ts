@@ -90,7 +90,7 @@ describe(SharedSpaceService.name, () => {
   });
 
   describe('delete', () => {
-    it('should reject a contributor deleting the space', async () => {
+    it('[R2-03] should reject a contributor deleting the space', async () => {
       const auth = AuthFactory.create();
       access.space.checkOwnerAccess.mockResolvedValue(new Set());
 
@@ -117,7 +117,7 @@ describe(SharedSpaceService.name, () => {
   });
 
   describe('removeMember', () => {
-    it('should not allow removing the owner', async () => {
+    it('[R2-03] should not allow removing the owner', async () => {
       const auth = AuthFactory.create();
       access.space.checkMemberAccess.mockResolvedValue(new Set([space.id]));
       sharedSpaceMock.getMembers.mockResolvedValue([
@@ -126,6 +126,19 @@ describe(SharedSpaceService.name, () => {
 
       await expect(sut.removeMember(auth, space.id, 'owner-1')).rejects.toBeInstanceOf(BadRequestException);
       expect(sharedSpaceMock.removeMember).not.toHaveBeenCalled();
+    });
+
+    it('[R2-03] should let a contributor leave the space', async () => {
+      const auth = AuthFactory.create();
+      access.space.checkMemberAccess.mockResolvedValue(new Set([space.id]));
+      sharedSpaceMock.getMembers.mockResolvedValue([
+        { userId: 'owner-1', role: SharedSpaceRole.Owner, showInTimeline: true, createdAt: new Date() },
+        { userId: auth.user.id, role: SharedSpaceRole.Contributor, showInTimeline: true, createdAt: new Date() },
+      ]);
+
+      await sut.removeMember(auth, space.id, auth.user.id);
+
+      expect(sharedSpaceMock.removeMember).toHaveBeenCalledWith(space.id, auth.user.id);
     });
 
     it('should allow a member to remove a contributor', async () => {
@@ -143,7 +156,7 @@ describe(SharedSpaceService.name, () => {
   });
 
   describe('transferOwner', () => {
-    it('should reject a contributor transferring ownership', async () => {
+    it('[R2-03] should reject a contributor transferring ownership', async () => {
       const auth = AuthFactory.create();
       access.space.checkOwnerAccess.mockResolvedValue(new Set());
 
@@ -175,12 +188,30 @@ describe(SharedSpaceService.name, () => {
   });
 
   describe('addMembers', () => {
-    it('should reject users that do not exist or are already members', async () => {
+    it('[R2-02] should reject users that do not exist or are already members', async () => {
       const auth = AuthFactory.create();
       access.space.checkMemberAccess.mockResolvedValue(new Set([space.id]));
       sharedSpaceMock.addMembers.mockResolvedValue(false);
 
       await expect(sut.addMembers(auth, space.id, { userIds: ['user-1'] })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('[R2-02] should let a member add users', async () => {
+      const auth = AuthFactory.create();
+      access.space.checkMemberAccess.mockResolvedValue(new Set([space.id]));
+      sharedSpaceMock.addMembers.mockResolvedValue(true);
+
+      await sut.addMembers(auth, space.id, { userIds: ['user-1'] });
+
+      expect(sharedSpaceMock.addMembers).toHaveBeenCalledWith(space.id, ['user-1']);
+    });
+
+    it('[R2-02] should reject an outsider adding members', async () => {
+      const auth = AuthFactory.create();
+      access.space.checkMemberAccess.mockResolvedValue(new Set());
+
+      await expect(sut.addMembers(auth, space.id, { userIds: ['user-1'] })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(sharedSpaceMock.addMembers).not.toHaveBeenCalled();
     });
   });
 

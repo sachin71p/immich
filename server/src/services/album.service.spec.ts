@@ -674,7 +674,7 @@ describe(AlbumService.name, () => {
       );
     });
 
-    it('should reject changing the caller’s own role', async () => {
+    it('[R11-02] should reject changing the caller’s own role', async () => {
       const user = UserFactory.create();
 
       await expect(
@@ -684,7 +684,7 @@ describe(AlbumService.name, () => {
       expect(mocks.albumUser.update).not.toHaveBeenCalled();
     });
 
-    it('should reject setting the owner role', async () => {
+    it('[R11-02] should reject setting the owner role', async () => {
       const user = UserFactory.create();
 
       await expect(

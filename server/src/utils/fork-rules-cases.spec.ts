@@ -6,6 +6,11 @@
 // member is removed) is enforced inside repository SQL and proven by T1 host e2e. The fakes
 // below transcribe DECISIONS §4/§10 as world facts; this spec pins the checkAccess branch
 // table, the move/member service rules, and scope resolution — not SQL.
+//
+// Matrix-ID map (T1 U-layer backfill): [R2-02] add-member RC-13/RC-14 (duplicate-400 is in
+// shared-space.service.spec); [R2-03] leave RC-15/RC-16, transfer RC-17/RC-18, delete-space
+// RC-19/RC-20; [R6-06] carol-deny RC-03/RC-05/RC-14/RC-23; [R6-07] RC-21; [R5-02] RC-33;
+// [R10-07] locked move RC-41; [R11-02] own-role-change RC-30; [R16-02] RC-26/RC-27.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

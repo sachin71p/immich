@@ -119,7 +119,7 @@ describe(AssetService.name, () => {
       expect(result).toEqual({ results: [{ id: asset.id, status: 'moved' }] });
     });
 
-    it("should reject moving another owner's space asset to personal", async () => {
+    it("[R5-02] should reject moving another owner's space asset to personal", async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.create({ ownerId: newUuid(), spaceId: 'space-1', libraryId: null });
       mocks.asset.getByIds.mockResolvedValue([asset]);
@@ -313,7 +313,7 @@ describe(AssetService.name, () => {
       });
     });
 
-    it('should reject moving a Locked asset', async () => {
+    it('[R10-07] should reject moving a Locked asset', async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.create({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
       mocks.asset.getByIds.mockResolvedValue([asset]);
@@ -488,7 +488,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
-    it('[I7] should reject Locked visibility for a space asset', async () => {
+    it('[R10-07] [I7] should reject Locked visibility for a space asset', async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1' });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -743,7 +743,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
-    it('should allow an album member to bulk update only favorite', async () => {
+    it('[R16-02] should allow an album member to bulk update only favorite', async () => {
       const auth = AuthFactory.create();
       mocks.access.asset.checkAlbumMemberAccess.mockResolvedValue(new Set(['asset-1']));
 
@@ -753,7 +753,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { isFavorite: true });
     });
 
-    it('should reject a mixed update by an album member', async () => {
+    it('[R16-02] should reject a mixed update by an album member', async () => {
       const auth = AuthFactory.create();
       mocks.access.asset.checkAlbumMemberAccess.mockResolvedValue(new Set(['asset-1']));
 
