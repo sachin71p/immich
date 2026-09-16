@@ -133,6 +133,8 @@ export class PersonRepository {
       .$if(!!faceIds, (qb) => qb.where('asset_face.id', 'in', faceIds!))
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
       // fork: shared-libraries - space merge/reassign touches only that space's faces (S9).
+      // (merge v3.2.0: upstream 8139af6e0's asset-join/ownerId legs already present here verbatim;
+      // kept whole, space leg retained.)
       .$if(!!spaceId, (qb) => qb.where('asset.spaceId', '=', spaceId!))
       .executeTakeFirst();
 

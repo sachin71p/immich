@@ -317,6 +317,8 @@ describe(PersonService.name, () => {
 
       const auth = factory.auth({ user: user1 });
 
+      // merge v3.2.0: upstream 8139af6e0 calls mergePerson(auth, target, {ids}); the fork's bulk
+      // mergePeople(auth, {ids:[target, ...rest]}) is the equivalent (first id wins per scope, S9 7b51c50a9).
       await sut.mergePeople(auth, { ids: [person1.personGroupId, person2.personGroupId] });
       const user1People = await Array.fromAsync(ctx.get(PersonRepository).getAll({ ownerId: user1.id }));
       const user2People = await Array.fromAsync(ctx.get(PersonRepository).getAll({ ownerId: user2.id }));
