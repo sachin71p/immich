@@ -48,7 +48,7 @@ final class MacFunctionalTests: XCTestCase {
   private func assertClosed(_ id: String, _ message: String) {
     let gone = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: el(id))
-    XCTAssertEqual(wait(for: [gone], timeout: 10), .completed, message)
+    XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, message)
   }
 
   private func gridCellCount() -> Int {
@@ -212,8 +212,10 @@ final class MacFunctionalTests: XCTestCase {
     let cell2 = el("grid-cell-asset-space-shot")
     XCTAssertTrue(cell1.waitForExistence(timeout: 10))
     XCTAssertTrue(cell2.waitForExistence(timeout: 10))
+    // Multi-select via a ⌘-held second click (order-independent: both targets are
+    // named explicitly, so grid sort order cannot affect which two get favorited).
     cell1.click()
-    cell2.commandClick()
+    cell2.perform(withKeyModifiers: .command) { cell2.click() }
     el("favorite-button").click()
     el("sidebar-favorites").click()
     XCTAssertEqual(windowTitle(), "Favorites")
@@ -243,7 +245,8 @@ final class MacFunctionalTests: XCTestCase {
     XCTAssertTrue(el("asset-grid").exists, "grid persists (no full reload)")
     let gone = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: el("grid-cell-asset-personal-2"))
-    XCTAssertEqual(wait(for: [gone], timeout: 10), .completed, "trashed item leaves the grid")
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [gone], timeout: 10), .completed, "trashed item leaves the grid")
     XCTAssertEqual(gridCellCount(), before - 1, "remaining count drops by exactly one")
     el("sidebar-recently-deleted").click()
     XCTAssertEqual(windowTitle(), "Recently Deleted")
