@@ -175,6 +175,20 @@ export interface BuildWorldOptions {
 }
 
 export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promise<World> => {
+  // e2e files share one server, database, redis, and media bind-mount
+  // (vitest maxWorkers: 1), so the previous file's jobs may still be queued or
+  // in flight when this build starts. The database reset below orphans those
+  // jobs' rows, so drain them FIRST, before touching disk: a stale job
+  // (thumbnail generation, watcher scan) crossing the wipe writes
+  // previous-world files — old space keys no DB row matches — into the fresh
+  // tree. Nothing ever deletes those files (their rows are gone), so they
+  // read as permanent R17-03 orphans no re-walk can clear (gate
+  // 20260916-012553; same signature flaked then passed on retry in
+  // fork-run-0916). A session is needed for the drain, so the database reset
+  // and admin setup move above the wipe.
+  await resetForkDatabase();
+  const admin = await utils.adminSetup();
+  await settle(admin.accessToken);
   // The regular e2e database reset only cleans the upstream /data mount. The
   // fork stack uses /fork-data, so stale files from an earlier world otherwise
   // survive and make StorageCore treat a checksum-mismatched destination as an
@@ -186,8 +200,6 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
     rmSync(join(forkDataDir, entry), { recursive: true, force: true });
   }
   utils.resetTempFolder();
-  await resetForkDatabase();
-  const admin = await utils.adminSetup();
   await utils.resetAdminConfig(admin.accessToken);
   await setStorageTemplate(admin.accessToken, storageTemplate === 'on');
 
