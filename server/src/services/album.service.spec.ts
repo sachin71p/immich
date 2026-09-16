@@ -866,18 +866,40 @@ describe(AlbumService.name, () => {
       });
     });
 
-    it('should not allow a shared user with viewer access to add assets', async () => {
+    // fork: shared-libraries (R11: every album member of any role may add assets)
+    it('should allow a shared user with viewer access to add assets', async () => {
       const user = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: user.id, role: AlbumUserRole.Viewer }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
       const [asset1, asset2, asset3] = [AssetFactory.create(), AssetFactory.create(), AssetFactory.create()];
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset1.id, asset2.id, asset3.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
 
       await expect(
         sut.addAssets(AuthFactory.create(user), album.id, { ids: [asset1.id, asset2.id, asset3.id] }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).resolves.toEqual([
+        { success: true, id: asset1.id },
+        { success: true, id: asset2.id },
+        { success: true, id: asset3.id },
+      ]);
 
-      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        {
+          id: album.id,
+          updatedAt: expect.any(Date),
+          albumThumbnailAssetId: asset1.id,
+        },
+        user.id,
+      );
+      expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [asset1.id, asset2.id, asset3.id]);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
+        id: album.id,
+        userIds: album.albumUsers.map(({ user }) => user.id),
+        recipientIds: [owner.id],
+      });
     });
 
     it('should allow adding assets shared via partner sharing', async () => {
@@ -1122,12 +1144,15 @@ describe(AlbumService.name, () => {
       });
     });
 
-    it('should not allow a shared user with viewer access to add assets', async () => {
+    // fork: shared-libraries (R11: every album member of any role may add assets)
+    it('should allow a shared user with viewer access to add assets', async () => {
       const user = UserFactory.create();
       const album1 = AlbumFactory.from().albumUser({ userId: user.id, role: AlbumUserRole.Viewer }).build();
+      const { user: owner1 } = album1.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
       const album2 = AlbumFactory.from().albumUser({ userId: user.id, role: AlbumUserRole.Viewer }).build();
+      const { user: owner2 } = album2.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
       const [asset1, asset2, asset3] = [AssetFactory.create(), AssetFactory.create(), AssetFactory.create()];
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValueOnce(new Set()).mockResolvedValueOnce(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValueOnce(new Set([album1.id, album2.id]));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset1.id, asset2.id, asset3.id]));
       mocks.album.getById.mockResolvedValueOnce(getForAlbum(album1)).mockResolvedValueOnce(getForAlbum(album2));
       mocks.album.getAssetIds.mockResolvedValueOnce(new Set()).mockResolvedValueOnce(new Set());
@@ -1137,12 +1162,27 @@ describe(AlbumService.name, () => {
           albumIds: [album1.id, album2.id],
           assetIds: [asset1.id, asset2.id, asset3.id],
         }),
-      ).resolves.toEqual({
-        success: false,
-        error: BulkIdErrorReason.NO_PERMISSION,
-      });
+      ).resolves.toEqual({ success: true, error: undefined });
 
-      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.album.update).toHaveBeenCalledTimes(2);
+      expect(mocks.album.addAssetIdsToAlbums).toHaveBeenCalledWith([
+        { albumId: album1.id, assetId: asset1.id },
+        { albumId: album1.id, assetId: asset2.id },
+        { albumId: album1.id, assetId: asset3.id },
+        { albumId: album2.id, assetId: asset1.id },
+        { albumId: album2.id, assetId: asset2.id },
+        { albumId: album2.id, assetId: asset3.id },
+      ]);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
+        id: album1.id,
+        userIds: album1.albumUsers.map(({ user }) => user.id),
+        recipientIds: [owner1.id],
+      });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
+        id: album2.id,
+        userIds: album2.albumUsers.map(({ user }) => user.id),
+        recipientIds: [owner2.id],
+      });
     });
 
     it('should allow adding assets shared via partner sharing', async () => {
@@ -1393,9 +1433,8 @@ describe(AlbumService.name, () => {
       ]);
     });
 
-    // fork: shared-libraries (upstream parity: viewers cannot remove album assets;
-    // only the owner bypasses the per-asset share check)
-    it('should not allow an album viewer to remove a foreign asset', async () => {
+    // fork: shared-libraries (R11: every album member of any role may remove any asset)
+    it('should allow an album viewer to remove a foreign asset', async () => {
       const asset = AssetFactory.create();
       const viewer = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: viewer.id, role: AlbumUserRole.Viewer }).build();
@@ -1404,10 +1443,10 @@ describe(AlbumService.name, () => {
       mocks.album.getAssetIds.mockResolvedValue(new Set([asset.id]));
 
       await expect(sut.removeAssets(AuthFactory.create(viewer), album.id, { ids: [asset.id] })).resolves.toEqual([
-        { success: false, id: asset.id, error: BulkIdErrorReason.NO_PERMISSION },
+        { success: true, id: asset.id },
       ]);
 
-      expect(mocks.album.removeAssetIds).not.toHaveBeenCalled();
+      expect(mocks.album.removeAssetIds).toHaveBeenCalledWith(album.id, [asset.id]);
     });
 
     it('should reset the thumbnail if it is removed', async () => {

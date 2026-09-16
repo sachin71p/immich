@@ -265,8 +265,9 @@ export class AlbumService extends BaseService {
     const results = await removeAssets(
       auth,
       { access: this.accessRepository, bulk: this.albumRepository },
-      // fork: shared-libraries (upstream parity: only the album owner bypasses the per-asset share check)
-      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.AlbumDelete },
+      // fork: shared-libraries (R11: every album member may remove any asset, so album
+      // asset-delete access bypasses the per-asset share check)
+      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.AlbumAssetDelete },
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);

@@ -539,15 +539,17 @@ describe('/albums', () => {
       expect(body).toEqual([expect.objectContaining({ id: asset.id, success: true })]);
     });
 
-    it('should not be able to add assets to album as a viewer', async () => {
+    // fork: shared-libraries (R11: every album member of any role may add assets;
+    // intentionally diverges from upstream, where viewers are denied).
+    it('should be able to add assets to album as a viewer', async () => {
       const asset = await utils.createAsset(user2.accessToken);
       const { status, body } = await request(app)
         .put(`/albums/${user1Albums[3].id}/assets`)
         .set('Authorization', `Bearer ${user2.accessToken}`)
         .send({ ids: [asset.id] });
 
-      expect(status).toBe(400);
-      expect(body).toEqual(errorDto.badRequest('Not found or no albumAsset.create access'));
+      expect(status).toBe(200);
+      expect(body).toEqual([expect.objectContaining({ id: asset.id, success: true })]);
     });
 
     it('should add duplicate assets only once', async () => {
@@ -628,20 +630,25 @@ describe('/albums', () => {
       ]);
     });
 
-    it('should not be able to remove foreign asset from foreign album', async () => {
+    // fork: shared-libraries (R11: every album member of any role may remove any asset
+    // in the album — user2 is an editor of user1Albums[0]. Intentionally diverges from
+    // upstream, which reports no_permission here).
+    it('should be able to remove foreign asset from shared album as a member', async () => {
       const { status, body } = await request(app)
         .delete(`/albums/${user1Albums[0].id}/assets`)
         .set('Authorization', `Bearer ${user2.accessToken}`)
         .send({ ids: [user1Asset1.id] });
 
       expect(status).toBe(200);
-      expect(body).toEqual([
-        expect.objectContaining({
-          id: user1Asset1.id,
-          success: false,
-          error: 'no_permission',
-        }),
-      ]);
+      expect(body).toEqual([expect.objectContaining({ id: user1Asset1.id, success: true })]);
+
+      const { status: restoreStatus, body: restoreBody } = await request(app)
+        .put(`/albums/${user1Albums[0].id}/assets`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Asset1.id] });
+
+      expect(restoreStatus).toBe(200);
+      expect(restoreBody).toEqual([expect.objectContaining({ id: user1Asset1.id, success: true })]);
     });
 
     it('should be able to remove own asset from own album', async () => {
@@ -664,14 +671,24 @@ describe('/albums', () => {
       expect(body).toEqual([expect.objectContaining({ id: user1Asset2.id, success: true })]);
     });
 
-    it('should not be able to remove assets from album as a viewer', async () => {
+    // fork: shared-libraries (R11: every album member of any role may remove assets;
+    // intentionally diverges from upstream, where viewers are denied).
+    // Removes user1Asset1 and re-adds it as the owner so later tests keep their fixture.
+    it('should be able to remove assets from album as a viewer', async () => {
       const { status, body } = await request(app)
         .delete(`/albums/${user1Albums[3].id}/assets`)
         .set('Authorization', `Bearer ${user2.accessToken}`)
         .send({ ids: [user1Asset1.id] });
 
-      expect(status).toBe(400);
-      expect(body).toEqual(errorDto.badRequest('Not found or no albumAsset.delete access'));
+      expect(status).toBe(200);
+      expect(body).toEqual([expect.objectContaining({ id: user1Asset1.id, success: true })]);
+
+      const { status: restoreStatus } = await request(app)
+        .put(`/albums/${user1Albums[3].id}/assets`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Asset1.id] });
+
+      expect(restoreStatus).toBe(200);
     });
 
     it('should remove duplicate assets only once', async () => {
