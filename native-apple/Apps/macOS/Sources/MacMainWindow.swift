@@ -1,5 +1,6 @@
 import AppKit
 import CoreModel
+import Editing
 import LocalStore
 import MapKit
 import Media
@@ -395,11 +396,11 @@ struct MacLibraryBrowser: View {
       }
       .disabled(selectionModel.selected.isEmpty)
       Button {
-        if selectionModel.selected.isEmpty { showToast("Select an item to rotate.") }
-        else { showToast("Rotation is available in the viewer.") }
+        rotate(ids: selectionModel.selectedInOrder)
       } label: {
         Label("Rotate", systemImage: "rotate.right")
       }
+      .disabled(selectionModel.selected.isEmpty)
       Button(isSelecting ? "Done" : "Select") {
         isSelecting.toggle()
         if !isSelecting { selectionModel.clear() }
@@ -633,7 +634,7 @@ struct MacLibraryBrowser: View {
     let ids = selectionModel.selectedInOrder
     return MacAssetActions(
       favorite: { toggleFavorite(ids: ids) },
-      rotate: {},
+      rotate: { rotate(ids: ids) },
       trash: { trash(ids: ids) },
       move: {
         moveSheetIds = ids.isEmpty ? nil : AssetIdsSheetItem(ids: ids)
@@ -686,6 +687,94 @@ struct MacLibraryBrowser: View {
         MacAssetChangeCenter.shared.post(.favorite(ids: Set(ids), isFavorite: make))
       } catch {
         showToast(error.localizedDescription)
+      }
+    }
+  }
+
+  /// Grid Rotate (U27): a clockwise quarter turn for every selected photo through the
+  /// persisted edit path — bump `EditRecipe.crop.quarterTurns`, `PUT /assets/:id/edits`
+  /// (the server replaces the whole set, so repeats compose), then save the recipe KV.
+  /// Pure rotation is upstream-expressible, so no render or upload is needed. Videos are
+  /// skipped: their rotation lives in `VideoRecipe` and needs a client-side export, which
+  /// the viewer (WP5) owns.
+  private func rotate(ids: [String]) {
+    guard !ids.isEmpty else {
+      showToast("Select an item to rotate.")
+      return
+    }
+    showToast("Rotating \(ids.count) item\(ids.count == 1 ? "" : "s")…")
+    Task { @MainActor in
+      let persistence = RESTEditPersistence(
+        serverURL: state.serverURL,
+        token: { [connection = state.connection] in await connection.tokenStore.get() })
+      // Same membership-lazy context as the viewer's edit sheet (personal + owned resolve
+      // by user id alone; space/library rows resolve through these memberships).
+      let uid = state.userId ?? ""
+      let spaces = (try? await state.store.spacesForUser(uid)) ?? []
+      let libs = (try? await state.store.librariesForUser(uid)) ?? []
+      let ctx = AccessContext(
+        currentUserId: uid, memberSpaceIds: Set(spaces.map { $0.id }),
+        accessibleLibraryIds: Set(libs.map { $0.id }))
+      var rotated: [String] = []
+      var skippedVideos = 0
+      var failed = 0
+      for id in ids {
+        do {
+          guard let asset = try await state.store.asset(id: id) else {
+            failed += 1
+            continue
+          }
+          guard asset.type != .video else {
+            skippedVideos += 1
+            continue
+          }
+          try EditAccess.requireEdit(asset, in: ctx)
+          // A missing KV entry means never edited (fetch returns nil on 404); any other
+          // fetch error fails the item rather than clobbering prior edits with a fresh
+          // recipe.
+          let existing = try await persistence.fetchRecipe(assetId: id)
+          let previousTurns = existing?.recipe.crop?.quarterTurns ?? 0
+          var recipe = existing?.recipe ?? EditRecipe()
+          var crop = recipe.crop ?? CropRecipe()
+          crop.quarterTurns = (crop.quarterTurns + 1) % 4
+          recipe.crop = crop
+          // Upstream crop params are absolute source pixels, so a stored rect needs the
+          // source size; `Asset` carries it, avoiding any original download from the grid.
+          let split = try EditSplitter.split(
+            recipe, imageSize: CGSize(width: asset.width ?? 1, height: asset.height ?? 1))
+          if split.upstream.isEmpty {
+            // Only when the recipe holds nothing upstream-expressible (a completed full
+            // turn back to 0): drop the server-side rotate, which the empty no-op guard
+            // in `applyUpstreamEdits` would otherwise leave behind.
+            if previousTurns != 0 {
+              try await persistence.clearUpstreamEdits(assetId: id)
+            }
+          } else {
+            try await persistence.applyUpstreamEdits(assetId: id, items: split.upstream)
+          }
+          try await persistence.saveRecipe(EditPersistencePayload(
+            sourceAssetId: id, recipe: recipe, renderedAssetId: existing?.renderedAssetId))
+          rotated.append(id)
+        } catch is CancellationError {
+          return
+        } catch {
+          failed += 1
+          HeirloomLog.ui.error("Grid rotate failed: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+      if !rotated.isEmpty {
+        MacAssetChangeCenter.shared.post(.edited(ids: Set(rotated)))
+      }
+      if failed == 0 && skippedVideos == 0 {
+        showToast(rotated.count == 1 ? "Rotated 1 photo." : "Rotated \(rotated.count) photos.")
+      } else {
+        var parts: [String] = []
+        if !rotated.isEmpty { parts.append("rotated \(rotated.count)") }
+        if skippedVideos > 0 {
+          parts.append("\(skippedVideos) video\(skippedVideos == 1 ? "" : "s") need the viewer")
+        }
+        if failed > 0 { parts.append("\(failed) failed") }
+        showToast("Rotate: " + parts.joined(separator: ", ") + ".")
       }
     }
   }
