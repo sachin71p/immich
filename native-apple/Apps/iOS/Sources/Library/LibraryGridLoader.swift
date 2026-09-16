@@ -112,6 +112,10 @@ final class LibraryGridLoader: ObservableObject {
   /// First-paint timing for the perf gate: seconds from `load` start to the first
   /// non-empty snapshot publish. Read by the flick-scroll UI test via the VC hook.
   private(set) var lastFirstPaintMs: Double?
+  /// Latest GridLoad / SnapshotBuild wall times (the signposts also emit these for
+  /// Instruments; the UI test reads the numbers from the perf summary).
+  private(set) var lastGridLoadMs: Double = 0
+  private(set) var lastSnapshotBuildMs: Double = 0
 
   private var generation = 0
   private var loadTask: Task<Void, Never>?
@@ -212,31 +216,37 @@ final class LibraryGridLoader: ObservableObject {
     // All heavy work (SQL + grouping) runs detached: the closure captures only Sendable
     // state, and gating re-checks the generation back on the main actor afterwards.
     let req = request
-    let work: @Sendable () async -> (GridSnapshot, [(String, PhotosLocalStore.TimelineIndexFlags)]) =
-      {
-        switch req {
-        case .timeline(let scope, let granularity):
-          guard let index = try? await store.timelineIndex(scope: scope),
-            !Task.isCancelled
-          else {
-            return (GridSnapshot.empty, [])
-          }
-          let flags = index.entries.map { ($0.id, $0.flags) }
-          let built = await HeirloomSignpost.interval(HeirloomSignpost.snapshotBuild) {
-            GridSnapshot.build(entries: index.entries, granularity: granularity, generation: current)
-          }
-          return (built, flags)
-        case .ids(let ids):
-          return (GridSnapshot.flat(ids: ids, title: "Results", generation: current), [])
+    typealias GridProduct = (
+      snapshot: GridSnapshot, flags: [(String, PhotosLocalStore.TimelineIndexFlags)], buildMs: Double
+    )
+    let work: @Sendable () async -> GridProduct = {
+      switch req {
+      case .timeline(let scope, let granularity):
+        guard let index = try? await store.timelineIndex(scope: scope),
+          !Task.isCancelled
+        else {
+          return (GridSnapshot.empty, [], 0)
         }
+        let flags = index.entries.map { ($0.id, $0.flags) }
+        let buildStart = Date()
+        let built = await HeirloomSignpost.interval(HeirloomSignpost.snapshotBuild) {
+          GridSnapshot.build(entries: index.entries, granularity: granularity, generation: current)
+        }
+        return (built, flags, Date().timeIntervalSince(buildStart) * 1000)
+      case .ids(let ids):
+        return (GridSnapshot.flat(ids: ids, title: "Results", generation: current), [], 0)
       }
+    }
     // Detached so the index decode and grouping never run on the main actor; the async
     // signpost only brackets the interval, it does not hop threads by itself.
-    let GridWork: @Sendable () async -> (GridSnapshot, [(String, PhotosLocalStore.TimelineIndexFlags)]) =
-      {
-        await HeirloomSignpost.interval(HeirloomSignpost.gridLoad, work)
-      }
-    let (snapshot, flags) = await Task.detached(operation: GridWork).value
+    let loadStartDetached = Date()
+    let GridWork: @Sendable () async -> GridProduct = {
+      await HeirloomSignpost.interval(HeirloomSignpost.gridLoad, work)
+    }
+    let product = await Task.detached(operation: GridWork).value
+    lastGridLoadMs = Date().timeIntervalSince(loadStartDetached) * 1000
+    lastSnapshotBuildMs = product.buildMs
+    let (snapshot, flags) = (product.snapshot, product.flags)
     guard current == self.generation && !Task.isCancelled else { return }
     for (id, flag) in flags { flagsById[id] = flag }
     let firstPaint = self.snapshot.isEmpty && !snapshot.isEmpty

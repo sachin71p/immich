@@ -50,6 +50,7 @@ extension PhotosLocalStore {
       asset.deletedAt IS NOT NULL AS deletedAt, asset.visibility = 'archive' AS visibility,
       julianday(asset.localDateTime) AS localDateTime,
       asset.ownerId AS ownerId, asset.isEdited AS isEdited, asset.durationSeconds AS durationSeconds,
+      asset.originalFileName AS originalFileName,
       \(mediaKindCaseSQL) AS mediaKind
     FROM asset
     JOIN (
@@ -76,6 +77,7 @@ extension PhotosLocalStore {
     let archived: Bool = row["visibility"]
     let julianDay: Double? = row["localDateTime"]
     let duration: Int? = row["durationSeconds"]
+    let fileName: String? = row["originalFileName"]
     return TimelineRow(
       id: row["id"],
       thumbhash: row["thumbhash"],
@@ -87,7 +89,8 @@ extension PhotosLocalStore {
       localDateTime: julianDay.map { Date(timeIntervalSince1970: ($0 - 2_440_587.5) * 86_400) },
       ownerId: row["ownerId"],
       isEdited: row["isEdited"],
-      durationSeconds: duration
+      durationSeconds: duration,
+      originalFileName: fileName ?? ""
     )
   }
 

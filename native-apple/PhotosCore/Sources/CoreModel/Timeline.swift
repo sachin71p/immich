@@ -28,6 +28,8 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
   public var isEdited: Bool
   /// Video duration in seconds; nil for stills (viewer progress + duration badges).
   public var durationSeconds: Int?
+  /// Original file name (media-format classification for thumbnail requests).
+  public var originalFileName: String
 
   public init(
     id: String,
@@ -40,7 +42,8 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
     localDateTime: Date?,
     ownerId: String = "",
     isEdited: Bool = false,
-    durationSeconds: Int? = nil
+    durationSeconds: Int? = nil,
+    originalFileName: String = ""
   ) {
     self.id = id
     self.thumbhash = thumbhash
@@ -53,6 +56,7 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
     self.ownerId = ownerId
     self.isEdited = isEdited
     self.durationSeconds = durationSeconds
+    self.originalFileName = originalFileName
   }
 }
 
@@ -71,7 +75,8 @@ extension TimelineRow {
       id: asset.id, thumbhash: asset.thumbhash, aspectRatio: ratio, mediaKind: kind,
       isFavorite: asset.isFavorite, isTrashed: asset.deletedAt != nil,
       isArchived: asset.visibility == .archive, localDateTime: asset.localDateTime,
-      ownerId: asset.ownerId, isEdited: asset.isEdited, durationSeconds: asset.durationSeconds)
+      ownerId: asset.ownerId, isEdited: asset.isEdited, durationSeconds: asset.durationSeconds,
+      originalFileName: asset.originalFileName)
   }
 }
 
