@@ -15,17 +15,17 @@ import Upload
 /// agent can simply run once per launch and exit — relaunch (interval or login) repeats it.
 /// There is deliberately no `@main` here: the entry point belongs to the target-type decision
 /// in `project.yml` (see `MacAgentLoginItem`'s packaging note) — the host wires
-/// `PhotosForkAgent.runOnce()` into whatever executable wrapper wins.
-public enum PhotosForkAgent {
+/// `HeirloomAgent.runOnce()` into whatever executable wrapper wins.
+public enum HeirloomAgent {
   private enum SharedAccess {
-    static let groupIdentifier = "group.com.immich.photosfork.shared"
-    static let serverURLKey = "PhotosFork.serverURL"
+    static let groupIdentifier = "group.com.immich.heirloom.shared"
+    static let serverURLKey = "Heirloom.serverURL"
 
     static func databaseURL() throws -> URL {
       if let group = FileManager.default.containerURL(
         forSecurityApplicationGroupIdentifier: groupIdentifier)
       {
-        return group.appendingPathComponent("photosfork.sqlite")
+        return group.appendingPathComponent("heirloom.sqlite")
       }
       throw AgentError.noSharedContainer
     }
@@ -39,7 +39,7 @@ public enum PhotosForkAgent {
     static func accessToken() -> String? {
       let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "com.immich.photosfork",
+        kSecAttrService as String: "com.immich.heirloom",
         kSecAttrAccount as String: "access-token",
         kSecReturnData as String: true,
         kSecMatchLimit as String: kSecMatchLimitOne,

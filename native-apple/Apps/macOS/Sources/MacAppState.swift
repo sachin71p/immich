@@ -46,7 +46,7 @@ final class MacAppState {
     let connection = try ImmichConnection(serverURL: serverURL, accessToken: token)
     let diskCache = TieredMediaCache(
       rootDirectory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("PhotosFork/Media", isDirectory: true)
+        .appendingPathComponent("Heirloom/Media", isDirectory: true)
     )
     let tokenStore = connection.tokenStore
     let server = MediaServer(

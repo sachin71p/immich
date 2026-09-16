@@ -14,7 +14,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 /// macOS shell entry (A4): connect screen until signed in, then the Photos-for-Mac style
 /// library window. `--fixture-seed` launches the seeded in-memory world for UI smoke tests.
 @main
-struct PhotosForkMacOSApp: App {
+struct HeirloomMacOSApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @Environment(\.openWindow) private var openWindow
   @State private var state: MacAppState?
@@ -64,7 +64,7 @@ struct PhotosForkMacOSApp: App {
     if CommandLine.arguments.contains("--fixture-seed") {
       return try? MacAppState.seeded()
     }
-    let savedURL = UserDefaults.standard.string(forKey: "PhotosFork.serverURL")
+    let savedURL = UserDefaults.standard.string(forKey: "Heirloom.serverURL")
       .flatMap { URL(string: $0) }
     let defaultURL = savedURL ?? URL(string: "https://")!
     return try? MacAppState.standard(serverURL: defaultURL)

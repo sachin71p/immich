@@ -3,11 +3,11 @@ import Foundation
 import LocalStore
 
 /// Recent searches (A7 task 2, orchestrator-decided): stored per user in LocalStore
-/// `userMetadata` under `photosfork.recentSearches` as JSON `[SearchFilter]`, most recent
+/// `userMetadata` under `heirloom.recentSearches` as JSON `[SearchFilter]`, most recent
 /// first, capped at `maxCount`. Re-selecting a filter moves it to the front; duplicates compare
 /// by serialized form so equivalent filters collapse.
 public struct RecentSearchStore: Sendable {
-  public static let metadataKey = "photosfork.recentSearches"
+  public static let metadataKey = "heirloom.recentSearches"
   public static let maxCount = 20
 
   public var store: PhotosLocalStore

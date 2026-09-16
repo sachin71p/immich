@@ -8,7 +8,7 @@ import Upload
 /// execution. The `PHBackgroundResourceUploadExtension` target handles system-scheduled photo
 /// jobs; this scheduler covers everything else (scan + drain while the app is backgrounded).
 enum BackupScheduler {
-  static let taskIdentifier = "com.immich.photosfork.backup-processing"
+  static let taskIdentifier = "com.immich.heirloom.backup-processing"
 
   static func register(session: AppSession) {
     BGTaskScheduler.shared.register(

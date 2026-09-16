@@ -596,7 +596,7 @@ public struct MacEditView: View {
     let pb = NSPasteboard.general
     pb.clearContents()
     do {
-      pb.setData(try history.copiedData(), forType: NSPasteboard.PasteboardType("com.photosfork.edit-recipe"))
+      pb.setData(try history.copiedData(), forType: NSPasteboard.PasteboardType("com.heirloom.edit-recipe"))
     } catch {
       saveError = "Could not copy edits: \(error)"
     }
@@ -606,7 +606,7 @@ public struct MacEditView: View {
     do {
       guard
         let data = NSPasteboard.general.data(
-          forType: NSPasteboard.PasteboardType("com.photosfork.edit-recipe"))
+          forType: NSPasteboard.PasteboardType("com.heirloom.edit-recipe"))
       else { return }
       history.commit(try EditHistory.pastedRecipe(from: data))
       elements = history.current.markup?.elements ?? []

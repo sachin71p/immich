@@ -1,4 +1,4 @@
-# PhotosFork native Apple apps
+# Heirloom native Apple apps
 
 The native clients target iOS 26.1+ and macOS 26+, with Swift 6 strict concurrency. Shared business logic
 lives in `PhotosCore`; the two app targets are presentation shells.

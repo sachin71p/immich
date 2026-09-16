@@ -21,8 +21,8 @@ import Upload
 /// scheduler writes (decided A5 #3). Rows are crash-safe (a kill mid-upload leaves `uploading`,
 /// reclaimed to pending on the next drain) and idempotent (checksum dedupe), so termination
 /// needs no special handling — un-acked work is simply picked up by the next launch.
-@objc(PhotosForkBackgroundUploadHandler)
-final class PhotosForkBackgroundUploadHandler: NSObject, NSExtensionRequestHandling {
+@objc(HeirloomBackgroundUploadHandler)
+final class HeirloomBackgroundUploadHandler: NSObject, NSExtensionRequestHandling {
   func beginRequest(with context: NSExtensionContext) {
     Task {
       await Self.drainSharedQueue()
@@ -33,8 +33,8 @@ final class PhotosForkBackgroundUploadHandler: NSObject, NSExtensionRequestHandl
   /// Shared-container coordinates. Mirrors `SharedContainer` (Apps/Shared), which this target
   /// cannot import (it drags SwiftUI along); the group id string is the contract between them.
   private enum SharedAccess {
-    static let groupIdentifier = "group.com.immich.photosfork.shared"
-    static let serverURLKey = "PhotosFork.serverURL"
+    static let groupIdentifier = "group.com.immich.heirloom.shared"
+    static let serverURLKey = "Heirloom.serverURL"
 
     static func databaseURL() throws -> URL {
       if let group = FileManager.default.containerURL(
@@ -42,7 +42,7 @@ final class PhotosForkBackgroundUploadHandler: NSObject, NSExtensionRequestHandl
       {
         try FileManager.default.createDirectory(
           at: group, withIntermediateDirectories: true)
-        return group.appendingPathComponent("photosfork.sqlite")
+        return group.appendingPathComponent("heirloom.sqlite")
       }
       throw ExtensionError.noSharedContainer
     }
@@ -56,7 +56,7 @@ final class PhotosForkBackgroundUploadHandler: NSObject, NSExtensionRequestHandl
     static func accessToken() -> String? {
       let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "com.immich.photosfork",
+        kSecAttrService as String: "com.immich.heirloom",
         kSecAttrAccount as String: "access-token",
         kSecReturnData as String: true,
         kSecMatchLimit as String: kSecMatchLimitOne,

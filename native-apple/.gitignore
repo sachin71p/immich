@@ -1,6 +1,6 @@
 .build/
 DerivedData/
-PhotosFork.xcodeproj/
+Heirloom.xcodeproj/
 *.xcworkspace
 xcuserdata/
 # Copied from ../../open-api by scripts/gen-api.sh before each core build.

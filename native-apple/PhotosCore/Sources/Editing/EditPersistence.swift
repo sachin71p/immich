@@ -150,8 +150,8 @@ public struct RESTEditPersistence: EditPersistence, Sendable {
     let linkString = String(data: linkData, encoding: .utf8) ?? "{}"
     let metadataField = #"[{"key":"\#(EditRecipeKey.current)","value":\#(linkString)}]"#
     var fields: [(String, String)] = [
-      ("deviceAssetId", "photosfork-edit-\(UUID().uuidString)"),
-      ("deviceId", "photosfork"),
+      ("deviceAssetId", "heirloom-edit-\(UUID().uuidString)"),
+      ("deviceId", "heirloom"),
       ("fileCreatedAt", ISO8601DateFormatter().string(from: upload.fileCreatedAt)),
       ("fileModifiedAt", ISO8601DateFormatter().string(from: upload.fileModifiedAt)),
       ("filename", upload.filename),
@@ -229,7 +229,7 @@ public struct RESTEditPersistence: EditPersistence, Sendable {
   /// when supplied).
   public static func multipartBody(
     fields: [(String, String)], fileField: String, filename: String, contentType: String,
-    fileData: Data, boundary: String = "photosfork-\(UUID().uuidString)"
+    fileData: Data, boundary: String = "heirloom-\(UUID().uuidString)"
   ) -> (Data, String) {
     var body = Data()
     func append(_ s: String) { body.append(Data(s.utf8)) }

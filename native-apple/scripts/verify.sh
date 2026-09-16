@@ -18,13 +18,13 @@ core() {
 ios() {
   cd "$root"
   xcodegen generate
-  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-iOS -destination "platform=iOS Simulator,name=$simulator" -skipPackagePluginValidation build test
+  xcodebuild -project Heirloom.xcodeproj -scheme Heirloom-iOS -destination "platform=iOS Simulator,name=$simulator" -skipPackagePluginValidation build test
 }
 
 mac() {
   cd "$root"
   xcodegen generate
-  xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-macOS -destination 'platform=macOS' -skipPackagePluginValidation CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" CODE_SIGN_ENTITLEMENTS="" DEVELOPMENT_TEAM="" build test
+  xcodebuild -project Heirloom.xcodeproj -scheme Heirloom-macOS -destination 'platform=macOS' -skipPackagePluginValidation CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" CODE_SIGN_ENTITLEMENTS="" DEVELOPMENT_TEAM="" build test
 }
 
 case "$mode" in

@@ -428,7 +428,7 @@ struct MacCollectionGridView: NSViewRepresentable {
     ) -> NSPasteboardWriting? {
       guard let id = flatIds[safe: indexPath.item] else { return nil }
       let item = NSPasteboardItem()
-      item.setString(id, forType: .init("com.immich.photosfork.asset-id"))
+      item.setString(id, forType: .init("com.immich.heirloom.asset-id"))
       // Plain-text mirror so the SwiftUI sidebar drop targets (and Finder-adjacent
       // handlers) can read the dragged ids through NSItemProvider.
       item.setString(id, forType: .string)

@@ -3,16 +3,16 @@ import Security
 
 /// Decided A5 #3: one NEW app-group container shared by the iOS app, the background-upload
 /// extension, the macOS app and the menu-bar agent — shared LocalStore, shared defaults and
-/// shared Keychain (via the `keychain-access-groups` entitlement in `PhotosFork.entitlements`).
+/// shared Keychain (via the `keychain-access-groups` entitlement in `Heirloom.entitlements`).
 ///
 /// Everything degrades to per-app storage when the group container is unavailable (ad-hoc
 /// signing, which cannot resolve access groups or app groups; simulator; fixture mode), so
 /// local verify and fresh installs keep working without entitlements.
 public enum SharedContainer {
-  public static let groupIdentifier = "group.com.immich.photosfork.shared"
-  public static let keychainAccessGroup = "$(AppIdentifierPrefix)com.immich.photosfork.shared"
-  public static let databaseFileName = "photosfork.sqlite"
-  public static let serverURLKey = "PhotosFork.serverURL"
+  public static let groupIdentifier = "group.com.immich.heirloom.shared"
+  public static let keychainAccessGroup = "$(AppIdentifierPrefix)com.immich.heirloom.shared"
+  public static let databaseFileName = "heirloom.sqlite"
+  public static let serverURLKey = "Heirloom.serverURL"
 
   public static func groupURL() -> URL? {
     FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
@@ -29,7 +29,7 @@ public enum SharedContainer {
     let support = try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask,
       appropriateFor: nil, create: true)
-      .appendingPathComponent("PhotosFork", isDirectory: true)
+      .appendingPathComponent("Heirloom", isDirectory: true)
     try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
     return support.appendingPathComponent(databaseFileName)
   }
@@ -64,7 +64,7 @@ extension SharedTokenStore {
   static func save(_ token: String, accessGroup: String?) throws {
     var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
       kSecValueData as String: Data(token.utf8),
     ]
@@ -77,7 +77,7 @@ extension SharedTokenStore {
   static func load(accessGroup: String?) -> String? {
     var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
@@ -93,7 +93,7 @@ extension SharedTokenStore {
   static func delete(accessGroup: String?) throws {
     var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
     ]
     if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }

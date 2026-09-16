@@ -40,7 +40,7 @@ native-apple/
 - Everything requirement-related (R1–R17) is implemented once in PhotosCore; apps are presentation only.
 - Design fidelity: follow Apple Photos *interaction patterns* (grid zoom levels, library switcher, sidebar, viewer
   gestures, info panel, edit tools layout). Use SF Symbols and system components. Never copy Apple artwork, icons,
-  filter LUTs or the "Photos" name (App Review 5.2.5). Working app name: placeholder `PhotosFork` (rename later in project.yml).
+  filter LUTs or the "Photos" name (App Review 5.2.5). Working app name: placeholder `Heirloom` (rename later in project.yml).
 
 ## Rules for all A-phases
 - Read: this file's Architecture + Rules, your phase file, DECISIONS sections it names, dependency handoffs.
@@ -49,8 +49,8 @@ native-apple/
   `BLOCKED: missing endpoint …` — do not hand-roll HTTP calls for server features.
 - Verification entry point: `native-apple/scripts/verify.sh [core|ios|mac|all]`:
   - core: `cd native-apple/PhotosCore && swift build && swift test`
-  - ios: `cd native-apple && xcodegen generate && xcodebuild -project PhotosFork.xcodeproj -scheme PhotosFork-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build test`
-  - mac: `... -scheme PhotosFork-macOS -destination 'platform=macOS' build test`
+  - ios: `cd native-apple && xcodegen generate && xcodebuild -project Heirloom.xcodeproj -scheme Heirloom-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build test`
+  - mac: `... -scheme Heirloom-macOS -destination 'platform=macOS' build test`
   (Pick an installed simulator name at A0 and write it into verify.sh.) Simulator/unsigned builds need no paid
   developer account; device installs and extensions on device do (or SideStore, see project notes).
 - Snapshot/UI tests: at most a handful per phase (launch, grid renders fixture DB, viewer opens). Core logic is

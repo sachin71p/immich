@@ -19,8 +19,8 @@ extension FocusedValues {
 }
 
 extension Notification.Name {
-  static let macSelectAll = Notification.Name("PhotosFork.MacSelectAll")
-  static let macSyncNow = Notification.Name("PhotosFork.MacSyncNow")
+  static let macSelectAll = Notification.Name("Heirloom.MacSelectAll")
+  static let macSyncNow = Notification.Name("Heirloom.MacSyncNow")
 }
 
 /// Photos-for-Mac menu conventions (brief task 4): File / Edit / Image / View / Window.
@@ -85,6 +85,6 @@ struct MacCommands: Commands {
 }
 
 extension Notification.Name {
-  static let macImportFiles = Notification.Name("PhotosFork.MacImportFiles")
-  static let macImportCamera = Notification.Name("PhotosFork.MacImportCamera")
+  static let macImportFiles = Notification.Name("Heirloom.MacImportFiles")
+  static let macImportCamera = Notification.Name("Heirloom.MacImportCamera")
 }

@@ -49,7 +49,7 @@ public struct EditRecipe: Sendable, Codable, Equatable {
   /// True when the recipe contains anything upstream edits cannot express (anything beyond a
   /// crop rectangle, quarter-turn rotation, and flips). Such recipes REQUIRE the recipe-KV +
   /// rendered-upload path; upstream-only recipes may persist through `/edits` alone, though the
-  /// recipe is still saved so other clients can show "edited in PhotosFork".
+  /// recipe is still saved so other clients can show "edited in Heirloom".
   public var requiresClientRender: Bool {
     if !(style?.isNeutral ?? true) { return true }
     if !adjust.isEmpty { return true }

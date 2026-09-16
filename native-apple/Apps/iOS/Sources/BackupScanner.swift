@@ -203,7 +203,7 @@ enum PhotoKitBackupScanner {
   /// Copies a PhotoKit resource to a staging file that lives until the upload drain consumes it.
   private static func stage(resource: PHAssetResource) async throws -> URL? {
     let staging = FileManager.default.temporaryDirectory
-      .appendingPathComponent("PhotosForkStaging", isDirectory: true)
+      .appendingPathComponent("HeirloomStaging", isDirectory: true)
     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
     let url = staging.appendingPathComponent("\(UUID().uuidString)-\(resource.originalFilename)")
     return try await withCheckedThrowingContinuation { continuation in

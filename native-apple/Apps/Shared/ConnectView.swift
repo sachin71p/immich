@@ -40,9 +40,9 @@ enum SharedTokenStore {
   static func save(_ token: String) throws {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.immich.photosfork",
+      kSecAttrService as String: "com.immich.heirloom",
       kSecAttrAccount as String: "access-token",
-      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.photosfork.shared",
+      kSecAttrAccessGroup as String: "$(AppIdentifierPrefix)com.immich.heirloom.shared",
       kSecValueData as String: Data(token.utf8),
     ]
     SecItemDelete(query as CFDictionary)

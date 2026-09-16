@@ -1,17 +1,17 @@
 import Foundation
 import ServiceManagement
 
-/// A5 brief task 8 (app half): registers/unregisters the `PhotosFork-Agent` login item, which
+/// A5 brief task 8 (app half): registers/unregisters the `Heirloom-Agent` login item, which
 /// runs sync + the upload queue while the main app is closed (see
-/// `Apps/macOS/Agent/Sources/PhotosForkAgent.swift`).
+/// `Apps/macOS/Agent/Sources/HeirloomAgent.swift`).
 ///
 /// Packaging note (host must confirm): `SMAppService.loginItem` needs the helper embedded as a
-/// login item of the main app bundle. The `PhotosFork-Agent` target is currently an
+/// login item of the main app bundle. The `Heirloom-Agent` target is currently an
 /// `app-extension` (A4 scaffold); if host verification shows registration failing with
 /// "no such login item", flip that target to an embedded login-item application and keep this
 /// call site unchanged — the bundle id below is the contract between them.
 enum MacAgentLoginItem {
-  static let helperIdentifier = "com.immich.photosfork.agent"
+  static let helperIdentifier = "com.immich.heirloom.agent"
 
   private static var service: SMAppService {
     SMAppService.loginItem(identifier: helperIdentifier)

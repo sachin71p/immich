@@ -258,7 +258,7 @@ public struct ImmichUploadTransport: UploadTransport {
     item: QueuedUpload, progress: @Sendable (Double) -> Void
   ) async throws -> UploadOutcome {
     let url = URL(string: "/assets", relativeTo: connection.serverURL)!
-    let boundary = "PhotosFork-\(UUID().uuidString)"
+    let boundary = "Heirloom-\(UUID().uuidString)"
     var body = Data()
     func field(_ name: String, _ value: String) {
       body.append("--\(boundary)\r\n".data(using: .utf8)!)

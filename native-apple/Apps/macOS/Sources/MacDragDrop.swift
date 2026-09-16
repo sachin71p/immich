@@ -47,7 +47,7 @@ final class MacDragPrefetchState: @unchecked Sendable {
       do {
         let data = try await exporter.downloadOriginal(asset: asset)
         let url = FileManager.default.temporaryDirectory
-          .appendingPathComponent("PhotosForkExport-\(asset.id)-\(asset.originalFileName)")
+          .appendingPathComponent("HeirloomExport-\(asset.id)-\(asset.originalFileName)")
         try data.write(to: url, options: .atomic)
         lock.withLock { staged[asset.id] = url }
       } catch {}
@@ -79,7 +79,7 @@ struct MacImportChooserSheet: View {
   var urls: [URL]
   var onDone: () -> Void
   @State private var destination = SharedContainer.sharedDefaults.string(
-    forKey: "PhotosFork.importDestination") ?? "default"
+    forKey: "Heirloom.importDestination") ?? "default"
   @State private var staged = false
   @State private var enqueuedNote = ""
   @State private var importError: String?
@@ -118,7 +118,7 @@ struct MacImportChooserSheet: View {
             onDone()
           } else {
             SharedContainer.sharedDefaults.set(
-              destination, forKey: "PhotosFork.importDestination")
+              destination, forKey: "Heirloom.importDestination")
             Task { await enqueue() }
           }
         }

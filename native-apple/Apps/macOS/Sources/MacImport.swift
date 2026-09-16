@@ -112,8 +112,8 @@ final class MacCameraBrowser: NSObject, ObservableObject {
   }
 
   var importedFingerprints: Set<String> {
-    get { Set(SharedContainer.sharedDefaults.stringArray(forKey: "PhotosFork.importedCamera") ?? []) }
-    set { SharedContainer.sharedDefaults.set(Array(newValue), forKey: "PhotosFork.importedCamera") }
+    get { Set(SharedContainer.sharedDefaults.stringArray(forKey: "Heirloom.importedCamera") ?? []) }
+    set { SharedContainer.sharedDefaults.set(Array(newValue), forKey: "Heirloom.importedCamera") }
   }
 
   static func fingerprint(for item: ICCameraItem) -> String {
@@ -127,7 +127,7 @@ final class MacCameraBrowser: NSObject, ObservableObject {
     isImporting = true
     defer { isImporting = false }
     let target = MacFileImporter.explicitTarget(
-      for: SharedContainer.sharedDefaults.string(forKey: "PhotosFork.importDestination")
+      for: SharedContainer.sharedDefaults.string(forKey: "Heirloom.importDestination")
         ?? "default",
       prefs: state.prefs)
     var fingerprints = importedFingerprints
@@ -157,7 +157,7 @@ final class MacCameraBrowser: NSObject, ObservableObject {
 
   private func download(file: ICCameraFile) async throws -> URL {
     let staging = FileManager.default.temporaryDirectory
-      .appendingPathComponent("PhotosForkStaging", isDirectory: true)
+      .appendingPathComponent("HeirloomStaging", isDirectory: true)
     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
     let saveAsName = "\(UUID().uuidString)-\(file.name ?? "import")"
     let options: [ICDownloadOption: Any] = [

@@ -721,7 +721,7 @@ public struct EditView: View {
 
   private func copyEdits() {
     do {
-      UIPasteboard.general.setData(try history.copiedData(), forPasteboardType: "com.photosfork.edit-recipe")
+      UIPasteboard.general.setData(try history.copiedData(), forPasteboardType: "com.heirloom.edit-recipe")
     } catch {
       saveError = "Could not copy edits: \(error)"
     }
@@ -729,7 +729,7 @@ public struct EditView: View {
 
   private func pasteEdits() {
     do {
-      guard let data = UIPasteboard.general.data(forPasteboardType: "com.photosfork.edit-recipe") else { return }
+      guard let data = UIPasteboard.general.data(forPasteboardType: "com.heirloom.edit-recipe") else { return }
       history.commit(try EditHistory.pastedRecipe(from: data))
       cropDraft = history.current.crop?.rect
     } catch {
