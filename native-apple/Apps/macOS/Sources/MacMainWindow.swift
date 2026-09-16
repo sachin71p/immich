@@ -688,6 +688,7 @@ struct MacLibraryBrowser: View {
         let assets = try await state.store.assets(ids: ids)
         let make = !(assets.first?.isFavorite ?? false)
         try await state.assetMutations().setFavorite(ids: ids, isFavorite: make)
+        MacAssetChangeCenter.shared.post(.favorite(ids: Set(ids), isFavorite: make))
         await reload()
       } catch {
         showToast(error.localizedDescription)
@@ -700,6 +701,7 @@ struct MacLibraryBrowser: View {
     Task { @MainActor in
       do {
         try await state.assetMutations().trash(ids: ids)
+        MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
         await reload()
         showToast("Moved to Recently Deleted.")
       } catch {
@@ -712,6 +714,7 @@ struct MacLibraryBrowser: View {
     do {
       let results = try await state.assetMutations().move(ids: ids, to: target)
       await state.refresh()
+      MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
       await reload()
       pendingDropMove = nil
       showToast(Self.moveSummary(results))
@@ -740,6 +743,7 @@ struct MacLibraryBrowser: View {
       Task { @MainActor in
         do {
           _ = try await state.albumMutations().addAssets(ids, toAlbum: albumId)
+          MacAssetChangeCenter.shared.post(.albumsChanged)
           showToast("Added to album.")
         } catch {
           showToast(error.localizedDescription)
