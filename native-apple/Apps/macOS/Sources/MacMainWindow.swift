@@ -24,7 +24,9 @@ private struct AssetIdsSheetItem: Identifiable {
 
 /// The three-button Photos toolbar filter. Filters are an inclusive multi-selection: choosing
 /// Photos and Videos shows either type, and reopening the menu preserves its checkmarks.
-private enum TimelineQuickFilter: Hashable {
+/// Visible to `MacGridLoader.setPresentation`, which rebuilds the snapshot's include
+/// predicate from these (Step 4 deletes `matchesQuickFilter` and calls it instead).
+enum TimelineQuickFilter: Hashable, Sendable {
   case all, favorites, edited, photos, videos, screenshots, capturedByMe, notInAlbum
 
   var title: String {

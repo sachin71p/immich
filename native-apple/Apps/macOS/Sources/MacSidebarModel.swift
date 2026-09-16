@@ -198,8 +198,17 @@ public enum TimelineGrouping: String, Sendable, Hashable, CaseIterable {
   public var groupsByYear: Bool { self == .years }
 }
 
-/// Desktop timeline ordering for the native-style sort control.
-public enum TimelineOrder: String, Sendable, Hashable {
-  case newestFirst
-  case oldestFirst
+/// Desktop timeline ordering for the native-style sort control: unified on
+/// `CoreModel.TimelineOrder` (the app's old `String`-backed copy is deleted — nothing
+/// persisted the raw value). `Equatable` is spelled out here until PhotosCore adds it,
+/// so the sort menu can compare selections.
+extension TimelineOrder: Equatable {
+  public static func == (lhs: TimelineOrder, rhs: TimelineOrder) -> Bool {
+    switch (lhs, rhs) {
+    case (.newestFirst, .newestFirst), (.oldestFirst, .oldestFirst):
+      return true
+    case (.newestFirst, .oldestFirst), (.oldestFirst, .newestFirst):
+      return false
+    }
+  }
 }
