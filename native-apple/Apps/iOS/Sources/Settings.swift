@@ -11,6 +11,7 @@ struct SettingsView: View {
   @EnvironmentObject var session: AppSession
   @State private var showSources = false
   @State private var cacheUsage: [MediaTier: Int] = [:]
+  @State private var storage = StoragePrefs()
   @State private var error: String?
 
   var body: some View {
@@ -42,8 +43,23 @@ struct SettingsView: View {
               get: { session.prefs.showPersonalInTimeline },
               set: { new in setPrefs { $0.showPersonalInTimeline = new } }))
         }
-        Section("Cache") {
-          // A6 fills in budget policy; usage is already readable via the pipeline (A2 surface).
+        Section("Storage") {
+          NavigationLink("Free Up Space…") {
+            FreeUpSpaceView()
+              .environmentObject(session)
+          }
+          .accessibilityIdentifier("settings-freeup")
+          Toggle(
+            "Optimize Storage",
+            isOn: Binding(
+              get: { storage.optimizeStorage },
+              set: { new in setOptimizeStorage(new) }))
+            .accessibilityIdentifier("settings-optimize-storage")
+          Text("Optimize keeps thumbnails and shrinks originals to \(Self.formatBytes(StoragePrefs.iOSDefaultOriginalBudgetBytes)). Turn it off to download originals.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        Section("Cache Usage") {
           ForEach(MediaTier.allCases, id: \.self) { tier in
             LabeledContent(
               tier.rawValue.capitalized,
@@ -51,7 +67,7 @@ struct SettingsView: View {
           }
         }
         Section("About") {
-          LabeledContent("PhotosFork", value: "iOS · shared-libraries fork")
+          LabeledContent("Heirloom", value: "iOS · shared-libraries fork")
           Text("Follow Apple Photos interaction patterns; never Apple artwork or the Photos name.")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -69,9 +85,26 @@ struct SettingsView: View {
         if let pipeline = session.pipeline {
           cacheUsage = await pipeline.usage()
         }
+        if let store = session.store {
+          storage = (try? await store.storagePrefs(for: session.userId)) ?? StoragePrefs()
+        }
       }
     }
     .accessibilityIdentifier("settings")
+  }
+
+  private func setOptimizeStorage(_ enabled: Bool) {
+    storage.optimizeStorage = enabled
+    storage.originalTierBudgetBytes = enabled ? StoragePrefs.iOSDefaultOriginalBudgetBytes : nil
+    Task {
+      if let store = session.store {
+        try? await store.setStoragePrefs(storage, for: session.userId)
+      }
+      await session.pipeline?.setBudget(storage.originalTierBudgetBytes, for: .original)
+      if let pipeline = session.pipeline {
+        cacheUsage = await pipeline.usage()
+      }
+    }
   }
 
   private func setPrefs(_ edit: (inout SharedLibraryPrefs) -> Void) {

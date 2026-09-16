@@ -7,7 +7,6 @@ import SwiftUI
 /// policy), agent login-item toggle placeholder (A5 wires SMAppService).
 struct MacSettingsView: View {
   @Bindable var state: MacAppState
-  @State private var cacheUsage: [MediaTier: Int] = [:]
   @State private var error: String?
   @State private var pendingCount = 0
   @State private var isDraining = false
@@ -74,13 +73,7 @@ struct MacSettingsView: View {
         }
       }
       Section("Cache & Offline") {
-        ForEach(MediaTier.allCases, id: \.self) { tier in
-          LabeledContent(
-            tier.rawValue.capitalized,
-            value: Self.formatBytes(cacheUsage[tier] ?? 0)
-          )
-        }
-        Button("Refresh Usage") { Task { cacheUsage = await state.pipeline.usage() } }
+        MacStorageView(state: state)
       }
       Section("Uploads in Flight") {
         LabeledContent("Pending uploads", value: "\(pendingCount)")
@@ -91,7 +84,7 @@ struct MacSettingsView: View {
       }
       Section("Background Agent") {
         // A5 brief task 8: SMAppService login item runs sync + the upload queue while the
-        // main app is closed (agent target `PhotosFork-Agent`). Failures (e.g. the helper
+        // main app is closed (agent target `Heirloom-Agent`). Failures (e.g. the helper
         // not embedded in this build) surface inline instead of failing silently.
         Toggle(
           "Sync in the background",
@@ -110,7 +103,6 @@ struct MacSettingsView: View {
     .formStyle(.grouped)
     .frame(minWidth: 420, minHeight: 480)
     .task {
-      cacheUsage = await state.pipeline.usage()
       pendingCount = (try? await state.store.pendingUploadCount()) ?? 0
       refreshAgentStatus()
     }
@@ -125,8 +117,8 @@ struct MacSettingsView: View {
 
   private var importDestinationBinding: Binding<String> {
     Binding(
-      get: { UserDefaults.standard.string(forKey: "PhotosFork.importDestination") ?? "default" },
-      set: { UserDefaults.standard.set($0, forKey: "PhotosFork.importDestination") }
+      get: { UserDefaults.standard.string(forKey: "Heirloom.importDestination") ?? "default" },
+      set: { UserDefaults.standard.set($0, forKey: "Heirloom.importDestination") }
     )
   }
 

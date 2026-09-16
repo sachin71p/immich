@@ -10,6 +10,7 @@ struct BackupSettingsSection: View {
   @State private var albums: [PhotoKitBackupScanner.Album] = []
   @State private var pendingCount = 0
   @State private var isBackingUp = false
+  @State private var showFreeUpPrompt = false
   @State private var error: String?
 
   var body: some View {
@@ -77,6 +78,7 @@ struct BackupSettingsSection: View {
       albums = PhotoKitBackupScanner.availableAlbums()
       await refreshCount()
     }
+    .modifier(FreeUpSpacePromptModifier(isPresented: $showFreeUpPrompt))
   }
 
   private func setPrefs(_ edit: (inout SharedLibraryPrefs) -> Void) {
@@ -104,6 +106,13 @@ struct BackupSettingsSection: View {
     defer { isBackingUp = false }
     await BackupScheduler.runBackup(session: session)
     await refreshCount()
+    // A6: explicit prompt only (never silent deletion).
+    if let store = session.store,
+      let storage = try? await store.storagePrefs(for: session.userId),
+      storage.suggestFreeUpAfterBackup
+    {
+      showFreeUpPrompt = true
+    }
   }
 }
 
