@@ -165,6 +165,9 @@ final class MacAppState {
 
   func refresh() async {
     guard let userId else { return }
+    // Smoke usage for the WP0 logging API: proves the app target sees CoreModel's
+    // loggers (no re-export file needed) and gives the perf harness a sync marker.
+    HeirloomLog.sync.debug("refresh userId=\(userId, privacy: .public)")
     do {
       prefs = try await store.prefs(for: userId)
       async let s = store.memberSpaces(for: userId)
