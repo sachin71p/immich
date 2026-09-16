@@ -10,11 +10,13 @@ import Rules
 /// on more than id/thumbhash/ratio/type/flags.
 extension PhotosLocalStore {
   public enum Granularity: String, Sendable {
+    case year
     case month
     case day
 
     var strftimeFormat: String {
       switch self {
+      case .year: return "%Y"
       case .month: return "%Y-%m"
       case .day: return "%Y-%m-%d"
       }
