@@ -218,6 +218,10 @@ struct MacCollectionGridView: NSViewRepresentable {
     private var scrollVelocity: CGFloat = 0
     /// +1 scrolling down/forward, −1 up/back.
     private var scrollDirection: CGFloat = 1
+    /// Last issued prefetch window (Gate-3 storm gate): a reload or clip-bounds echo with an
+    /// unchanged settled window no-ops instead of re-issuing hundreds of fetches the next
+    /// cycle cancels.
+    private var prefetchWindow = MediaPipeline.PrefetchWindowTracker()
     /// `Prefetch` interval signposts for the WP0/WP7 harness. A local signposter (same
     /// subsystem/category as `HeirloomSignpost`) rather than extending PhotosCore's
     /// closed interval set, which WP1 owns.
@@ -533,6 +537,13 @@ struct MacCollectionGridView: NSViewRepresentable {
       guard !snapshot.rows.isEmpty else { return }
       let visible = cv.indexPathsForVisibleItems().compactMap { flatIndex(at: $0) }
       guard !visible.isEmpty else { return }
+      // Storm gate: an unchanged settled window (reload echo, duplicate bounds notification,
+      // settle pass right after a live pass) issues nothing — the in-flight and cached work
+      // from the last pass still stands.
+      let visibleIDs = Set(visible.map { snapshot.rows[$0].id })
+      guard prefetchWindow.shouldIssue(window: visibleIDs, generation: snapshot.generation) else {
+        return
+      }
       let lo = visible.min()!
       let hi = visible.max()!
       let perScreen = max(1, visible.count)

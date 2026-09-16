@@ -4,6 +4,7 @@ import LocalStore
 import Media
 import Rules
 import SwiftUI
+import os
 
 /// Loads grid content from the local store (A0 Architecture: the DB is the UI's only data source).
 @MainActor
@@ -66,6 +67,13 @@ final class MacGridLoader {
   /// Set by the view so edited rows can evict stale cache entries.
   @ObservationIgnored var pipeline: MediaPipeline?
 
+  /// Launch-signpost emitter for the WP0/WP7 harness. A local signposter (same
+  /// subsystem/category as `HeirloomSignpost`, whose `interval()` helpers can't take this
+  /// MainActor-isolated loader's closures under Swift 6 region isolation) emitting the exact
+  /// `HeirloomSignpost.gridLoad` / `.snapshotBuild` interval names.
+  private static let launchSignposter = OSSignposter(
+    subsystem: "com.immich.heirloom", category: "timeline")
+
   // MARK: - load
 
   func load(
@@ -89,6 +97,8 @@ final class MacGridLoader {
     let myGeneration = nextGeneration()
     let frozen = presentation
     loadTask = Task {
+      let gridLoadState = Self.launchSignposter.beginInterval(HeirloomSignpost.gridLoad)
+      defer { Self.launchSignposter.endInterval(HeirloomSignpost.gridLoad, gridLoadState) }
       do {
         // Store queries are nonisolated async: they suspend off the main thread even
         // though this task runs on the main actor. No MainActor wrapping anywhere.
@@ -198,11 +208,15 @@ final class MacGridLoader {
   }
 
   /// Snapshot construction runs detached at user-initiated priority: the row filter and
-  /// section assembly never execute on the main thread, no matter the library size.
+  /// section assembly never execute on the main thread, no matter the library size. Wrapped in
+  /// the exact `HeirloomSignpost.snapshotBuild` interval (begin fires before the detached hop,
+  /// end after `.value` returns, so the detached section is inside the interval).
   private static func buildSnapshot(
     sections: [TimelineSourceSection], presentation: Presentation, generation: Int
   ) async -> TimelineGridSnapshot {
-    await Task.detached(priority: .userInitiated) {
+    let state = Self.launchSignposter.beginInterval(HeirloomSignpost.snapshotBuild)
+    defer { Self.launchSignposter.endInterval(HeirloomSignpost.snapshotBuild, state) }
+    return await Task.detached(priority: .userInitiated) {
       TimelineGridSnapshot.build(
         sections: sections, order: presentation.order,
         include: { presentation.include($0) }, generation: generation)
