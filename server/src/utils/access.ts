@@ -144,7 +144,13 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetFileDownload: {
-      return access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isOwner = await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isSpace = await access.assetFile.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner));
+      const isLibrary = await access.assetFile.checkLibraryMemberAccess(
+        auth.user.id,
+        setDifference(ids, isOwner, isSpace),
+      );
+      return setUnion(isOwner, isSpace, isLibrary);
     }
 
     case Permission.AssetView: {
@@ -195,7 +201,10 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetEditGet: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isSpace = await access.asset.checkSpaceAccess(auth.user.id, setDifference(ids, isOwner));
+      const isLibrary = await access.asset.checkLibraryMemberAccess(auth.user.id, setDifference(ids, isOwner, isSpace));
+      return setUnion(isOwner, isSpace, isLibrary);
     }
 
     // fork: shared-libraries
@@ -249,8 +258,9 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isShared = await access.album.checkSharedAlbumAccess(
         auth.user.id,
         setDifference(ids, isOwner),
-        // fork: shared-libraries (upstream parity: editors only, viewers get 'no albumAsset.create access')
-        AlbumUserRole.Editor,
+        // fork: shared-libraries (R11: every album member of any role may add assets;
+        // role only gates album-level settings). Intentionally diverges from upstream.
+        AlbumUserRole.Viewer,
       );
       return setUnion(isOwner, isShared);
     }
@@ -294,8 +304,9 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isShared = await access.album.checkSharedAlbumAccess(
         auth.user.id,
         setDifference(ids, isOwner),
-        // fork: shared-libraries (upstream parity: editors only, viewers get 'no albumAsset.delete access')
-        AlbumUserRole.Editor,
+        // fork: shared-libraries (R11: every album member of any role may remove assets;
+        // role only gates album-level settings). Intentionally diverges from upstream.
+        AlbumUserRole.Viewer,
       );
       return setUnion(isOwner, isShared);
     }
