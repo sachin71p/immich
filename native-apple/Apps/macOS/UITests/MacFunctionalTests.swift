@@ -215,7 +215,7 @@ final class MacFunctionalTests: XCTestCase {
     // Multi-select via a ⌘-held second click (order-independent: both targets are
     // named explicitly, so grid sort order cannot affect which two get favorited).
     cell1.click()
-    cell2.perform(withKeyModifiers: .command) { cell2.click() }
+    XCUIElement.perform(withKeyModifiers: .command) { cell2.click() }
     el("favorite-button").click()
     el("sidebar-favorites").click()
     XCTAssertEqual(windowTitle(), "Favorites")
