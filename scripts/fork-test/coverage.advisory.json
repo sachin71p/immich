@@ -1,0 +1,8 @@
+{
+  "_note": "Previously-seen advisory tag counts (files containing the tag). coverage.ts fails if a tag listed here with count > 0 vanishes from the tree. Update deliberately when advisory usage changes — never to silence a real loss.",
+  "C3": 1,
+  "R16": 1,
+  "I6": 4,
+  "I7": 4,
+  "PERM-11": 2
+}
