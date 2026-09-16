@@ -60,6 +60,7 @@ struct MacSpaceManageSheet: View {
   @State private var description: String = ""
   @State private var members: [SpaceMember] = []
   @State private var newMemberId = ""
+  @State private var showInTimeline = true
   @State private var error: String?
 
   var body: some View {
@@ -68,6 +69,13 @@ struct MacSpaceManageSheet: View {
       TextField("Name", text: $name)
       TextField("Description", text: $description)
       Button("Save") { Task { await save() } }.accessibilityIdentifier("space-save")
+      // Per-space timeline toggle (controls-table gap): mirrors the Settings caption that
+      // promises visibility control in each library's manage view.
+      Toggle("Show in timeline", isOn: Binding(
+        get: { showInTimeline },
+        set: { value in Task { await setTimelineVisible(value) } }
+      ))
+      .accessibilityIdentifier("space-show-in-timeline")
       Divider()
       Text("Members").font(.subheadline)
       ForEach(members, id: \.userId) { member in
@@ -109,6 +117,24 @@ struct MacSpaceManageSheet: View {
       name = space.name
       description = space.description
       members = (try? await state.store.spaceMembers(spaceId: space.id)) ?? []
+      if let me = state.userId,
+        let mine = members.first(where: { $0.userId == me })
+      {
+        showInTimeline = mine.showInTimeline
+      }
+    }
+  }
+
+  private func setTimelineVisible(_ show: Bool) async {
+    do {
+      try await state.spaceMutations().setShowInTimeline(spaceId: space.id, show: show)
+      showInTimeline = show
+      await state.refresh()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the toggle where it was.
+    } catch {
+      HeirloomLog.ui.error("Timeline visibility failed: \(error.localizedDescription, privacy: .public)")
+      self.error = "Couldn't change timeline visibility."
     }
   }
 
