@@ -233,6 +233,8 @@ final class PhotoGridViewController: UIViewController {
     // empty grid, where SwiftUI's `.refreshable` (List/ScrollView only) never fires.
     collectionView.alwaysBounceVertical = true
     let refresh = UIRefreshControl()
+    // UIRefreshControl isn't exposed to the accessibility tree by default; the UI test needs it.
+    refresh.isAccessibilityElement = true
     refresh.accessibilityIdentifier = "pull-to-refresh"
     refresh.accessibilityValue = "idle"
     refresh.addTarget(self, action: #selector(didPullToRefresh(_:)), for: .valueChanged)

@@ -49,7 +49,8 @@ final class SyncUITests: XCTestCase {
       app.buttons["library-switcher"].waitForExistence(timeout: 30),
       "library switcher (and grid) should render from the fixture DB")
 
-    app.buttons["tab-settings"].tap()
+    // Matched by label: identifier propagation onto tab-bar buttons is flaky (seen in-tree).
+    app.tabBars.buttons["Settings"].tap()
     let syncNow = app.buttons["settings-sync-now"]
     XCTAssertTrue(
       syncNow.waitForExistence(timeout: 10),
