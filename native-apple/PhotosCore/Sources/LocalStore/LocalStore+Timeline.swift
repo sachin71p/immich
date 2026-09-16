@@ -44,8 +44,9 @@ extension PhotosLocalStore {
 
   static let rowSelectSQL = """
     SELECT asset.id AS id, asset.thumbhash AS thumbhash, asset.width AS width, asset.height AS height,
-      asset.isFavorite AS isFavorite, asset.deletedAt AS deletedAt, asset.visibility AS visibility,
-      asset.localDateTime AS localDateTime,
+      asset.isFavorite AS isFavorite,
+      asset.deletedAt IS NOT NULL AS deletedAt, asset.visibility = 'archive' AS visibility,
+      julianday(asset.localDateTime) AS localDateTime,
       asset.ownerId AS ownerId, asset.isEdited AS isEdited, asset.durationSeconds AS durationSeconds,
       \(mediaKindCaseSQL) AS mediaKind
     FROM asset
@@ -65,6 +66,13 @@ extension PhotosLocalStore {
     } else {
       ratio = 1
     }
+    // Decode-light projection (WP1 perf: 102k rows must load in ≤400ms Release): flags
+    // arrive as booleans and the timestamp as a Julian-day double, so no per-row string
+    // date parsing or string comparison runs in Swift. `julianday` parses the stored
+    // wall-time-as-UTC text in C and round-trips to ~0.1ms; NULL stays NULL.
+    let trashed: Bool = row["deletedAt"]
+    let archived: Bool = row["visibility"]
+    let julianDay: Double? = row["localDateTime"]
     let duration: Int? = row["durationSeconds"]
     return TimelineRow(
       id: row["id"],
@@ -72,9 +80,9 @@ extension PhotosLocalStore {
       aspectRatio: ratio,
       mediaKind: TimelineMediaKind(rawValue: row["mediaKind"]) ?? .photo,
       isFavorite: row["isFavorite"],
-      isTrashed: (row["deletedAt"] as String?) != nil,
-      isArchived: (row["visibility"] as String) == "archive",
-      localDateTime: row["localDateTime"],
+      isTrashed: trashed,
+      isArchived: archived,
+      localDateTime: julianDay.map { Date(timeIntervalSince1970: ($0 - 2_440_587.5) * 86_400) },
       ownerId: row["ownerId"],
       isEdited: row["isEdited"],
       durationSeconds: duration

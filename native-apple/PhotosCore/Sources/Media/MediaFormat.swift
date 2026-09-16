@@ -32,6 +32,11 @@ public struct MediaFormatInfo: Sendable, Hashable {
     self.shouldViewOriginal = shouldViewOriginal
   }
 
+  /// Default for the row-based pipeline path, which has no file name to classify: SDR and
+  /// safe to view from renditions (never original bytes).
+  public static let standardDefault = MediaFormatInfo(
+    kind: .other, dynamicRange: .sdr, shouldViewOriginal: false)
+
   /// Classifies from the original file name; `profileDescription` is `AssetExif.profileDescription`.
   public static func classify(fileName: String, profileDescription: String? = nil) -> MediaFormatInfo {
     let ext = (fileName as NSString).pathExtension.lowercased()

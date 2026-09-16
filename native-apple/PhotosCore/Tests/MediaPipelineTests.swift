@@ -10,22 +10,11 @@ private enum StubError: Error {
   case failed
 }
 
-/// Lock-protected log for the fire-and-forget prefetch calls, which the actor stub must
-/// serve from `nonisolated` protocol witnesses.
-private final class EventLog: @unchecked Sendable {
-  private let lock = NSLock()
-  private var _prefetched: [[ImageRequest]] = []
-  private var _stopPrefetchCalls = 0
-
-  func recordPrefetch(_ requests: [ImageRequest]) { lock.withLock { _prefetched.append(requests) } }
-  func recordStop() { lock.withLock { _stopPrefetchCalls += 1 } }
-  var prefetched: [[ImageRequest]] { lock.withLock { _prefetched } }
-  var stopPrefetchCalls: Int { lock.withLock { _stopPrefetchCalls } }
-}
-
 /// In-memory `MediaImageService`: canned image, per-URL data/failures, full request log.
+/// The WP1 pipeline never calls `image(for:)` on the thumbnail/preview path (single fetch +
+/// local decode), so tests assert `imageRequests` stays empty and seed decodable PNG bytes
+/// per URL for the data path.
 private actor StubImageService: MediaImageService {
-  nonisolated let events = EventLog()
   var dataRequests: [ImageRequest] = []
   var imageRequests: [ImageRequest] = []
   var dataByURL: [String: Data] = [:]
@@ -47,6 +36,10 @@ private actor StubImageService: MediaImageService {
     delayNanoseconds = nanoseconds
   }
 
+  func seed(data: Data, url: String) {
+    dataByURL[url] = data
+  }
+
   func image(for request: ImageRequest) async throws -> PlatformImage {
     imageRequests.append(request)
     if delayNanoseconds > 0 { try await Task.sleep(nanoseconds: delayNanoseconds) }
@@ -61,17 +54,6 @@ private actor StubImageService: MediaImageService {
     if failingURLs.contains(url) { throw StubError.failed }
     return dataByURL[url] ?? Data("bytes-for-\(url)".utf8)
   }
-
-  nonisolated func prefetch(_ requests: [ImageRequest]) {
-    events.recordPrefetch(requests)
-  }
-
-  nonisolated func stopPrefetching() {
-    events.recordStop()
-  }
-
-  var prefetched: [[ImageRequest]] { events.prefetched }
-  var stopPrefetchCalls: Int { events.stopPrefetchCalls }
 }
 
 private struct Harness {
@@ -95,6 +77,17 @@ private struct Harness {
     Asset(
       id: id, ownerId: "u1", originalFileName: "IMG_001.heic", thumbhash: thumbhash,
       checksum: "chk", type: .image)
+  }
+
+  /// Seeds decodable PNG bytes for a network URL — the pipeline decodes `data` locally,
+  /// so unseeded URLs (arbitrary bytes) fail the tier like corrupt downloads.
+  func seedPNG(url: String) async throws {
+    let png = try pngData(ThumbHash.decode(base64: "1fsDBYBKeI97iIh4eIiIdweIdIBI"))
+    await service.seed(data: png, url: url)
+  }
+
+  func thumbnailURL(id: String = "asset-1") -> String {
+    "https://photos.example.ts.net/assets/\(id)/thumbnail?size=thumbnail"
   }
 }
 
@@ -124,11 +117,14 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
   @Test("[A2-04] online miss builds an authenticated, downsampled, high-priority request and caches it")
   func onlineMiss() async throws {
     let h = try await Harness.make()
+    try await h.seedPNG(url: h.thumbnailURL())
     let loaded = try await h.pipeline.load(asset: h.asset(), tier: .thumbnail)
 
     #expect(tierOf(loaded) == TierStep(tier: .thumbnail, fromCache: false))
     let dataRequests = await h.service.dataRequests
     #expect(dataRequests.count == 1)
+    // WP1 §4.2: one network fetch — the old second `service.image` call is gone.
+    #expect(await h.service.imageRequests.isEmpty)
     let request = try #require(dataRequests.first)
     #expect(
       request.url?.absoluteString
@@ -140,8 +136,9 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
       resize
         == ImageProcessors.Resize(
           size: CGSize(width: 512, height: 512), unit: .pixels, contentMode: .aspectFit))
-    // Bytes landed in the disk tier for offline use.
+    // Bytes landed in the disk tier for offline use, and the decoded image in memory.
     #expect(await h.cache.retrieve(assetID: "asset-1", tier: .thumbnail) != nil)
+    #expect(h.pipeline.cachedImage(id: "asset-1", tier: .thumbnail) != nil)
   }
 
   @Test("[A2-04] progressive chain serves the cached tier first, then the requested network tier")
@@ -149,6 +146,7 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
     let h = try await Harness.make()
     let previewPNG = try pngData(ThumbHash.decode(base64: "1fsDBYBKeI97iIh4eIiIdweIdIBI"))
     try await h.cache.store(previewPNG, assetID: "asset-1", tier: .preview)
+    try await h.seedPNG(url: "https://photos.example.ts.net/assets/asset-1/original")
 
     var steps: [MediaLoadedImage] = []
     for try await step in await h.pipeline.stream(asset: h.asset(), tier: .original) {
@@ -164,6 +162,7 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
     let h = try await Harness.make()
     let originalURL = "https://photos.example.ts.net/assets/asset-1/original"
     await h.service.fail(urls: [originalURL])
+    try await h.seedPNG(url: "https://photos.example.ts.net/assets/asset-1/thumbnail?size=fullsize")
 
     let loaded = try await h.pipeline.load(asset: h.asset(), tier: .original)
     #expect(tierOf(loaded) == TierStep(tier: .fullsize, fromCache: false))
@@ -181,19 +180,104 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
     #expect(await h.service.dataRequests.count == 1)
   }
 
-  @Test("[A2-04] prefetch fans out at the lowest priority; cancel stops it")
+  @Test("[WP1] prefetch warms disk+memory at low priority without touching image()")
   func prefetch() async throws {
     let h = try await Harness.make()
-    await h.pipeline.prefetch(ids: ["a", "b", "c"], tier: .thumbnail)
-    let batches = await h.service.prefetched
-    #expect(batches.count == 1)
-    #expect(batches.first?.count == 3)
-    for request in batches.first ?? [] {
-      #expect(request.priority == .veryLow)
+    for id in ["a", "b", "c"] {
+      try await h.seedPNG(url: h.thumbnailURL(id: id))
+    }
+    let items: [(id: String, thumbhash: String?)] = [
+      (id: "a", thumbhash: nil), (id: "b", thumbhash: nil), (id: "c", thumbhash: nil),
+    ]
+    await h.pipeline.prefetch(items, tier: .thumbnail)
+    let dataRequests = await h.service.dataRequests
+    #expect(dataRequests.count == 3)
+    #expect(await h.service.imageRequests.isEmpty)
+    for request in dataRequests {
+      #expect(request.priority == .low)
       #expect(request.url?.absoluteString.hasSuffix("/thumbnail?size=thumbnail") == true)
     }
-    await h.pipeline.cancelPrefetch()
-    #expect(await h.service.stopPrefetchCalls == 1)
+    // Prefetch wrote both caches, so visible cells hit synchronously.
+    for id in ["a", "b", "c"] {
+      #expect(await h.cache.retrieve(assetID: id, tier: .thumbnail) != nil)
+      #expect(h.pipeline.cachedImage(id: id, tier: .thumbnail) != nil)
+    }
+    await h.pipeline.cancelPrefetch(keeping: [])
+  }
+
+  @Test("[WP1] concurrent visible loads share one network fetch (in-flight dedup)")
+  func dedup() async throws {
+    let h = try await Harness.make()
+    try await h.seedPNG(url: h.thumbnailURL())
+    async let first = h.pipeline.load(asset: h.asset(), tier: .thumbnail)
+    async let second = h.pipeline.load(asset: h.asset(), tier: .thumbnail)
+    let (loaded1, loaded2) = try await (first, second)
+    #expect(tierOf(loaded1) == TierStep(tier: .thumbnail, fromCache: false))
+    #expect(tierOf(loaded2) == TierStep(tier: .thumbnail, fromCache: false))
+    #expect(await h.service.dataRequests.count == 1)
+    #expect(await h.service.imageRequests.isEmpty)
+  }
+
+  @Test("[WP1] cancelPrefetch drops prefetch work outside the kept window")
+  func cancelPrefetchKeeping() async throws {
+    let h = try await Harness.make()
+    await h.service.setDelay(5_000_000_000)
+    let prefetchTask = Task {
+      let items: [(id: String, thumbhash: String?)] = [(id: "gone", thumbhash: nil)]
+      await h.pipeline.prefetch(items, tier: .thumbnail)
+    }
+    // Wait until the fetch is actually in flight (poll, not a fixed sleep).
+    var waited = 0
+    while await h.service.dataRequests.isEmpty, waited < 50 {
+      try await Task.sleep(nanoseconds: 100_000_000)
+      waited += 1
+    }
+    #expect(await h.service.dataRequests.count == 1)
+    await h.pipeline.cancelPrefetch(keeping: [])
+    await prefetchTask.value
+    // The cancelled fetch was dropped: a later visible load refetches.
+    await h.service.setDelay(0)
+    try await h.seedPNG(url: h.thumbnailURL(id: "gone"))
+    _ = try await h.pipeline.load(asset: h.asset(id: "gone"), tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 2)
+  }
+
+  @Test("[WP1] row-based stream loads from TimelineRow fields with no Asset")
+  func rowBasedStream() async throws {
+    let h = try await Harness.make()
+    try await h.seedPNG(url: h.thumbnailURL())
+    var steps: [MediaLoadedImage] = []
+    for try await step in await h.pipeline.stream(id: "asset-1", thumbhash: nil, tier: .thumbnail) {
+      steps.append(step)
+    }
+    #expect(steps.count == 1)
+    #expect(tierOf(steps[0]) == TierStep(tier: .thumbnail, fromCache: false))
+    #expect(await h.service.dataRequests.count == 1)
+    #expect(await h.service.imageRequests.isEmpty)
+  }
+
+  @Test("[WP1] personThumbnail uses the people route and the shared cache path")
+  func personThumbnail() async throws {
+    let h = try await Harness.make()
+    let url = "https://photos.example.ts.net/people/p1/thumbnail"
+    try await h.seedPNG(url: url)
+    var steps: [MediaLoadedImage] = []
+    for try await step in await h.pipeline.personThumbnail(id: "p1") {
+      steps.append(step)
+    }
+    #expect(steps.count == 1)
+    #expect(tierOf(steps[0]) == TierStep(tier: .thumbnail, fromCache: false))
+    let dataRequests = await h.service.dataRequests
+    #expect(dataRequests.count == 1)
+    #expect(dataRequests.first?.url?.absoluteString == url)
+    // Second open serves the memory tier with no new fetch.
+    var cached: [MediaLoadedImage] = []
+    for try await step in await h.pipeline.personThumbnail(id: "p1") {
+      cached.append(step)
+    }
+    #expect(cached.count == 1)
+    #expect(tierOf(cached[0]) == TierStep(tier: .thumbnail, fromCache: true))
+    #expect(await h.service.dataRequests.count == 1)
   }
 
   @Test("[A2-04] offline serves the best cached tier and reports when nothing is cached")
@@ -233,6 +317,7 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
   @Test("[A2-04] placeholder leads the chain when a thumbhash is present")
   func placeholderFirst() async throws {
     let h = try await Harness.make()
+    try await h.seedPNG(url: h.thumbnailURL())
     var steps: [MediaLoadedImage] = []
     for try await step in await h.pipeline.stream(
       asset: h.asset(thumbhash: "1fsDBYBKeI97iIh4eIiIdweIdIBI"), tier: .thumbnail
@@ -245,6 +330,21 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
       return
     }
     #expect(tierOf(steps[1]) == TierStep(tier: .thumbnail, fromCache: false))
+  }
+
+  @Test("[WP1] thumbhash placeholders decode once and memoize per id")
+  func placeholderMemoized() async throws {
+    let h = try await Harness.make()
+    #expect(h.pipeline.cachedPlaceholder(id: "asset-1") == nil)
+    let image = try #require(
+      await h.pipeline.placeholder(id: "asset-1", thumbhash: "1fsDBYBKeI97iIh4eIiIdweIdIBI"))
+    #expect(h.pipeline.cachedPlaceholder(id: "asset-1") != nil)
+    // A second call hits the cache (same pixels), with no network involved.
+    let again = try #require(
+      await h.pipeline.placeholder(id: "asset-1", thumbhash: "1fsDBYBKeI97iIh4eIiIdweIdIBI"))
+    #expect(again.width == image.width && again.height == image.height)
+    #expect(await h.service.dataRequests.isEmpty)
+    #expect(await h.pipeline.placeholder(id: "missing", thumbhash: nil) == nil)
   }
 
   @Test("[A2-04] memory cache budget scales with device RAM inside fixed clamps")

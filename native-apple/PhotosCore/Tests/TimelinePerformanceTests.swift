@@ -44,6 +44,26 @@ import Testing
     #expect(elapsedMs < 50, "timelineBuckets took \(elapsedMs)ms, expected <50ms")
   }
 
+  @Test("[perf][WP1] timelineRows loads 102k rows in one transaction in under 400ms")
+  func wholeTimelinePerformance() async throws {
+    let store = try Self.makeStore(assetCount: 102_000)
+    let scope = ContainerScope(personalUserIds: ["me"])
+
+    let start = DispatchTime.now()
+    let rows = try await store.timelineRows(scope: scope)
+    let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+
+    #expect(rows.count == 102_000)
+    #if DEBUG
+    // Unoptimized GRDB decoding is ~2.7x slower (~1085ms); the 400ms budget is enforced
+    // by `-c release` runs.
+    let budget = 1500.0
+    #else
+    let budget = 400.0
+    #endif
+    #expect(elapsedMs < budget, "timelineRows took \(elapsedMs)ms, expected <\(budget)ms")
+  }
+
   @Test("[perf] timelineAssets page fetch on a 50k-asset DB returns in under 50ms")
   func bucketPagePerformance() async throws {
     let store = try Self.makeStore(assetCount: 50_000)

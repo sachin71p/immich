@@ -58,6 +58,15 @@ public struct MediaEndpoint: Sendable {
     MediaEndpoint(serverURL: serverURL, assetID: motionAssetID).videoPlaybackURL()
   }
 
+  /// Person thumbnail (`GET /people/{id}/thumbnail`) for the People grid. Static because
+  /// the route is keyed by person, not asset — there is no asset id to hang it on.
+  public static func personThumbnailURL(serverURL: URL, personID: String) -> URL {
+    serverURL
+      .appendingPathComponent("people")
+      .appendingPathComponent(personID)
+      .appendingPathComponent("thumbnail")
+  }
+
   // MARK: - private
 
   private func viewURL(size: String?, edited: Bool) -> URL {

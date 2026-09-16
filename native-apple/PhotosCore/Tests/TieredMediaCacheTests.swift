@@ -100,4 +100,22 @@ private func bytes(_ count: Int, seed: UInt8 = 0) -> Data {
     #expect(await reopened.usage()[.preview] == 25)
     #expect(await reopened.retrieve(assetID: "a", tier: .preview) == bytes(25))
   }
+
+  @Test("[WP1] init never scans: instant with 20k files present, index builds lazily")
+  func lazyInitWithManyFiles() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let dir = root.appendingPathComponent("thumbnail")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    for index in 0..<20_000 {
+      try Data("x".utf8).write(
+        to: dir.appendingPathComponent("file-\(index).bin"), options: .atomic)
+    }
+    let start = DispatchTime.now()
+    let cache = TieredMediaCache(rootDirectory: root, budgets: CacheBudgets(bytes: [:]))
+    let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+    #expect(elapsedMs < 5, "init took \(elapsedMs)ms, expected <5ms (no filesystem access)")
+    // The lazy scan still finds everything (usage awaits the detached index).
+    #expect(await cache.usage()[.thumbnail] == 20_000)
+    try FileManager.default.removeItem(at: root)
+  }
 }

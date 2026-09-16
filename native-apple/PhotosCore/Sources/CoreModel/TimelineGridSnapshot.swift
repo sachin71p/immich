@@ -188,29 +188,25 @@ public final class TimelineGridSnapshot: Sendable {
       keptRows.append(row)
     }
     var keptSections: [Section] = []
+    // A year marker heads the months that follow it, so it is emitted just before the
+    // first surviving month — never after (a marker whose months are all gone is dropped).
     var pendingYear: Section?
-    func flushYear(hasMonths: Bool) {
-      if hasMonths, let year = pendingYear { keptSections.append(year) }
-      pendingYear = nil
-    }
-    // Sections are in order; a year marker heads the months that follow it.
-    var monthKeptSinceYear = false
     for section in sections {
       if section.kind == .year, section.range.isEmpty {
-        flushYear(hasMonths: monthKeptSinceYear)
-        // Rebase the marker to the current tail (still empty — header only).
+        // Rebased to the current tail (still empty — header only).
         pendingYear = Section(
           header: section.header, kind: .year, range: keptRows.count..<keptRows.count)
-        monthKeptSinceYear = false
         continue
       }
       let kept = section.range.compactMap { remap[$0] }
       guard let first = kept.first, let last = kept.last else { continue }
+      if let year = pendingYear {
+        keptSections.append(year)
+        pendingYear = nil
+      }
       // `remap` preserves order, so kept indexes are contiguous.
       keptSections.append(Section(header: section.header, kind: section.kind, range: first..<(last + 1)))
-      monthKeptSinceYear = true
     }
-    flushYear(hasMonths: monthKeptSinceYear)
     return Self.makeSnapshot(
       rows: keptRows, sections: keptSections, generation: generation, revision: 0)
   }
@@ -247,13 +243,23 @@ public final class TimelineGridSnapshot: Sendable {
   static func makeSnapshot(
     rows: [TimelineRow], sections: [Section], generation: Int, revision: Int
   ) -> TimelineGridSnapshot {
-    let (photos, videos) = counts(of: rows)
+    // One fused pass — dayKeys, counts, index map and date range together, so `build`
+    // stays a true single pass over the rows.
     var dayKeys: [String] = []
     dayKeys.reserveCapacity(rows.count)
+    var indexById: [String: Int] = [:]
+    indexById.reserveCapacity(rows.count)
+    var photos = 0
+    var videos = 0
     var earliest: Date?
     var latest: Date?
-    for row in rows {
+    for (index, row) in rows.enumerated() {
       dayKeys.append(dayKey(for: row.localDateTime))
+      indexById[row.id] = index
+      switch row.mediaKind {
+      case .video: videos += 1
+      default: photos += 1
+      }
       if let date = row.localDateTime {
         if earliest == nil || date < earliest! { earliest = date }
         if latest == nil || date > latest! { latest = date }
@@ -263,7 +269,7 @@ public final class TimelineGridSnapshot: Sendable {
     if let earliest, let latest { range = earliest...latest } else { range = nil }
     return TimelineGridSnapshot(
       generation: generation, revision: revision, rows: rows, sections: sections,
-      indexById: indexMap(of: rows), dayKeys: dayKeys,
+      indexById: indexById, dayKeys: dayKeys,
       photoCount: photos, videoCount: videos, dateRange: range)
   }
 
@@ -287,16 +293,33 @@ public final class TimelineGridSnapshot: Sendable {
   }
 
   /// "yyyy-MM-dd" in GMT: `localDateTime` is stored as local wall time in UTC (the Immich
-  /// convention), so GMT components recover the wall clock. Integer formatting — no
-  /// `DateFormatter` anywhere on this path. Matches `MacMainWindow.dateString` ("yyyy-MM-dd",
+  /// convention), so GMT components recover the wall clock. Pure integer civil-date math
+  /// (no `Calendar`, no `DateFormatter` anywhere on this path — both cost microseconds per
+  /// row, fatal at 102k rows). Matches `MacMainWindow.dateString` ("yyyy-MM-dd",
   /// en_US_POSIX) for viewers in GMT; elsewhere it intentionally reflects wall time, not zone.
   static func dayKey(for date: Date?) -> String {
     guard let date else { return "" }
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-    let parts = calendar.dateComponents([.year, .month, .day], from: date)
-    return String(
-      format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    // Days since the Unix epoch, floored (pre-1970 dates floor toward -1, not 0).
+    let days = Int(floor(date.timeIntervalSince1970 / 86_400))
+    // Howard Hinnant's civil_from_days: proleptic Gregorian, valid for the full Int range.
+    let shifted = days + 719_468
+    let era = (shifted >= 0 ? shifted : shifted - 146_096) / 146_097
+    let dayOfEra = shifted - era * 146_097
+    let yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36_524 - dayOfEra / 146_096) / 365
+    let year = yearOfEra + era * 400
+    let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+    let monthPart = (5 * dayOfYear + 2) / 153
+    let day = dayOfYear - (153 * monthPart + 2) / 5 + 1
+    let month = monthPart + (monthPart < 10 ? 3 : -9)
+    let fullYear = year + (month <= 2 ? 1 : 0)
+    return "\(pad(fullYear, to: 4))-\(pad(month, to: 2))-\(pad(day, to: 2))"
+  }
+
+  /// Zero-pads `value` to `width` digits (years can exceed 4 digits; never truncated).
+  private static func pad(_ value: Int, to width: Int) -> String {
+    var text = String(value)
+    while text.count < width { text = "0" + text }
+    return text
   }
 }
 
