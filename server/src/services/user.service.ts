@@ -29,11 +29,11 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { AssetRelocationService } from 'src/services/asset-relocation.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
-import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 
 @Injectable()

@@ -736,9 +736,9 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getByIds.mockResolvedValue([asset]);
 
-      await expect(
-        sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
 
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });

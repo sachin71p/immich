@@ -7,16 +7,16 @@ import { UserAdminCreateSchema } from 'src/dtos/user.dto.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { newTestService } from 'test/utils.js';
 
+const setup = () => {
+  const { sut, mocks } = newTestService(LibraryService);
+  mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+  mocks.storage.checkFileExists.mockResolvedValue(true);
+  return { sut, mocks };
+};
+
 describe('fork T1 upload-path and storage-label validation', () => {
   describe('[R9-03] validateUploadPath', () => {
     const imports = ['/import/archive'];
-
-    const setup = () => {
-      const { sut, mocks } = newTestService(LibraryService);
-      mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
-      mocks.storage.checkFileExists.mockResolvedValue(true);
-      return { sut, mocks };
-    };
 
     it('rejects a path outside every import path', async () => {
       const { sut } = setup();

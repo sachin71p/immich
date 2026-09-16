@@ -6,7 +6,7 @@
 //
 // Run from the server workspace so the server's own sharp +
 // exiftool-vendored are used (no new dependencies):
-//   cd server && pnpm exec tsc --ignoreConfig --module commonjs --target es2022 \
+//   cd server && pnpm exec tsc --ignoreConfig --module es2022 --target es2022 \
 //     --moduleResolution bundler --esModuleInterop --skipLibCheck --types node \
 //     --outDir /tmp/fork-gen test/fork-fixtures/generate.ts \
 //   && NODE_PATH="$PWD/node_modules" node /tmp/fork-gen/generate.js
@@ -14,12 +14,12 @@
 // Regenerate only when the manifest spec changes. Deterministic: pixels come
 // from a seeded PRNG, so re-runs produce byte-identical files.
 
+import { ExifTool } from 'exiftool-vendored';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import sharp from 'sharp';
-import { ExifTool } from 'exiftool-vendored';
 
 interface SidecarSpec {
   date?: string;
@@ -56,7 +56,7 @@ interface FixtureSpec {
 
 const findRepoRoot = (): string => {
   // Works both as generate.ts (server workspace) and compiled to /tmp.
-  for (const start of [__dirname, process.cwd()]) {
+  for (const start of [import.meta.dirname, process.cwd()]) {
     let dir = start;
     for (let i = 0; i < 6; i++) {
       if (existsSync(join(dir, 'e2e', 'fork-assets', 'manifest.json'))) {
@@ -77,7 +77,7 @@ const MAX_BYTES = 150 * 1024;
 const mulberry32 = (seed: number) => {
   let state = seed >>> 0;
   return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
+    state = (state + 0x6d_2b_79_f5) >>> 0;
     let value = state;
     value = Math.imul(value ^ (value >>> 15), value | 1);
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
@@ -116,16 +116,14 @@ const renderPixels = (spec: FixtureSpec): Buffer => {
 
 const sidecarXml = (spec: FixtureSpec): string => {
   const date = spec.sidecar?.date ?? spec.date ?? '2022:01:01 00:00:00';
-  const keywords = (spec.sidecar?.keywords ?? [])
-    .map((k) => `      <rdf:li>${k}</rdf:li>`)
-    .join('\n');
+  const keywords = (spec.sidecar?.keywords ?? []).map((k) => `      <rdf:li>${k}</rdf:li>`).join('\n');
   const custom = spec.sidecar?.customNs
     ? `    <rdf:Description rdf:about="" xmlns:fork="https://fork.example/ns/1.0" fork:makerNote="simulated-makernote-payload"/>\n`
     : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-    <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:DateTimeOriginal="${date.replace(/:/g, '-').replace(' ', 'T')}"/>
+    <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:DateTimeOriginal="${date.replaceAll(':', '-').replace(' ', 'T')}"/>
 ${custom}    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
       <dc:subject>
         <rdf:Seq>
@@ -141,7 +139,7 @@ ${keywords}
 const sha256 = (path: string): string => createHash('sha256').update(readFileSync(path)).digest('hex');
 
 const num = (value: unknown): number | undefined =>
-  typeof value === 'number' ? value : typeof value === 'string' ? Number.parseFloat(value) : undefined;
+  typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : undefined;
 
 async function main(): Promise<void> {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { generated: FixtureSpec[] };
@@ -261,7 +259,7 @@ async function main(): Promise<void> {
       // exiftool-vendored returns dates as ExifDateTime objects whose
       // toString() is ISO; rawValue keeps the original EXIF spelling.
       const dto =
-        meta.DateTimeOriginal == null
+        meta.DateTimeOriginal === null || meta.DateTimeOriginal === undefined
           ? ''
           : String((meta.DateTimeOriginal as { rawValue?: unknown }).rawValue ?? meta.DateTimeOriginal);
       if (spec.date && !spec.noDate && !dto.startsWith(spec.date)) {
@@ -287,7 +285,12 @@ async function main(): Promise<void> {
       if (spec.gps) {
         const lat = num(meta.GPSLatitude);
         const lon = num(meta.GPSLongitude);
-        if (lat === undefined || lon === undefined || Math.abs(lat - spec.gps[0]) > 1e-4 || Math.abs(lon - spec.gps[1]) > 1e-4) {
+        if (
+          lat === undefined ||
+          lon === undefined ||
+          Math.abs(lat - spec.gps[0]) > 1e-4 ||
+          Math.abs(lon - spec.gps[1]) > 1e-4
+        ) {
           fail(`${spec.id}: GPS=${lat},${lon}, expected ${spec.gps}`);
         }
       }
@@ -316,5 +319,5 @@ async function main(): Promise<void> {
 
 void main().catch((error: unknown) => {
   console.error(error);
-  process.exit(1);
+  process.exitCode = 1;
 });

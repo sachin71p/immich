@@ -115,7 +115,7 @@ export class ContainerScopeService {
     }
     if (filter.libraryId) {
       const libraries = await this.libraryRepository.getShared(auth.user.id);
-      if (!libraries.some((library) => library.id === filter.libraryId)) {
+      if (libraries.every((library) => library.id !== filter.libraryId)) {
         throw new ForbiddenException('You do not have access to this library');
       }
       return { personalUserIds: [], spaceIds: [], libraryIds: [filter.libraryId] };
@@ -151,7 +151,7 @@ export class ContainerScopeService {
       spaceIds: spaces.filter(({ showInTimeline }) => showInTimeline).map(({ id }) => id),
       libraryIds: libraries
         .filter(({ id, ownerId, showInTimeline }) =>
-          ownerId !== auth.user.id ? (showInTimeline ?? true) : !preferences.hiddenOwnedLibraryIds.includes(id),
+          ownerId === auth.user.id ? !preferences.hiddenOwnedLibraryIds.includes(id) : (showInTimeline ?? true),
         )
         .map(({ id }) => id),
     };

@@ -5,6 +5,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createReadStream, existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import readLine from 'node:readline';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 import { citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
@@ -15,7 +16,6 @@ import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { withContainerScope } from 'src/utils/container-scope.js';
-import type { ContainerScope } from 'src/utils/container-scope.js';
 
 export interface MapMarkerSearchOptions {
   isArchived?: boolean;

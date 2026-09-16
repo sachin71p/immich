@@ -1,7 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { vitest } from 'vitest';
-import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { UserMetadataKey } from 'src/enum.js';
+import { ContainerScopeService } from 'src/utils/container-scope.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
 describe(ContainerScopeService.name, () => {

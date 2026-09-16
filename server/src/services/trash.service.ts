@@ -5,8 +5,8 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { TrashResponseDto } from 'src/dtos/trash.dto.js';
 import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { batched } from 'src/utils/misc.js';
 import { ContainerScopeService } from 'src/utils/container-scope.js';
+import { batched } from 'src/utils/misc.js';
 
 @Injectable()
 export class TrashService extends BaseService {

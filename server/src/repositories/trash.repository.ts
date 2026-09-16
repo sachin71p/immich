@@ -1,10 +1,10 @@
 import { InjectKysely } from 'nestjs-kysely';
 import type { Kysely } from 'kysely';
+import type { ContainerScope } from 'src/utils/container-scope.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { withContainerScope } from 'src/utils/container-scope.js';
-import type { ContainerScope } from 'src/utils/container-scope.js';
 
 export class TrashRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
