@@ -13,45 +13,47 @@ import Rules
 extension PhotosLocalStore {
   /// Badge flags for one timeline entry. Computed in SQL (integers), decoded as `Bool`s —
   /// no per-row string work in Swift.
-  struct TimelineIndexFlags: OptionSet, Sendable, Hashable {
-    let rawValue: Int
+  public struct TimelineIndexFlags: OptionSet, Sendable, Hashable {
+    public let rawValue: Int
 
-    static let video = TimelineIndexFlags(rawValue: 1 << 0)
-    static let livePhoto = TimelineIndexFlags(rawValue: 1 << 1)
-    static let favorite = TimelineIndexFlags(rawValue: 1 << 2)
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    public static let video = TimelineIndexFlags(rawValue: 1 << 0)
+    public static let livePhoto = TimelineIndexFlags(rawValue: 1 << 1)
+    public static let favorite = TimelineIndexFlags(rawValue: 1 << 2)
     /// Space or external-library container (the `person.2.fill` top-right badge).
-    static let sharedContainer = TimelineIndexFlags(rawValue: 1 << 3)
-    static let screenshot = TimelineIndexFlags(rawValue: 1 << 4)
-    static let edited = TimelineIndexFlags(rawValue: 1 << 5)
+    public static let sharedContainer = TimelineIndexFlags(rawValue: 1 << 3)
+    public static let screenshot = TimelineIndexFlags(rawValue: 1 << 4)
+    public static let edited = TimelineIndexFlags(rawValue: 1 << 5)
   }
 
   /// One compact timeline entry: id, capture date, badge flags, video duration.
-  struct TimelineIndexEntry: Sendable, Hashable {
-    var id: String
-    var localDateTime: Date?
-    var flags: TimelineIndexFlags
+  public struct TimelineIndexEntry: Sendable, Hashable {
+    public var id: String
+    public var localDateTime: Date?
+    public var flags: TimelineIndexFlags
     /// Video duration in seconds (nil for stills).
-    var durationSeconds: Int?
+    public var durationSeconds: Int?
   }
 
   /// The whole visible timeline in display order (newest first), plus an id lookup.
   /// A struct of arrays-in-one: `entries` is the order, `indexById` the random access.
-  struct TimelineIndex: Sendable {
-    var entries: [TimelineIndexEntry]
-    var indexById: [String: Int]
+  public struct TimelineIndex: Sendable {
+    public var entries: [TimelineIndexEntry]
+    public var indexById: [String: Int]
 
-    static let empty = TimelineIndex(entries: [], indexById: [:])
+    public static let empty = TimelineIndex(entries: [], indexById: [:])
   }
 
   /// One bucket header for Years/Months views: key, count, key asset and date range.
   /// The key asset prefers a favorite, else the most recent asset in the bucket.
-  struct TimelineBucketSummary: Sendable, Hashable {
+  public struct TimelineBucketSummary: Sendable, Hashable {
     /// `yyyy` for year buckets, `yyyy-MM` for month buckets, `yyyy-MM-dd` for day buckets.
-    var key: String
-    var count: Int
-    var keyAssetId: String
-    var startDate: Date?
-    var endDate: Date?
+    public var key: String
+    public var count: Int
+    public var keyAssetId: String
+    public var startDate: Date?
+    public var endDate: Date?
   }
 
   /// Shared visibility filter with the other timeline queries: drops trashed/locked assets
@@ -65,7 +67,7 @@ extension PhotosLocalStore {
   /// The compact index: one SQL query ordered by date desc. Flags arrive as integers so
   /// Swift decodes 100k+ rows without per-row string parsing (julianday parses the stored
   /// wall-time-as-UTC text in C, same trick as the row projection).
-  func timelineIndex(scope: ContainerScope) async throws -> TimelineIndex {
+  public func timelineIndex(scope: ContainerScope) async throws -> TimelineIndex {
     let (whereSQL, args) = Self.scopeWhere(scope)
     let sql = """
       SELECT asset.id AS id, julianday(asset.localDateTime) AS localDateTime,
@@ -92,7 +94,7 @@ extension PhotosLocalStore {
   /// Bucket headers with counts, key assets and date ranges — one SQL query using window
   /// functions (`ROW_NUMBER() ... ORDER BY isFavorite DESC, localDateTime DESC` picks the
   /// key asset: favorite first, else most recent). Most recent bucket first.
-  func bucketSummaries(scope: ContainerScope, granularity: Granularity = .month) async throws
+  public func bucketSummaries(scope: ContainerScope, granularity: Granularity = .month) async throws
     -> [TimelineBucketSummary]
   {
     let (whereSQL, args) = Self.scopeWhere(scope)
@@ -118,7 +120,7 @@ extension PhotosLocalStore {
 
   /// Full `TimelineRow`s for the given ids (thumbhash included), in input order, missing ids
   /// dropped. Callers page the visible window through this; chunks keep each read small.
-  func assetsLite(ids: [String]) async throws -> [TimelineRow] {
+  public func assetsLite(ids: [String]) async throws -> [TimelineRow] {
     guard !ids.isEmpty else { return [] }
     var byId: [String: TimelineRow] = [:]
     byId.reserveCapacity(ids.count)

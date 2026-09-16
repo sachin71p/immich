@@ -9,7 +9,7 @@ import Rules
 /// Every query returns `TimelineRow`, never a full `Asset` — A0 Architecture: grid scrolling never waits
 /// on more than id/thumbhash/ratio/type/flags.
 extension PhotosLocalStore {
-  public enum Granularity: String, Sendable {
+  public enum Granularity: String, Sendable, Hashable {
     case year
     case month
     case day
