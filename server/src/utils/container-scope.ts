@@ -50,6 +50,37 @@ export const withContainerScope = (eb: ExpressionBuilder<DB, 'asset'>, scope: Co
   return branches.length === 0 ? eb.lit(false) : eb.or(branches);
 };
 
+/**
+ * Restricts an unaliased asset to a caller's personal ownership or to a
+ * container in which that caller is currently a member. Unlike a nullable
+ * `spaceId`, a nullable `spaceId` alone is not personal: external-library
+ * assets have no space and must retain their library membership check.
+ */
+export const withPersonalOwnershipOrCurrentContainerMembership = (
+  eb: ExpressionBuilder<DB, 'asset'>,
+  userId: string | Expression<string>,
+): Expression<SqlBool> =>
+  eb.or([
+    eb.and([eb('asset.ownerId', '=', userId), eb('asset.spaceId', 'is', null), eb('asset.libraryId', 'is', null)]),
+    eb.exists(
+      eb
+        .selectFrom('shared_space_member')
+        .select('shared_space_member.spaceId')
+        .whereRef('shared_space_member.spaceId', '=', 'asset.spaceId')
+        .where('shared_space_member.userId', '=', userId),
+    ),
+    eb.exists(
+      eb
+        .selectFrom('library')
+        .leftJoin('library_member', (join) =>
+          join.onRef('library_member.libraryId', '=', 'library.id').on('library_member.userId', '=', userId),
+        )
+        .select('library.id')
+        .whereRef('library.id', '=', 'asset.libraryId')
+        .where((eb) => eb.or([eb('library.ownerId', '=', userId), eb('library_member.userId', '=', userId)])),
+    ),
+  ]);
+
 @Injectable()
 export class ContainerScopeService {
   constructor(

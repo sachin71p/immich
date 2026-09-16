@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, AssetVisibility, SharedSpaceRole } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { withPersonalOwnershipOrCurrentContainerMembership } from 'src/utils/container-scope.js';
 import { asUuid } from 'src/utils/database.js';
 
 class ActivityAccess {
@@ -234,29 +235,15 @@ class AssetAccess {
       return new Set<string>();
     }
 
-    return (
-      this.db
-        .selectFrom('asset')
-        .select('asset.id')
-        .where('asset.id', 'in', [...assetIds])
-        .where('asset.ownerId', '=', userId)
-        // fork: shared-libraries
-        .where((eb) =>
-          eb.or([
-            eb('asset.spaceId', 'is', null),
-            eb.exists(
-              eb
-                .selectFrom('shared_space_member')
-                .select('shared_space_member.spaceId')
-                .whereRef('shared_space_member.spaceId', '=', 'asset.spaceId')
-                .where('shared_space_member.userId', '=', userId),
-            ),
-          ]),
-        )
-        .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
-        .execute()
-        .then((assets) => new Set(assets.map((asset) => asset.id)))
-    );
+    return this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', 'in', [...assetIds])
+      .where('asset.ownerId', '=', userId)
+      .where((eb) => withPersonalOwnershipOrCurrentContainerMembership(eb, userId))
+      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      .execute()
+      .then((assets) => new Set(assets.map((asset) => asset.id)));
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -280,6 +267,8 @@ class AssetAccess {
           eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
         ]),
       )
+      .where('asset.spaceId', 'is', null)
+      .where('asset.libraryId', 'is', null)
 
       .where('asset.id', 'in', [...assetIds])
       .execute()
@@ -354,6 +343,7 @@ class AssetFileAccess {
       .innerJoin('asset', 'asset.id', 'asset_file.assetId')
       .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
       .where('asset.ownerId', '=', userId)
+      .where((eb) => withPersonalOwnershipOrCurrentContainerMembership(eb, userId))
       .where('asset_file.id', 'in', [...fileIds])
       .execute()
       .then((files) => new Set(files.map(({ id }) => id)));

@@ -9,6 +9,7 @@ import { MemorySearchDto } from 'src/dtos/memory.dto.js';
 import { AssetOrderWithRandom, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
+import { withPersonalOwnershipOrCurrentContainerMembership } from 'src/utils/container-scope.js';
 
 @Injectable()
 export class MemoryRepository implements IBulkAsset {
@@ -76,6 +77,7 @@ export class MemoryRepository implements IBulkAsset {
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
             .where('asset.deletedAt', 'is', null)
+            .where((eb) => withPersonalOwnershipOrCurrentContainerMembership(eb, ownerId))
             .where((eb) =>
               eb.not(
                 eb.exists(
@@ -195,7 +197,8 @@ export class MemoryRepository implements IBulkAsset {
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')
             .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
-            .where('asset.deletedAt', 'is', null),
+            .where('asset.deletedAt', 'is', null)
+            .where((eb) => withPersonalOwnershipOrCurrentContainerMembership(eb, eb.ref('memory.ownerId'))),
         ).as('assets'),
       )
       .where('id', '=', id)
