@@ -47,11 +47,14 @@ final class MacAppState {
 
   /// Snapshot backing viewer paging, in display order (set when the viewer opens).
   var viewerContext: TimelineGridSnapshot?
-  /// Bumped after every successful `syncNow`. The grid's `reloadKey` includes it so a
-  /// sync-triggered reload keeps the old snapshot until the new one is ready (same
-  /// destination). `SyncCoordinator.syncNow()` returns `true` on any completed session —
-  /// it only reports a dropped concurrent call, not a change count — so there is no
-  /// "applied changes" signal to key off; every successful sync reloads the grid.
+  /// Bumped by `syncNow` only when the session warrants a grid reload (see
+  /// `SyncCoordinator.SyncResult.shouldReloadTimeline`). The applied-changes signal is
+  /// `SyncResult.appliedChanges` — true when the session called `PhotosLocalStore.apply`
+  /// or `wipe` at least once. The grid's `reloadKey` includes this version so a reload
+  /// keeps the old snapshot until the new one is ready (same destination). Idle no-change
+  /// syncs skip the bump entirely, so they no longer rebuild the grid and re-issue the
+  /// prefetch storm behind the Gate-3 hangs. Mutations post change-center events and never
+  /// go through this path.
   var timelineVersion = 0
 
   /// Connection, sync, upload queue and media pipeline all key off `serverURL`+token, so a
@@ -192,14 +195,21 @@ final class MacAppState {
     }
   }
 
-  func syncNow() async {
+  /// - Parameter userInitiated: true for foreground, pull-to-refresh, Sync-Now, login and
+  ///   launch syncs (all current call sites) — those keep the historical always-reload
+  ///   behavior. A background timer (see `SyncCoordinator.startActiveTimer`, currently
+  ///   unwired) passes false so idle no-change sessions skip the grid rebuild.
+  func syncNow(userInitiated: Bool = true) async {
     guard !isSyncing else { return }
     isSyncing = true
     defer { isSyncing = false }
     do {
-      _ = try await sync.syncNow()
+      let result = try await sync.syncWithResult()
       lastSyncError = nil
       lastCompletedSyncAt = Date()
+      // No-change syncs leave the grid (and the metadata refresh feeding the sidebar)
+      // untouched: nothing in the mirror moved, so there is nothing to re-read.
+      guard result.shouldReloadTimeline(userInitiated: userInitiated) else { return }
       timelineVersion += 1
       await refresh()
     } catch {
