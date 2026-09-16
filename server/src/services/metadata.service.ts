@@ -237,9 +237,13 @@ export class MetadataService extends BaseService {
       return;
     }
 
-    const [exifResult, stats] = await Promise.all([
+    const { sidecarFile: registeredSidecar } = getAssetFiles(asset.files);
+    const [exifResult, stats, isRegisteredSidecarPresent] = await Promise.all([
       this.getExifTags(asset),
       this.storageRepository.stat(asset.originalPath),
+      registeredSidecar
+        ? this.storageRepository.checkFileExists(registeredSidecar.path, constants.R_OK)
+        : Promise.resolve(true),
     ]);
     const { tags: exifTags, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
@@ -259,6 +263,17 @@ export class MetadataService extends BaseService {
     }
 
     const tags = this.getTagList(exifTags);
+
+    // fork: shared-libraries (R4-01) - a registered sidecar that is momentarily
+    // missing (relocation moves the original before the sidecar) must not wipe
+    // user tags: readTags reports a missing file as {}, which would null the
+    // tags column and replace associations with [] that no later job restores.
+    // checkFileExists is strictly boolean in production; default to present so
+    // the check only triggers on a confirmed-absent file.
+    const isSidecarInTransit = !!registeredSidecar && !(isRegisteredSidecarPresent ?? true);
+    if (isSidecarInTransit) {
+      this.logger.debug(`Deferring tag sync for asset ${asset.id}: sidecar ${registeredSidecar.path} is in transit`);
+    }
 
     const exifData: Insertable<AssetExifTable> = {
       assetId: asset.id,
@@ -305,7 +320,7 @@ export class MetadataService extends BaseService {
       livePhotoCID: (exifTags.ContentIdentifier || exifTags.MediaGroupUUID) ?? null,
       autoStackId: this.getAutoStackId(exifTags),
 
-      tags: tags.length > 0 ? tags : null,
+      tags: isSidecarInTransit ? undefined : tags.length > 0 ? tags : null,
     };
 
     const audioData =
@@ -382,7 +397,9 @@ export class MetadataService extends BaseService {
           keyframes: keyframeData,
           lockedPropertiesBehavior: 'skip',
         });
-        await this.applyTagList(asset);
+        if (!isSidecarInTransit) {
+          await this.applyTagList(asset);
+        }
       },
     );
 

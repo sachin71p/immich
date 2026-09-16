@@ -613,6 +613,22 @@ describe(MetadataService.name, () => {
       expect(mocks.tag.replaceAssetTags).toHaveBeenCalledWith(asset.id, []);
     });
 
+    it('[R4-01] should keep user tags when the registered sidecar is in transit', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({}, {});
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['moved-with-me'] });
+      mocks.storage.checkFileExists.mockResolvedValueOnce(false);
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledWith(asset.files[0].path, expect.anything());
+      expect(mocks.tag.replaceAssetTags).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.not.objectContaining({ tags: expect.anything() }) }),
+      );
+    });
+
     it('should not apply motion photos if asset is video', async () => {
       const asset = AssetFactory.create({ type: AssetType.Video });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
