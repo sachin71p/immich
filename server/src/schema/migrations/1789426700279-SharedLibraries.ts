@@ -109,8 +109,12 @@ export async function up(db: Kysely<any>): Promise<void> {
   CONSTRAINT "shared_space_pkey" PRIMARY KEY ("id")
 );`.execute(db);
   await sql`COMMENT ON COLUMN "shared_space"."thumbnailAssetId" IS 'Asset ID to be used as thumbnail';`.execute(db);
-  await sql`ALTER TABLE "asset" ADD CONSTRAINT "asset_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "shared_space" ("id") ON UPDATE CASCADE ON DELETE SET NULL;`.execute(db);
+  // Do not let an FK delete clear a container column behind AssetRelocationService. Space deletion
+  // first moves assets to personal and creates relocation rows in SharedSpaceRepository.deleteSpace.
+  await sql`ALTER TABLE "asset" ADD CONSTRAINT "asset_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "shared_space" ("id") ON UPDATE CASCADE ON DELETE RESTRICT;`.execute(db);
   await sql`ALTER TABLE "asset" ADD CONSTRAINT "asset_space_library_exclusive" CHECK ("spaceId" IS NULL OR "libraryId" IS NULL);`.execute(db);
+  // Cast to text so this remains valid when Kysely applies the earlier enum extension in the same batch.
+  await sql`ALTER TABLE "asset" ADD CONSTRAINT "asset_container_not_locked" CHECK (visibility::text != 'locked' OR ("spaceId" IS NULL AND "libraryId" IS NULL));`.execute(db);
   await sql`CREATE OR REPLACE TRIGGER "library_asset_update_audit"
   AFTER UPDATE ON "asset"
   FOR EACH ROW

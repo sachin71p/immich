@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetType } from 'src/enum.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -109,6 +109,27 @@ describe('shared-libraries schema (S1)', () => {
       const space = await newSharedSpace(ctx.database);
 
       await expect(ctx.newAsset({ ownerId: user.id, spaceId: space.id })).resolves.toBeDefined();
+    });
+  });
+
+  describe('container amendment invariants (remediation)', () => {
+    it('[I7] rejects a Locked asset inside a shared space', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const space = await newSharedSpace(ctx.database);
+
+      await expect(
+        ctx.newAsset({ ownerId: user.id, spaceId: space.id, visibility: AssetVisibility.Locked }),
+      ).rejects.toThrow();
+    });
+
+    it('[I6] refuses to delete a space that still holds assets', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const space = await newSharedSpace(ctx.database);
+      await ctx.newAsset({ ownerId: user.id, spaceId: space.id });
+
+      await expect(ctx.database.deleteFrom('shared_space').where('id', '=', space.id).execute()).rejects.toThrow();
     });
   });
 

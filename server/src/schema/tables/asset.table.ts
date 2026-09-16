@@ -100,6 +100,11 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 @Index({ columns: ['spaceId', 'localDateTime'] })
 // fork: shared-libraries
 @Check({ name: 'asset_space_library_exclusive', expression: `"spaceId" IS NULL OR "libraryId" IS NULL` })
+// fork: shared-libraries - Locked visibility is personal-only (I7), including direct SQL writers.
+@Check({
+  name: 'asset_container_not_locked',
+  expression: `visibility::text != 'locked' OR ("spaceId" IS NULL AND "libraryId" IS NULL)`,
+})
 // For all assets, each originalpath must be unique per user and library
 export class AssetTable {
   @PrimaryGeneratedColumn()
@@ -187,6 +192,6 @@ export class AssetTable {
   isEdited!: Generated<boolean>;
 
   // fork: shared-libraries
-  @ForeignKeyColumn(() => SharedSpaceTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  @ForeignKeyColumn(() => SharedSpaceTable, { onDelete: 'RESTRICT', onUpdate: 'CASCADE', nullable: true })
   spaceId!: string | null;
 }
