@@ -443,6 +443,7 @@ struct MacLibraryBrowser: View {
           Label("Favorite", systemImage: "heart")
         }
         .disabled(selectionModel.selected.isEmpty)
+        .accessibilityIdentifier("favorite-button")
         Button {
           rotate(ids: selectionModel.selectedInOrder)
         } label: {
@@ -460,6 +461,7 @@ struct MacLibraryBrowser: View {
           Button("Manage") {
             managingSpace = state.spaces.first(where: { $0.space.id == id })?.space
           }
+          .accessibilityIdentifier("space-manage-button")
         }
       }
       Button {
@@ -775,6 +777,11 @@ struct MacLibraryBrowser: View {
       relativeTo: view.bounds, of: view, preferredEdge: .minY)
   }
 
+  /// XCUITest launches (`--fixture-seed`, same flag `HeirloomMacOSApp` boots the seeded
+  /// world on) have no server, so favorite/trash apply straight to the local store.
+  /// Production path unchanged.
+  private var isFixtureSeeded: Bool { CommandLine.arguments.contains("--fixture-seed") }
+
   private func toggleFavorite(ids: [String]) {
     guard !ids.isEmpty else { return }
     Task { @MainActor in
@@ -788,7 +795,13 @@ struct MacLibraryBrowser: View {
           let assets = try await state.store.assets(ids: Array(ids.prefix(1)))
           make = !(assets.first?.isFavorite ?? false)
         }
-        try await state.assetMutations().setFavorite(ids: ids, isFavorite: make)
+        if isFixtureSeeded {
+          // `--fixture-seed` launches have no server (fixture.invalid): apply straight to
+          // the local store so XCUITest can exercise favorite/trash (WP4 Step 3).
+          try await state.store.setFavorite(ids: ids, isFavorite: make)
+        } else {
+          try await state.assetMutations().setFavorite(ids: ids, isFavorite: make)
+        }
         MacAssetChangeCenter.shared.post(.favorite(ids: Set(ids), isFavorite: make))
       } catch is CancellationError {
         // Cancellation isn't a failure: no toast.
@@ -891,7 +904,12 @@ struct MacLibraryBrowser: View {
     guard !ids.isEmpty else { return }
     Task { @MainActor in
       do {
-        try await state.assetMutations().trash(ids: ids)
+        if isFixtureSeeded {
+          // Same fixture-seed reasoning as favorite above: no server, local store only.
+          try await state.store.trash(ids: ids)
+        } else {
+          try await state.assetMutations().trash(ids: ids)
+        }
         MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
         showToast("Moved to Recently Deleted.")
       } catch is CancellationError {

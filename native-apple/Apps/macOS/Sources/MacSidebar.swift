@@ -70,6 +70,7 @@ struct MacSidebarView: View {
           Label("New Album…", systemImage: "plus")
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar-new-album")
       }
       Section("Utilities") {
         row(.imports)

@@ -244,6 +244,13 @@ struct MacCameraImportView: View {
       if browser.devices.isEmpty {
         Text("No cameras or SD cards found. Connect a device and make sure it is unlocked.")
           .foregroundStyle(.secondary)
+        // The Done row below only renders with devices: without this, a device-less sheet
+        // has no dismiss control at all (U12 pattern). Escape closes via `.cancelAction`.
+        HStack {
+          Spacer()
+          Button("Done") { dismiss() }
+            .keyboardShortcut(.cancelAction)
+        }
       } else {
         Picker("Device", selection: $selectedDeviceName) {
           ForEach(browser.devices, id: \.name) { device in
