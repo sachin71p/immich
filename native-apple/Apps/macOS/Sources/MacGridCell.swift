@@ -126,6 +126,8 @@ final class MacGridCell: NSCollectionViewItem {
     loadTask = nil
     photoView.image = nil
     favoriteButton.alphaValue = 0
-    (view as? MacThumbnailContainerView)?.layer?.borderColor = nil
+    // Never `nil`: with `borderWidth = 4`, CALayer paints an opaque black frame when
+    // `borderColor` is unset (R10). WP3 redoes the cell properly.
+    (view as? MacThumbnailContainerView)?.layer?.borderColor = NSColor.clear.cgColor
   }
 }
