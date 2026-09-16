@@ -12,6 +12,9 @@ struct MacAssetActions {
   var toggleInspector: () -> Void
   var openViewer: () -> Void
   var preview: () -> Void
+  /// Whether a selection exists. The grid sets it per render; the viewer always has a
+  /// current asset, so the default is true and viewer construction is untouched.
+  var hasSelection: Bool = true
 }
 
 extension FocusedValues {
@@ -53,10 +56,10 @@ struct MacCommands: Commands {
         .disabled(actions == nil)
       Divider()
       Button("Add to Album…") { actions?.addToAlbum() }
-        .disabled(actions == nil)
+        .disabled(actions?.hasSelection != true)
       Button("Move to…") { actions?.move() }
         .keyboardShortcut("m", modifiers: [.command, .shift])
-        .disabled(actions == nil)
+        .disabled(actions?.hasSelection != true)
       Divider()
       Button("Delete") { actions?.trash() }
         .keyboardShortcut(.delete, modifiers: .command)

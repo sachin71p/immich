@@ -34,7 +34,7 @@ struct MacSidebarView: View {
         }
       }
       Section("Shared Libraries") {
-        collapsible(state.spaces, id: \.space.id, title: "Shared Libraries") { entry in
+        collapsible(state.spaces, id: \.space.id, title: "Shared Libraries", storageKey: "spaces") { entry in
           row(.space(entry.space.id), title: entry.space.name)
         }
         Button {
@@ -46,17 +46,17 @@ struct MacSidebarView: View {
         .accessibilityIdentifier("sidebar-new-space")
       }
       Section("Shared Albums") {
-        collapsible(state.albums.filter(\.isShared), id: \.album.id, title: "Shared Albums") { entry in
+        collapsible(state.albums.filter(\.isShared), id: \.album.id, title: "Shared Albums", storageKey: "shared-albums") { entry in
           row(.album(entry.album.id), title: entry.album.name)
         }
       }
       Section("External Libraries") {
-        collapsible(state.libraries, id: \.library.id, title: "External Libraries") { entry in
+        collapsible(state.libraries, id: \.library.id, title: "External Libraries", storageKey: "extlibs") { entry in
           row(.externalLibrary(entry.library.id), title: entry.library.name)
         }
       }
       Section {
-        DisclosureGroup("Albums") {
+        DisclosureGroup("Albums", isExpanded: disclosureBinding("albums")) {
           // All Albums is a real destination, not a disclosure affordance. It opens the album
           // overview in the main pane while the disclosure keeps the sidebar compact.
           row(.allAlbums)
@@ -82,7 +82,7 @@ struct MacSidebarView: View {
       }
       if !state.cameras.isEmpty {
         Section {
-          DisclosureGroup("Captured With") {
+          DisclosureGroup("Captured With", isExpanded: disclosureBinding("captured-with")) {
             ForEach(state.cameraCategories) { category in
               row(.camera(category.name), title: "\(category.name) (\(category.count))")
             }
@@ -103,15 +103,24 @@ struct MacSidebarView: View {
       }
   }
 
-  /// Photos keeps long sidebar collections compact. The disclosure starts closed, so a large
-  /// membership never forces the sidebar to show every source on launch.
+  /// Expand/collapse persists per section in UserDefaults (brief: Albums must persist);
+  /// sections start expanded, matching `DisclosureGroup`'s default.
+  private func disclosureBinding(_ key: String) -> Binding<Bool> {
+    Binding(
+      get: { UserDefaults.standard.object(forKey: "Heirloom.sidebar.\(key).expanded") as? Bool ?? true },
+      set: { UserDefaults.standard.set($0, forKey: "Heirloom.sidebar.\(key).expanded") }
+    )
+  }
+
+  /// Photos keeps long sidebar collections compact: more than 3 entries collapse behind a
+  /// persisted disclosure instead of forcing the sidebar to show every source on launch.
   @ViewBuilder
   private func collapsible<Entry, ID: Hashable, Row: View>(
-    _ entries: [Entry], id: KeyPath<Entry, ID>, title: String,
+    _ entries: [Entry], id: KeyPath<Entry, ID>, title: String, storageKey: String,
     @ViewBuilder rowContent: @escaping (Entry) -> Row
   ) -> some View {
     if entries.count > 3 {
-      DisclosureGroup(title) {
+      DisclosureGroup(title, isExpanded: disclosureBinding(storageKey)) {
         ForEach(entries, id: id) { entry in rowContent(entry) }
       }
     } else {
