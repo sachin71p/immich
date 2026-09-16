@@ -6,7 +6,9 @@ import Foundation
 import Rules
 import Testing
 
-/// A8 editor tests: recipe serialization stability, render determinism, undo/redo +
+/// A8 editor tests: recipe serialization stability, render determinism ([AP-05] on
+/// synthetic fixtures; the `@personal portrait.heic` depth half needs personal
+/// fixtures, absent — see e2e/fork-assets/personal/README.md), undo/redo +
 /// copy/paste, permission gating via Rules, and the upstream/recipe persistence split.
 @Suite struct EditingTests {
   // MARK: - Serialization stability
@@ -138,7 +140,7 @@ import Testing
       .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
   }
 
-  @Test("Same recipe + same pixels render to the same hash (determinism)")
+  @Test("[AP-05] Same recipe + same pixels render to the same hash (determinism)")
   func renderDeterministic() {
     let renderer = EditRenderer()
     let src = fixtureImage()
@@ -153,7 +155,7 @@ import Testing
     #expect(first == second)
   }
 
-  @Test("Empty recipe renders pixel-identical to the source; edits change pixels")
+  @Test("[AP-05] Empty recipe renders pixel-identical to the source; edits change pixels")
   func renderChangesPixels() {
     let renderer = EditRenderer()
     let src = fixtureImage()

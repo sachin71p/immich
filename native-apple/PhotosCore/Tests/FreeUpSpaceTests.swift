@@ -24,7 +24,7 @@ private func photo(
 }
 
 @Suite struct FreeUpSpaceTests {
-  @Test("[A6] cutoff keeps recent photos, offers old backed-up ones")
+  @Test("[AP-03] cutoff keeps recent photos, offers old backed-up ones")
   func cutoff() {
     let now = Date()
     let photos = [photo("old", daysAgo: 60), photo("new", daysAgo: 5)]
@@ -37,7 +37,7 @@ private func photo(
     #expect(got.map(\.localIdentifier) == ["Lold"])
   }
 
-  @Test("[A6] keep-last-N-days window excludes recent photos")
+  @Test("[AP-03] keep-last-N-days window excludes recent photos")
   func keepLastNDays() {
     let now = Date()
     let photos = [photo("old", daysAgo: 60), photo("new", daysAgo: 5)]
@@ -49,7 +49,7 @@ private func photo(
     #expect(got.map(\.localIdentifier) == ["Lold"])
   }
 
-  @Test("[A6] favorites kept by default, offered when the toggle is off")
+  @Test("[AP-03] favorites kept by default, offered when the toggle is off")
   func favorites() {
     let photos = [photo("fav", daysAgo: 60, favorite: true)]
     let backed: Set<String> = ["sha-fav"]
@@ -63,7 +63,7 @@ private func photo(
     #expect(offered.map(\.localIdentifier) == ["Lfav"])
   }
 
-  @Test("[A6] kept albums are excluded even when old and backed up")
+  @Test("[AP-03] kept albums are excluded even when old and backed up")
   func keptAlbums() {
     let photos = [
       photo("kept", daysAgo: 60, albums: ["album-1"]),
@@ -76,7 +76,7 @@ private func photo(
     #expect(got.map(\.localIdentifier) == ["Lfree"])
   }
 
-  @Test("[A6] server-missing and server-trashed checksums are never candidates")
+  @Test("[AP-03] server-missing and server-trashed checksums are never candidates")
   func serverVerification() {
     // `backedUpChecksums` is the post-verification set: the verifier already
     // dropped missing (bulk-check `accept`) and trashed (`isTrashed`) entries.
@@ -88,7 +88,7 @@ private func photo(
     #expect(got.map(\.localIdentifier) == ["Lok"])
   }
 
-  @Test("[A6] unknown dates and unbounded options offer nothing")
+  @Test("[AP-03] unknown dates and unbounded options offer nothing")
   func safeDegenerates() {
     let backed: Set<String> = ["sha-nodate"]
     let nodate = FreeUpSpacePlanner.selectCandidates(
@@ -101,7 +101,7 @@ private func photo(
     #expect(unbounded.isEmpty)
   }
 
-  @Test("[A6] preview sums counts + bytes; batches chunk the deletion pass")
+  @Test("[AP-03] preview sums counts + bytes; batches chunk the deletion pass")
   func previewAndBatches() {
     let photos = (0..<250).map { photo("p\($0)", daysAgo: 60, bytes: 2_000_000) }
     let (count, bytes) = FreeUpSpacePlanner.preview(photos)
@@ -113,7 +113,7 @@ private func photo(
     #expect(FreeUpSpacePlanner.batches([]).isEmpty)
   }
 
-  @Test("[A6] budget steps are shared; iOS and macOS defaults differ")
+  @Test("[AP-03] budget steps are shared; iOS and macOS defaults differ")
   func budgetPresets() {
     #expect(StoragePrefs.budgetStepsBytes.first == 0)
     #expect(StoragePrefs.budgetStepsBytes == StoragePrefs.budgetStepsBytes.sorted())
@@ -125,7 +125,7 @@ private func photo(
     #expect(StoragePrefs().suggestFreeUpAfterBackup == true)
   }
 
-  @Test("[A6] StoragePrefs round-trips through LocalStore and defaults fresh")
+  @Test("[AP-03] StoragePrefs round-trips through LocalStore and defaults fresh")
   func storagePrefsPersistence() async throws {
     let store = try PhotosLocalStore(inMemory: true)
     #expect(await (try store.storagePrefs(for: "u1")) == StoragePrefs())

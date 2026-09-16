@@ -107,7 +107,10 @@ import Upload
 
   // MARK: - live-pair ordering + persistence/resume + dedupe
 
-  @Test("[A5] motion uploads first and the still links its server id")
+  // Live-photo assembly on synthetic fixtures (motion-first ordering + still
+  // linking); the `@personal live.heic/.mov` half needs personal fixtures,
+  // absent — see e2e/fork-assets/personal/README.md.
+  @Test("[AP-06] motion uploads first and the still links its server id")
   func livePairOrdering() async throws {
     let store = try PhotosLocalStore(inMemory: true)
     let fake = FakeTransport()
