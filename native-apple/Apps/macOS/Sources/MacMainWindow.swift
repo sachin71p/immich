@@ -95,6 +95,7 @@ struct MacLibraryBrowser: View {
   @State private var managingSpace: Space?
   @State private var pendingDropMove: (ids: [String], target: MoveTarget)?
   @State private var viewingAssetId: String?
+  @State private var sharingInProgress = false
   @Environment(\.openWindow) private var openWindow
   @SceneStorage("MacSidebar.selection") private var restoredSelection: String?
 
@@ -125,7 +126,7 @@ struct MacLibraryBrowser: View {
         )
       } else {
         detailView
-          .navigationTitle("")
+          .navigationTitle(resolvedTitle)
         .toolbar { toolbarContent }
           .onDrop(of: [.fileURL], isTargeted: nil, perform: handleFileDrop)
       }
@@ -265,7 +266,46 @@ struct MacLibraryBrowser: View {
     }
   }
 
+  /// Resolved toolbar + window title (U24/U25): space/album/external names come from state.
+  private var resolvedTitle: String {
+    selection?.title(in: state) ?? "Library"
+  }
+
+  @ViewBuilder
   private var gridView: some View {
+    // U23: an empty loaded snapshot shows a per-destination empty state instead of a bare
+    // grid. The footer stays so sync status remains visible; pane internals are untouched.
+    if loader.snapshot.rows.isEmpty && loader.phase == .loaded,
+      let empty = (selection ?? .library).emptyState(in: state)
+    {
+      VStack(spacing: 0) {
+        ContentUnavailableView(empty.title, systemImage: empty.symbol, description: Text(empty.message))
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        emptyFooter
+      }
+      .accessibilityIdentifier("asset-grid-empty")
+    } else {
+      gridPane
+    }
+  }
+
+  /// Compact footer twin for the empty state (same counts + sync line as the pane footer).
+  private var emptyFooter: some View {
+    let photos = loader.snapshot.photoCount
+    let videos = loader.snapshot.videoCount
+    return VStack(spacing: 3) {
+      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
+        .font(.headline)
+      Text(syncStatusText)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 12)
+    .accessibilityIdentifier("library-sync-status")
+  }
+
+  private var gridPane: some View {
     MacTimelineGridPane(
       loader: loader,
       pipeline: state.pipeline,
@@ -307,112 +347,119 @@ struct MacLibraryBrowser: View {
 
   // MARK: - toolbar (brief task 2)
 
+  /// Grid destinations get the full grid toolbar; Map/People/Memories/Collections/Search/
+  /// All Albums/Duplicates get a minimal toolbar: title, Sync, Search field (U15/U16/U18).
+  private var isGridToolbar: Bool { selection?.usesGridToolbar ?? true }
+
   @ToolbarContentBuilder
   private var toolbarContent: some ToolbarContent {
     ToolbarItem(placement: .navigation) {
       VStack(alignment: .leading, spacing: 0) {
-        Text(selection?.title ?? "Library").font(.headline)
-        Text(librarySubtitle).font(.caption).foregroundStyle(.secondary)
+        // U5: fixed width + truncation so toolbar items never shift when the subtitle changes.
+        Text(resolvedTitle).font(.headline).lineLimit(1).truncationMode(.tail)
+        Text(librarySubtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
       }
-      .fixedSize()
+      .frame(width: 260, alignment: .leading)
     }
     .sharedBackgroundVisibility(.hidden)
-    ToolbarItemGroup(placement: .principal) {
-      librarySwitcher
-      HStack(spacing: 0) {
-        Button { zoom = max(64, zoom - 16) } label: { Image(systemName: "minus") }
-          .disabled(zoom <= 64)
-        Divider().frame(height: 18)
-        Button { zoom = min(300, zoom + 16) } label: { Image(systemName: "plus") }
-          .disabled(zoom >= 300)
+    if isGridToolbar {
+      ToolbarItemGroup(placement: .principal) {
+        librarySwitcher
+        HStack(spacing: 0) {
+          Button { zoom = max(64, zoom - 16) } label: { Image(systemName: "minus") }
+            .disabled(zoom <= 64)
+          Divider().frame(height: 18)
+          Button { zoom = min(300, zoom + 16) } label: { Image(systemName: "plus") }
+            .disabled(zoom >= 300)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("grid-size-controls")
+        Picker("Grouping", selection: $grouping) {
+          Text("Years").tag(TimelineGrouping.years)
+          Text("Months").tag(TimelineGrouping.months)
+          Text("All Photos").tag(TimelineGrouping.all)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("grouping-segmented")
       }
-      .buttonStyle(.bordered)
-      .accessibilityIdentifier("grid-size-controls")
-      Picker("Grouping", selection: $grouping) {
-        Text("Years").tag(TimelineGrouping.years)
-        Text("Months").tag(TimelineGrouping.months)
-        Text("All Photos").tag(TimelineGrouping.all)
+      ToolbarItem(placement: .automatic) {
+        Button {
+          usesSquareThumbnails.toggle()
+        } label: {
+          Label(
+            usesSquareThumbnails ? "Use Full Aspect Ratio" : "Use Square Thumbnails",
+            systemImage: usesSquareThumbnails ? "rectangle.on.rectangle.angled" : "square.grid.2x2"
+          )
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityIdentifier("thumbnail-display-toggle")
       }
-      .pickerStyle(.segmented)
-      .accessibilityIdentifier("grouping-segmented")
-    }
-    ToolbarItem(placement: .automatic) {
-      Button {
-        usesSquareThumbnails.toggle()
-      } label: {
-        Label(
-          usesSquareThumbnails ? "Use Full Aspect Ratio" : "Use Square Thumbnails",
-          systemImage: usesSquareThumbnails ? "rectangle.on.rectangle.angled" : "square.grid.2x2"
-        )
+      ToolbarItem(placement: .automatic) {
+        Menu {
+          sortChoice(.newestFirst)
+          sortChoice(.oldestFirst)
+        } label: {
+          Label("Sort", systemImage: "line.3.horizontal.decrease")
+        }
+        .labelStyle(.iconOnly)
+        .menuIndicator(.hidden)
+        .accessibilityIdentifier("timeline-sort-menu")
       }
-      .labelStyle(.iconOnly)
-      .accessibilityIdentifier("thumbnail-display-toggle")
-    }
-    ToolbarItem(placement: .automatic) {
-      Menu {
-        sortChoice(.newestFirst)
-        sortChoice(.oldestFirst)
-      } label: {
-        Label("Sort", systemImage: "line.3.horizontal.decrease")
+      ToolbarItem(placement: .automatic) {
+        Menu {
+          filterChoice(.all)
+          Divider()
+          filterChoice(.favorites)
+          filterChoice(.edited)
+          filterChoice(.photos)
+          filterChoice(.videos)
+          filterChoice(.screenshots)
+          filterChoice(.capturedByMe)
+          filterChoice(.notInAlbum)
+        } label: {
+          Label("Filter", systemImage: "ellipsis")
+        }
+        .labelStyle(.iconOnly)
+        .menuIndicator(.hidden)
+        .accessibilityIdentifier("timeline-filter-menu")
       }
-      .labelStyle(.iconOnly)
-      .menuIndicator(.hidden)
-      .accessibilityIdentifier("timeline-sort-menu")
-    }
-    ToolbarItem(placement: .automatic) {
-      Menu {
-        filterChoice(.all)
-        Divider()
-        filterChoice(.favorites)
-        filterChoice(.edited)
-        filterChoice(.photos)
-        filterChoice(.videos)
-        filterChoice(.screenshots)
-        filterChoice(.capturedByMe)
-        filterChoice(.notInAlbum)
-      } label: {
-        Label("Filter", systemImage: "ellipsis")
-      }
-      .labelStyle(.iconOnly)
-      .menuIndicator(.hidden)
-      .accessibilityIdentifier("timeline-filter-menu")
     }
     ToolbarItemGroup {
-      Button {
-        if let first = selectionModel.selectedInOrder.first { openViewer(id: first) }
-        else { showToast("Select an item to view its info.") }
-      } label: {
-        Label("Info", systemImage: "info.circle")
-      }
-      Button {
-        guard !selectionModel.selected.isEmpty else {
-          showToast("Select an item to share.")
-          return
+      if isGridToolbar {
+        // Grid Info opens the viewer; a standalone inspector is WP5's call (brief: keep
+        // current behavior unless WP5 reports otherwise).
+        Button {
+          if let first = selectionModel.selectedInOrder.first { openViewer(id: first) }
+          else { showToast("Select an item to view its info.") }
+        } label: {
+          Label("Info", systemImage: "info.circle")
         }
-        showToast("Sharing \(selectionModel.selected.count) selected item\(selectionModel.selected.count == 1 ? "" : "s").")
-      } label: {
-        Label("Share", systemImage: "square.and.arrow.up")
-      }
-      Button { toggleFavorite(ids: selectionModel.selectedInOrder) } label: {
-        Label("Favorite", systemImage: "heart")
-      }
-      .disabled(selectionModel.selected.isEmpty)
-      Button {
-        rotate(ids: selectionModel.selectedInOrder)
-      } label: {
-        Label("Rotate", systemImage: "rotate.right")
-      }
-      .disabled(selectionModel.selected.isEmpty)
-      Button(isSelecting ? "Done" : "Select") {
-        isSelecting.toggle()
-        if !isSelecting { selectionModel.clear() }
-      }
-      .accessibilityIdentifier("timeline-select-button")
-      if let selection, case .space(let id) = selection,
-        state.spaces.contains(where: { $0.space.id == id })
-      {
-        Button("Manage") {
-          managingSpace = state.spaces.first(where: { $0.space.id == id })?.space
+        Button { shareSelected() } label: {
+          Label("Share", systemImage: "square.and.arrow.up")
+        }
+        .disabled(selectionModel.selected.isEmpty || sharingInProgress)
+        .accessibilityIdentifier("share-button")
+        Button { toggleFavorite(ids: selectionModel.selectedInOrder) } label: {
+          Label("Favorite", systemImage: "heart")
+        }
+        .disabled(selectionModel.selected.isEmpty)
+        Button {
+          rotate(ids: selectionModel.selectedInOrder)
+        } label: {
+          Label("Rotate", systemImage: "rotate.right")
+        }
+        .disabled(selectionModel.selected.isEmpty)
+        Button(isSelecting ? "Done" : "Select") {
+          isSelecting.toggle()
+          if !isSelecting { selectionModel.clear() }
+        }
+        .accessibilityIdentifier("timeline-select-button")
+        if let selection, case .space(let id) = selection,
+          state.spaces.contains(where: { $0.space.id == id })
+        {
+          Button("Manage") {
+            managingSpace = state.spaces.first(where: { $0.space.id == id })?.space
+          }
         }
       }
       Button {
@@ -656,7 +703,8 @@ struct MacLibraryBrowser: View {
       },
       preview: {
         if let first = ids.first { showPreview(id: first) }
-      }
+      },
+      hasSelection: !ids.isEmpty
     )
   }
 
@@ -670,6 +718,61 @@ struct MacLibraryBrowser: View {
       guard let asset = try? await state.store.asset(id: id) else { return }
       MacPreviewPanel.show(asset: asset, pipeline: state.pipeline)
     }
+  }
+
+  /// Share toolbar button: `NSSharingServicePicker` with the selected originals, staged
+  /// through a temp dir via `MacExporter`. Progress toasts for > 3 items; disabled (and a
+  /// human prompt here) when nothing is selected.
+  private func shareSelected() {
+    let ids = selectionModel.selectedInOrder
+    guard !ids.isEmpty else {
+      showToast("Select an item to share.")
+      return
+    }
+    sharingInProgress = true
+    if ids.count > 3 { showToast("Preparing 0 of \(ids.count) items…") }
+    Task { @MainActor in
+      defer { sharingInProgress = false }
+      do {
+        showSharePicker(urls: try await exportOriginals(ids: ids))
+      } catch is CancellationError {
+        // Cancellation isn't a failure: no toast.
+      } catch {
+        HeirloomLog.ui.error("Share failed: \(error.localizedDescription, privacy: .public)")
+        showToast("Couldn't prepare items for sharing.")
+      }
+    }
+  }
+
+  private func exportOriginals(ids: [String]) async throws -> [URL] {
+    let exporter = MacExporter(serverURL: state.serverURL, tokenProvider: exportTokenProvider)
+    let dir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("HeirloomShare-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    var urls: [URL] = []
+    for (index, id) in ids.enumerated() {
+      try Task.checkCancellation()
+      guard let asset = try await state.store.asset(id: id) else {
+        throw MacExportError.missingAsset(id)
+      }
+      let data = try await exporter.downloadOriginal(asset: asset)
+      if ids.count > 3 { showToast("Preparing \(index + 1) of \(ids.count) items…") }
+      // Index-prefixed so duplicate filenames never collide in the staging dir.
+      let url = dir.appendingPathComponent("\(index + 1)-\(asset.originalFileName)")
+      try data.write(to: url, options: .atomic)
+      urls.append(url)
+    }
+    return urls
+  }
+
+  private func showSharePicker(urls: [URL]) {
+    guard let view = NSApp.keyWindow?.contentView else {
+      HeirloomLog.ui.error("Share failed: no key window for picker.")
+      showToast("Couldn't open sharing.")
+      return
+    }
+    NSSharingServicePicker(items: urls).show(
+      relativeTo: view.bounds, of: view, preferredEdge: .minY)
   }
 
   private func toggleFavorite(ids: [String]) {
@@ -687,8 +790,11 @@ struct MacLibraryBrowser: View {
         }
         try await state.assetMutations().setFavorite(ids: ids, isFavorite: make)
         MacAssetChangeCenter.shared.post(.favorite(ids: Set(ids), isFavorite: make))
+      } catch is CancellationError {
+        // Cancellation isn't a failure: no toast.
       } catch {
-        showToast(error.localizedDescription)
+        HeirloomLog.ui.error("Favorite failed: \(error.localizedDescription, privacy: .public)")
+        showToast("Couldn't update favorites.")
       }
     }
   }
@@ -788,8 +894,11 @@ struct MacLibraryBrowser: View {
         try await state.assetMutations().trash(ids: ids)
         MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
         showToast("Moved to Recently Deleted.")
+      } catch is CancellationError {
+        // Cancellation isn't a failure: no toast.
       } catch {
-        showToast(error.localizedDescription)
+        HeirloomLog.ui.error("Trash failed: \(error.localizedDescription, privacy: .public)")
+        showToast("Couldn't move items to Recently Deleted.")
       }
     }
   }
@@ -810,7 +919,7 @@ struct MacLibraryBrowser: View {
     } catch {
       pendingDropMove = nil
       HeirloomLog.ui.error("Move failed: \(error.localizedDescription, privacy: .public)")
-      showToast(error.localizedDescription)
+      showToast("Couldn't move items.")
     }
   }
 
@@ -835,8 +944,11 @@ struct MacLibraryBrowser: View {
           _ = try await state.albumMutations().addAssets(ids, toAlbum: albumId)
           MacAssetChangeCenter.shared.post(.albumsChanged)
           showToast("Added to album.")
+        } catch is CancellationError {
+          // Cancellation isn't a failure: no toast.
         } catch {
-          showToast(error.localizedDescription)
+          HeirloomLog.ui.error("Add to album failed: \(error.localizedDescription, privacy: .public)")
+          showToast("Couldn't add items to the album.")
         }
       }
     case .moveTo(let target):
