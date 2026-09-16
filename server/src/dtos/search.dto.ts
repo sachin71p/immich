@@ -55,10 +55,30 @@ const BaseSearchSchema = z
     lensModel: z.string().nullable().optional().describe('Filter by lens model').meta(DEPRECATED_FLAT_FIELD),
     isoMin: z.number().int().min(0).optional().describe('Minimum ISO value').meta(DEPRECATED_FLAT_FIELD),
     isoMax: z.number().int().min(0).optional().describe('Maximum ISO value').meta(DEPRECATED_FLAT_FIELD),
-    fNumberMin: z.number().min(0).optional().describe('Minimum f-number').meta(DEPRECATED_FLAT_FIELD),
-    fNumberMax: z.number().min(0).optional().describe('Maximum f-number').meta(DEPRECATED_FLAT_FIELD),
-    focalLengthMin: z.number().min(0).optional().describe('Minimum focal length in mm').meta(DEPRECATED_FLAT_FIELD),
-    focalLengthMax: z.number().min(0).optional().describe('Maximum focal length in mm').meta(DEPRECATED_FLAT_FIELD),
+    fNumberMin: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Minimum f-number')
+      .meta({ ...DEPRECATED_FLAT_FIELD, format: 'double' }),
+    fNumberMax: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Maximum f-number')
+      .meta({ ...DEPRECATED_FLAT_FIELD, format: 'double' }),
+    focalLengthMin: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Minimum focal length in mm')
+      .meta({ ...DEPRECATED_FLAT_FIELD, format: 'double' }),
+    focalLengthMax: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Maximum focal length in mm')
+      .meta({ ...DEPRECATED_FLAT_FIELD, format: 'double' }),
     fileSizeMin: z.number().int().min(0).optional().describe('Minimum file size in bytes').meta(DEPRECATED_FLAT_FIELD),
     fileSizeMax: z.number().int().min(0).optional().describe('Maximum file size in bytes').meta(DEPRECATED_FLAT_FIELD),
     widthMin: z.number().int().min(0).optional().describe('Minimum image width').meta(DEPRECATED_FLAT_FIELD),
@@ -72,8 +92,18 @@ const BaseSearchSchema = z
     projectionType: z.string().optional().describe('Projection type').meta(DEPRECATED_FLAT_FIELD),
     hasLocation: z.boolean().optional().describe('Whether the asset has GPS coordinates').meta(DEPRECATED_FLAT_FIELD),
     orientation: z.string().optional().describe('EXIF orientation').meta(DEPRECATED_FLAT_FIELD),
-    fpsMin: z.number().min(0).optional().describe('Minimum frames per second').meta(DEPRECATED_FLAT_FIELD),
-    fpsMax: z.number().min(0).optional().describe('Maximum frames per second').meta(DEPRECATED_FLAT_FIELD),
+    fpsMin: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Minimum frames per second')
+      .meta({ ...DEPRECATED_FLAT_FIELD, format: 'double' }),
+    fpsMax: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Maximum frames per second')
+      .meta({ ...DEPRECATED_FLAT_FIELD, format: 'double' }),
     isNotInAlbum: z.boolean().optional().describe('Filter assets not in any album').meta(DEPRECATED_FLAT_FIELD),
     personIds: z.array(z.uuidv4()).optional().describe('Filter by person IDs').meta(DEPRECATED_FLAT_FIELD),
     tagIds: z.array(z.uuidv4()).nullish().describe('Filter by tag IDs').meta(DEPRECATED_FLAT_FIELD),

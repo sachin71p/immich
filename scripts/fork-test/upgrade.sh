@@ -97,7 +97,7 @@ curl -fsS -X POST "$API/albums" \
   -H "Authorization: Bearer $USER_TOKEN" -H 'Content-Type: application/json' \
   -d "{\"albumName\":\"Upgrade Album\",\"assetIds\":[\"$ASSET_ID\"]}" 1>&2
 BEFORE_PATH="$(curl -fsS "$API/assets/$ASSET_ID" -H "Authorization: Bearer $USER_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["originalPath"])')"
-BEFORE_MIGRATIONS="$(compose -f "$BASE_TREE/e2e/docker-compose.yml" exec -T database psql -U postgres -d immich -tAc 'select count(*) from migrations')"
+BEFORE_MIGRATIONS="$(compose -f "$BASE_TREE/e2e/docker-compose.yml" exec -T database psql -U postgres -d immich -tAc 'select count(*) from kysely_migrations')"
 BEFORE_ASSETS="$(compose -f "$BASE_TREE/e2e/docker-compose.yml" exec -T database psql -U postgres -d immich -tAc "select count(*) from asset where \"deletedAt\" is null")"
 echo "base: assets=$BEFORE_ASSETS migrations=$BEFORE_MIGRATIONS path=$BEFORE_PATH"
 
@@ -107,7 +107,7 @@ compose -f "$BASE_TREE/e2e/docker-compose.yml" -f "$BASE_TREE/e2e/docker-compose
 wait_for_ping
 
 echo "=== UP-01: verifying ==="
-AFTER_MIGRATIONS="$(compose -f "$BASE_TREE/e2e/docker-compose.yml" exec -T database psql -U postgres -d immich -tAc 'select count(*) from migrations')"
+AFTER_MIGRATIONS="$(compose -f "$BASE_TREE/e2e/docker-compose.yml" exec -T database psql -U postgres -d immich -tAc 'select count(*) from kysely_migrations')"
 AFTER_ASSETS="$(compose -f "$BASE_TREE/e2e/docker-compose.yml" exec -T database psql -U postgres -d immich -tAc "select count(*) from asset where \"deletedAt\" is null")"
 AFTER_PATH="$(curl -fsS "$API/assets/$ASSET_ID" -H "Authorization: Bearer $USER_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["originalPath"])')"
 [[ "$AFTER_ASSETS" == "$BEFORE_ASSETS" ]] || { echo "UP-01 FAIL: asset count $BEFORE_ASSETS -> $AFTER_ASSETS" >&2; exit 1; }
