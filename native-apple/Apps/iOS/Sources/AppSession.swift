@@ -103,7 +103,9 @@ final class AppSession: ObservableObject {
     let support = try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
     // A5: shared app-group container so the background-upload extension drains the same queue.
-    let store = try PhotosLocalStore(path: SharedContainer.databaseURL().path)
+    let dbURL = try SharedContainer.databaseURL()
+    HeirloomLog.store.info("store path=\(dbURL.path, privacy: .public)")
+    let store = try PhotosLocalStore(path: dbURL.path)
     let cacheRoot = support.appendingPathComponent("media-cache", isDirectory: true)
     try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
     // `connection.serverURL` is `serverURL` normalized to include the `/api` base (see
@@ -130,6 +132,9 @@ final class AppSession: ObservableObject {
     await connection.tokenStore.set(token)
     try await refresh()
     signedIn = true
+    HeirloomLog.sync.info(
+      "session start host=\(serverURL.host ?? "?", privacy: .public) user=\(String(userId.prefix(8)), privacy: .public)"
+    )
     // S1: a fresh sign-in always syncs — the Library must fill without any user action.
     Task { await syncNow() }
   }
