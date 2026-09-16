@@ -76,7 +76,10 @@ describe.sequential('fork spaces', () => {
     }, 300_000);
 
     it('[R1-02] outsiders get 403 for a personal asset', async () => {
-      const target = world.assets.find((a) => a.manifestId === 'fork-01')!;
+      // fork-06: alice-personal and in no album/space/library, so bob and carol
+      // are true outsiders. (fork-01 is album-visible to bob via Trip since the
+      // world adds him at creation for R11/R16, so it no longer qualifies here.)
+      const target = world.assets.find((a) => a.manifestId === 'fork-06')!;
       for (const outsider of ['bob', 'carol'] as const) {
         const headers = { Authorization: `Bearer ${token(outsider)}` };
         // Denial statuses are endpoint-specific: metadata and thumbnail reads
@@ -272,6 +275,9 @@ describe.sequential('fork spaces', () => {
       const target = await uploadFixture(token('bob'), 'fork-26', { spaceId: world.spaces.family.id });
       await settle(adminToken);
       await updateAssets({ assetBulkUpdateDto: { ids: [target.id], isFavorite: true } }, { headers: auth(token('bob')) });
+      // Settle again: the sync backfill reflects the settled checkpoint, and without
+      // this the favorite update races the stream read (alternating green/red runs).
+      await settle(adminToken);
       await expect(getAs('alice', target.id)).resolves.toMatchObject({ isFavorite: true });
       // The generated SDK predates the S6 sync types; the server accepts the raw value.
       // Single-type read (an unacked backfill carries current flags): ackAll() sweeps
@@ -362,7 +368,9 @@ describe.sequential('fork spaces', () => {
         assetIds: [target.id],
         target: { type: Type5.Personal },
       });
-      expect(move.results).toEqual([{ id: target.id, status: 'error' }]);
+      // Fork bulk-move reports the denial reason; a personal target is owner-scoped,
+      // so target_access correctly precedes the source-access check (asset.service).
+      expect(move.results).toEqual([{ id: target.id, status: 'error', reason: 'target_access' }]);
       // Upstream bulk delete reports no-access as 400, not 403.
       const { status: trashStatus } = await request(app)
         .delete('/assets')

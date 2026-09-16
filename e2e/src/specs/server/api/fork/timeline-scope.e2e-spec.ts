@@ -25,10 +25,10 @@ const bucketTotal = async (token: string, params: Record<string, unknown> = {}):
 };
 
 const searchIds = async (token: string, dto: Record<string, unknown> = {}): Promise<string[]> => {
-  // Match the unstacked timeline bucket contract used throughout this suite.
-  // Search otherwise returns only the stack primary, while the expected world
-  // deliberately contains both members of Bob's two-item stack.
-  const { assets } = await utils.searchAssets(token, { size: 100, withStacked: false, ...dto });
+  // withStacked:false EXCLUDES every stacked asset (server database.ts), it does not
+  // expand stacks. The default (undefined) applies no stack predicate, so both members
+  // of Bob's two-item stack are counted — matching the bucket totals asserted alongside.
+  const { assets } = await utils.searchAssets(token, { size: 100, ...dto });
   return assets.items.map((asset: AssetResponseDto) => asset.id);
 };
 

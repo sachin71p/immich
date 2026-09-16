@@ -111,7 +111,16 @@ describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
       // Identity survived: favorite, tag, album membership.
       const afterOne = await getAs('alice', one.id);
       expect(afterOne.isFavorite).toBe(true);
-      expect(afterOne.tags?.map((tag) => tag.name)).toContain('moved-with-me');
+      // A racing metadata-extraction job can replace user tags with the fixture's
+      // empty EXIF TagsList between bulkTagAssets and this read; one more settle
+      // absorbs that race without weakening the identity assertion.
+      let tagNames = afterOne.tags?.map((tag) => tag.name);
+      if (!tagNames?.includes('moved-with-me')) {
+        await settle(adminToken);
+        const reread = await getAs('alice', one.id);
+        tagNames = reread.tags?.map((tag) => tag.name);
+      }
+      expect(tagNames).toContain('moved-with-me');
       const { assets } = await utils.searchAssets(token('alice'), { albumIds: [world.albumTrip.id], size: 100 });
       expect(assets.items.map((asset: AssetResponseDto) => asset.id)).toContain(one.id);
     }, 300_000);

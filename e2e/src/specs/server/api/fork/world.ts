@@ -341,11 +341,11 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
   track(dupB.id, 'fork-09b', 'alice');
 
   // Album Trip (alice owner, bob viewer) with alice-personal + Family Mobile assets.
-  const trip = await utils.createAlbum(alice.login.accessToken, { albumName: 'Trip' });
-  await utils.updateAlbumUser(alice.login.accessToken, {
-    id: trip.id,
-    userId: bob.login.userId,
-    updateAlbumUserDto: { role: AlbumUserRole.Viewer },
+  // updateAlbumUser only re-roles existing members (server no-ops for non-members),
+  // so bob must join at creation for the R11/R16 viewer-membership tests to hold.
+  const trip = await utils.createAlbum(alice.login.accessToken, {
+    albumName: 'Trip',
+    albumUsers: [{ userId: bob.login.userId, role: AlbumUserRole.Viewer }],
   });
   const tripAssets = assets.filter((a) => ['fork-01', 'fork-02'].includes(a.manifestId)).map((a) => a.id);
   await addAssetsToAlbum(
