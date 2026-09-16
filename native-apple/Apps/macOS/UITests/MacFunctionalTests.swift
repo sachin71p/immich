@@ -298,6 +298,7 @@ final class MacFunctionalTests: XCTestCase {
         .matching(NSPredicate(format: "label == %@", title))
       XCTAssertEqual(toolbarTitles.count, 1, "\(title) appears exactly once in the toolbar")
     }
+  }
 
   // MARK: - Gesture viewer (owner request: no chevron buttons)
 
