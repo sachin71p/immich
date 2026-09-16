@@ -20,6 +20,47 @@
 | — | `server/src/repositories/sync.repository.ts:1172` (LibraryAssetSync.getRemoves; audit w1-5:1172) | A removed library member cannot receive SharedLibraryAssetRemoveV1 (same membership gate). | NOT-A-DEFECT — `library_member_delete_audit` writes a user-keyed `library_member_audit` row; the removed member receives SharedLibraryDeleteV1. Evidence: medium `[SY-05]` (host PASS) + Apple `libraryDelete` apply (drops library, members, and `asset WHERE libraryId`). |
 | PERM-11 | container deletion sync (new finding, Task 2) | Deleting a space or external library wrote NO user-keyed sync tombstones: member rows cascade (`ON DELETE CASCADE`), which skips the member-delete audit trigger via its `pg_trigger_depth()` guard, and no trigger exists on container delete. Members' clients kept showing the deleted container and its assets forever (no delete event; upserts join dead memberships). | FIXED — `SharedSpaceRepository.deleteSpace` and `LibraryRepository.delete` now insert user-keyed audit rows for current members inside the delete transaction (same shape the trigger writes). Tests: `[LC-01] [C3] space deletion emits SharedSpaceDeleteV1 to members` + `[C3] library deletion emits SharedLibraryDeleteV1 to members` in `server/test/medium/specs/sync/sync-container-delete.spec.ts` (host run pending; pre-fix failure mechanism: zero audit rows → user-keyed getDeletes returns empty → no DeleteV1). tsc + eslint clean; space/library/sync unit 90/90 pass. |
 
+## Task 4 — contract outcomes
+
+- **P3 AssetFileDownload / AssetEditGet (audit w1-2:146/197): FIXED.** Both now fall through
+  owner → space → library membership (`server/src/utils/access.ts`). Evidence: `access.spec`
+  `PERM-01-contributor` / `PERM-03-contributor` tests, 7/7 pass in sandbox.
+- **P3 favorites `libraryId` (audit C8, `asset.repository.ts:966`): FIXED.** The time-bucket
+  `isFavorite` projection forced `false` for every non-owned asset outside a space; library
+  members never saw real favorites. Now `ownerId = me OR spaceId NOT NULL OR libraryId NOT NULL`
+  (rows are already scope-filtered; partners never receive library assets per §10). Evidence:
+  `[R16]` time-bucket test in `server/test/medium/specs/repositories/shared-container-favorites.spec.ts`
+  (host run pending). Server `asset.service` favorite paths untouched.
+- **R11 album add/remove (S2 canary support): FIXED at the access and service layers**
+  (Viewer role admitted; remove bypasses per-asset share check). Evidence: access + album unit
+  specs green in sandbox; upstream `album.e2e-spec` aligned to decided R11; the 5 e2e canary
+  specs still need the host run (Task 0).
+- **SUSPECTED SharedSpaceMemberUpdate (audit w1-2:306): NOT-A-DEFECT.** The broad entry
+  permission fronts two routes, both guarded at the service layer: `transferOwner`
+  re-requires owner-only `SharedSpaceDelete` (`shared-space.service.ts:143`, `access.ts:324-326`)
+  and rejects non-contributor targets (`:144-146`); `updateMyTimeline` hardcodes `auth.user.id`
+  (`:151-154`) and its DTO carries only `showInTimeline` (`shared-space.dto.ts:32`), so neither
+  owner-transfer by contributors nor self role-change is reachable.
+- **SUSPECTED SharedSpaceMemberDelete (audit w1-2:308): NOT-A-DEFECT.** `removeMember`
+  (`shared-space.service.ts:129-140`) requires the target to be a member, blocks removing the
+  owner (covers PERM-07-owner leave-denied and owner-removal), and requires the actor to be the
+  target or a member. Library member admin stays admin-only (`access.ts:329-332`, PERM-10).
+- **OpenAPI `updateMyTimeline` collision (`immich-openapi-specs.json:7922` vs `:14930`): DEFERRED
+  to S10's SDK regeneration (owner: S10).** Both `PATCH /libraries/{id}/members/me` and
+  `PATCH /shared-spaces/{id}/members/me` share the operationId, so generators emit ambiguous
+  suffixed names with flipped meanings per client (TS SDK: `updateMyTimeline` = library,
+  `updateMyTimeline2` = space; Apple filtered doc: `updateMyTimeline` = space). The spec JSON and
+  `packages/sdk` are generated artifacts (spec from a running server, SDK via `mise //:open-api`;
+  both need host DB/toolchain), and the SDK is consumed by web (2 call sites), e2e
+  (`timeline-scope.e2e-spec`), and Apple (`SpaceMutations` + generator config) — renaming the
+  source now without regenerating would break all three clients. Prescription: rename the
+  **space** controller+service methods to `updateMySpaceTimeline` (keeps TS `updateMyTimeline` =
+  library stable; the stale `updateMyTimeline2` callers then fail LOUDLY at compile time instead
+  of silently flipping meaning), regenerate spec + all SDKs, update web (LibrarySettings,
+  space photos page), e2e, and Apple callers + the generator-config comment. Sibling collisions
+  (`getMembers`/`addMembers`/`removeMember` shared across spaces/libraries, per the Apple config
+  comment) are pre-existing and out of this pass.
+
 ## NEEDS-DECISION
 
 1. **Library face/person scope (Task 1 boundary).** The Task 1 fix gates the *space* leg of

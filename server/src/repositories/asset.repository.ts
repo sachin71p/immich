@@ -77,6 +77,7 @@ interface AssetStatsOptions {
 interface LivePhotoSearchOptions {
   ownerId: string;
   libraryId?: string | null;
+  spaceId?: string | null;
   livePhotoCID: string;
   otherAssetId: string;
   type: AssetType;
@@ -536,6 +537,13 @@ export class AssetRepository {
         eb.or([
           eb('asset.id', '=', anyUuid(ids)),
           eb('asset.livePhotoVideoId', '=', anyUuid(ids)),
+          // fork: shared-libraries (R17-03) - the still-to-motion direction: moving the
+          // still must carry its motion child, whose row points nowhere back at the still.
+          eb(
+            'asset.id',
+            'in',
+            eb.selectFrom('asset as still').select('still.livePhotoVideoId').where('still.id', '=', anyUuid(ids)),
+          ),
           eb(
             'asset.stackId',
             'in',
@@ -816,7 +824,7 @@ export class AssetRepository {
   }
 
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
-    const { ownerId, otherAssetId, livePhotoCID, type } = options;
+    const { ownerId, otherAssetId, livePhotoCID, type, libraryId, spaceId } = options;
     return this.db
       .selectFrom('asset')
       .select(['asset.id', 'asset.ownerId'])
@@ -824,6 +832,12 @@ export class AssetRepository {
       .where('id', '!=', asUuid(otherAssetId))
       .where('ownerId', '=', asUuid(ownerId))
       .where('type', '=', type)
+      .$call((qb) =>
+        libraryId ? qb.where('asset.libraryId', '=', asUuid(libraryId)) : qb.where('asset.libraryId', 'is', null),
+      )
+      .$call((qb) =>
+        spaceId ? qb.where('asset.spaceId', '=', asUuid(spaceId)) : qb.where('asset.spaceId', 'is', null),
+      )
       .where('asset_exif.livePhotoCID', '=', livePhotoCID)
       .limit(1)
       .executeTakeFirst();
@@ -956,8 +970,11 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            // fork: shared-libraries - favorites are global for shared-space assets.
-            sql`asset."isFavorite" and (asset."ownerId" = ${auth.user.id} or asset."spaceId" is not null)`.as(
+            // fork: shared-libraries - favorites are global for container assets (R16:
+            // space AND library members see the real flag; rows are already
+            // scope-filtered to visible containers, and partners never receive
+            // library assets through partner sharing per §10).
+            sql`asset."isFavorite" and (asset."ownerId" = ${auth.user.id} or asset."spaceId" is not null or asset."libraryId" is not null)`.as(
               'isFavorite',
             ),
             sql`asset.type = 'IMAGE'`.as('isImage'),
@@ -1335,6 +1352,7 @@ export class AssetRepository {
         'asset.originalFileName',
         'asset.livePhotoVideoId',
         'asset.checksum',
+        'asset.checksumAlgorithm',
         'asset.isExternal',
         'asset_exif.fileSizeInByte',
         'shared_space.storageLabel as spaceStorageLabel',
@@ -1350,6 +1368,12 @@ export class AssetRepository {
   async getPendingRelocationIds(): Promise<string[]> {
     const rows = await this.db.selectFrom('asset_relocation').select('assetId').execute();
     return rows.map((row) => row.assetId);
+  }
+
+  // fork: shared-libraries (S10) - container-paths audit iterates every live asset.
+  async getAuditIds(): Promise<string[]> {
+    const rows = await this.db.selectFrom('asset').select('id').where('deletedAt', 'is', null).execute();
+    return rows.map((row) => row.id);
   }
 
   async createRelocations(assetIds: string[], requestedById: string | null, trx?: Kysely<DB>) {
