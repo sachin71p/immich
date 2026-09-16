@@ -188,6 +188,16 @@ export class SharedSpaceRepository {
         assets.map(({ id }) => id),
         trx,
       );
+      // fork: shared-libraries (C3: member rows cascade on space delete, which skips
+      // the member-delete audit trigger via its depth guard. Leave user-keyed
+      // tombstones first so every member still receives SharedSpaceDeleteV1.)
+      await trx
+        .insertInto('shared_space_audit')
+        .columns(['spaceId', 'userId'])
+        .expression((eb) =>
+          eb.selectFrom('shared_space_member').select(['spaceId', 'userId']).where('spaceId', '=', id),
+        )
+        .execute();
       await trx.deleteFrom('shared_space').where('id', '=', id).execute();
     });
   }

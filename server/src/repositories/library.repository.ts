@@ -53,7 +53,17 @@ export class LibraryRepository {
   }
 
   async delete(id: string) {
-    await this.db.deleteFrom('library').where('library.id', '=', id).execute();
+    await this.db.transaction().execute(async (trx) => {
+      // fork: shared-libraries (C3: member rows cascade on library delete, which skips
+      // the member-delete audit trigger. Leave user-keyed tombstones first so every
+      // member still receives SharedLibraryDeleteV1.)
+      await trx
+        .insertInto('library_member_audit')
+        .columns(['libraryId', 'userId'])
+        .expression((eb) => eb.selectFrom('library_member').select(['libraryId', 'userId']).where('libraryId', '=', id))
+        .execute();
+      await trx.deleteFrom('library').where('library.id', '=', id).execute();
+    });
   }
 
   async softDelete(id: string) {
