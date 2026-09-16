@@ -232,6 +232,9 @@ final class PhotoGridViewController: UIViewController {
     // S1: a working pull-to-refresh — `alwaysBounceVertical` keeps the gesture available on an
     // empty grid, where SwiftUI's `.refreshable` (List/ScrollView only) never fires.
     collectionView.alwaysBounceVertical = true
+    // S1 test hook: the UI test polls this value — "refreshing" while `onRefresh` runs.
+    // (The UIRefreshControl itself never appears in the XCUI tree, even as an AX element.)
+    collectionView.accessibilityValue = "idle"
     let refresh = UIRefreshControl()
     // UIRefreshControl isn't exposed to the accessibility tree by default; the UI test needs it.
     refresh.isAccessibilityElement = true
@@ -417,9 +420,11 @@ final class PhotoGridViewController: UIViewController {
 
   @objc private func didPullToRefresh(_ sender: UIRefreshControl) {
     sender.accessibilityValue = "refreshing"
+    collectionView.accessibilityValue = "refreshing"
     Task { @MainActor in
       await onRefresh?()
       sender.accessibilityValue = "idle"
+      collectionView.accessibilityValue = "idle"
       sender.endRefreshing()
     }
   }

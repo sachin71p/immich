@@ -17,23 +17,19 @@ final class SyncUITests: XCTestCase {
     let grid = app.collectionViews.firstMatch
     XCTAssertTrue(grid.waitForExistence(timeout: 10))
 
-    let refresh = app.descendants(matching: .any)["pull-to-refresh"]
-    XCTAssertTrue(
-      refresh.waitForExistence(timeout: 10),
-      "grid should expose a pull-to-refresh control")
-
     grid.swipeDown()
 
-    // The control reports "refreshing" while `refreshAll` runs and must return to "idle".
+    // The grid reports "refreshing" on its accessibility value while `refreshAll` runs and
+    // must return to "idle": the UIRefreshControl itself never appears in the XCUI tree.
     // (Polled directly: `waitForExpectations` is MainActor-isolated in this SDK and the test
     // case isn't Sendable under Swift 6 strict concurrency.)
     let deadline = Date().addingTimeInterval(30)
     var settled = false
     while !settled && Date() < deadline {
-      settled = (refresh.value as? String) == "idle"
-      if !settled { Thread.sleep(forTimeInterval: 0.5) }
+      settled = (grid.value as? String) == "idle"
+      if !settled { Thread.sleep(forTimeInterval: 0.2) }
     }
-    XCTAssertTrue(settled, "refresh control should run refreshAll and return to idle")
+    XCTAssertTrue(settled, "pull-to-refresh should run refreshAll and settle back to idle")
 
     // The refresh cycle must leave a working grid behind.
     XCTAssertTrue(app.buttons["library-switcher"].exists)

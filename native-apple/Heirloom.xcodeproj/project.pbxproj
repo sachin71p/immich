@@ -1180,6 +1180,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Heirloom;
 				INFOPLIST_KEY_CFBundleName = Heirloom;
 				INFOPLIST_KEY_HeirloomAppIdentifierPrefix = "$(AppIdentifierPrefix)";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Heirloom backs up the photos you choose to your Immich server.";
 				INFOPLIST_KEY_UIBackgroundModes = processing;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1291,6 +1292,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Heirloom;
 				INFOPLIST_KEY_CFBundleName = Heirloom;
 				INFOPLIST_KEY_HeirloomAppIdentifierPrefix = "$(AppIdentifierPrefix)";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Heirloom backs up the photos you choose to your Immich server.";
 				INFOPLIST_KEY_UIBackgroundModes = processing;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
