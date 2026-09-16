@@ -24,8 +24,8 @@ private struct AssetIdsSheetItem: Identifiable {
 
 /// The three-button Photos toolbar filter. Filters are an inclusive multi-selection: choosing
 /// Photos and Videos shows either type, and reopening the menu preserves its checkmarks.
-/// Visible to `MacGridLoader.setPresentation`, which rebuilds the snapshot's include
-/// predicate from these (Step 4 deletes `matchesQuickFilter` and calls it instead).
+/// Consumed by `MacGridLoader.setPresentation`, which rebuilds the snapshot's include
+/// predicate from these off-main.
 enum TimelineQuickFilter: Hashable, Sendable {
   case all, favorites, edited, photos, videos, screenshots, capturedByMe, notInAlbum
 
@@ -80,11 +80,11 @@ struct MacLibraryBrowser: View {
   @State private var usesSquareThumbnails = false
   @State private var timelineOrder: TimelineOrder = .newestFirst
   @State private var quickFilters: Set<TimelineQuickFilter> = [.all]
-  @State private var albumAssetIds = Set<String>()
   @State private var toolbarSearch = ""
   @State private var isSelecting = false
   @State private var didRequestInitialSync = false
   @State private var loader = MacGridLoader()
+  @State private var presentationTask: Task<Void, Never>?
   @State private var selectionModel = GridSelectionModel()
   @State private var toast: String?
   @State private var moveSheetIds: AssetIdsSheetItem?
@@ -131,7 +131,9 @@ struct MacLibraryBrowser: View {
     }
     .focusedValue(\.macAssetActions, gridActions)
     .onReceive(NotificationCenter.default.publisher(for: .macSyncNow)) { _ in
-      Task { await state.syncNow(); await reload() }
+      // No explicit reload: a successful sync bumps `timelineVersion`, which changes
+      // `reloadKey` and re-runs the `.task(id:)` load below.
+      Task { await state.syncNow() }
     }
     // `refresh()`/`syncNow()` capture failures into `lastSyncError` but nothing displayed it,
     // so a failed post-login sync (stale libraries/spaces, no thumbnails) looked identical to
@@ -146,13 +148,23 @@ struct MacLibraryBrowser: View {
       state.showingCameraImport = true
     }
     .task(id: reloadKey) { await reload() }
+    .task(id: selection?.restorableID ?? "library") {
+      // The loader subscribes to the change center in a view-owned task; resubscribing
+      // per destination keeps `apply`'s destination argument current without the task
+      // capturing a stale `selection`.
+      let destination = selection ?? .library
+      for await change in MacAssetChangeCenter.shared.changes() {
+        loader.apply(change, destination: destination)
+      }
+    }
+    .onChange(of: timelineOrder) { applyPresentation() }
+    .onChange(of: quickFilters) { applyPresentation() }
     .task {
       // The timeline is local-first, but a newly opened desktop app must initiate the first
       // server stream rather than silently presenting a stale cache as a finished library.
       guard !didRequestInitialSync, state.isConnected else { return }
       didRequestInitialSync = true
       await state.syncNow()
-      await reload()
     }
     .onAppear {
       if let restoredSelection, selection == .library {
@@ -163,12 +175,16 @@ struct MacLibraryBrowser: View {
       MacMoveSheet(state: state, assetIds: item.ids) { results in
         moveSheetIds = nil
         showToast(Self.moveSummary(results))
-        Task { await reload() }
+        let moved = Set(results.filter { $0.status == .moved }.map(\.assetId))
+        if !moved.isEmpty {
+          MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: moved))
+        }
       }
     }
     .sheet(item: $addToAlbumIds) { item in
       MacAddToAlbumSheet(state: state, assetIds: item.ids) {
         addToAlbumIds = nil
+        MacAssetChangeCenter.shared.post(.albumsChanged)
         showToast("Added to album.")
       }
     }
@@ -247,44 +263,37 @@ struct MacLibraryBrowser: View {
   }
 
   private var gridView: some View {
-    VStack(spacing: 0) {
-      if let error = loader.error {
-        Text(error).foregroundStyle(.red).font(.caption).padding(4)
-      }
-      if loader.isLoading && loader.sections.isEmpty {
-        ProgressView().padding()
-      }
-      MacCollectionGridView(
-        sections: displayedSections,
-        assetsById: loader.assetsById,
-        rowDates: displayedSections.flatMap { $0.rows.map { Self.dateString($0.localDateTime) } },
-        pipeline: state.pipeline,
-        exporter: MacExporter(
-          serverURL: state.serverURL,
-          tokenProvider: exportTokenProvider
-        ),
-        itemSize: zoom,
-        usesSquareThumbnails: usesSquareThumbnails,
-        isSelectionMode: isSelecting,
-        selectedIds: Binding(
-          get: { selectionModel.selected },
-          set: { selectionModel.selected = $0 }
-        ),
-        onSelectionChange: { ids in
-          selectionModel.retarget(to: displayedRowIds)
-          selectionModel.selected = Set(ids)
-        },
-        onOpen: openViewer,
-        onPreview: showPreview,
-        onToggleFavorite: { id in toggleFavorite(ids: [id]) },
-        onMagnify: { delta in
-          let step: CGFloat = delta > 0 ? 12 : -12
-          zoom = min(300, max(64, zoom + step))
-        }
-      )
-      .accessibilityIdentifier("asset-grid")
-      footer
-    }
+    MacTimelineGridPane(
+      loader: loader,
+      pipeline: state.pipeline,
+      store: state.store,
+      exporter: MacExporter(
+        serverURL: state.serverURL,
+        tokenProvider: exportTokenProvider
+      ),
+      itemSize: zoom,
+      usesSquareThumbnails: usesSquareThumbnails,
+      isSelectionMode: isSelecting,
+      selectedIds: Binding(
+        get: { selectionModel.selected },
+        set: { selectionModel.selected = $0 }
+      ),
+      syncStatusText: syncStatusText,
+      // Display order for `selectedInOrder` refreshes in `reload()`; the pushed ids
+      // here are only the selected subset, so they must not replace `orderedIds`.
+      onSelectionChange: { ids in
+        selectionModel.selected = Set(ids)
+      },
+      onOpen: openViewer,
+      onPreview: showPreview,
+      onToggleFavorite: { id in toggleFavorite(ids: [id]) },
+      onMagnify: { delta in
+        let step: CGFloat = delta > 0 ? 12 : -12
+        zoom = min(300, max(64, zoom + step))
+      },
+      onRetry: { Task { await reload() } }
+    )
+    .accessibilityIdentifier("asset-grid")
   }
 
   private var exportTokenProvider: @Sendable () async -> String? {
@@ -403,7 +412,7 @@ struct MacLibraryBrowser: View {
         }
       }
       Button {
-        Task { await state.syncNow(); await reload() }
+        Task { await state.syncNow() }
       } label: {
         Label("Sync", systemImage: "arrow.triangle.2.circlepath")
       }
@@ -468,7 +477,7 @@ struct MacLibraryBrowser: View {
   // MARK: - loading
 
   private var reloadKey: String {
-    "\(selection?.restorableID ?? "library")|\(grouping)|\(switcherKey)|\(state.spaces.count)|\(state.albums.count)"
+    "\(selection?.restorableID ?? "library")|\(grouping)|\(switcherKey)|\(state.timelineVersion)"
   }
 
   private var switcherKey: String {
@@ -496,40 +505,9 @@ struct MacLibraryBrowser: View {
   }()
 
   private var libraryDateRange: String {
-    let dates = loader.sections.flatMap(\.rows).compactMap(\.localDateTime)
-    guard let first = dates.min(), let last = dates.max() else { return "No Photos" }
-    return "\(Self.dateRangeFormatter.string(from: first)) – \(Self.dateRangeFormatter.string(from: last))"
-  }
-
-  private var displayedSections: [MacGridSection] {
-    let filtered = loader.sections.compactMap { section -> MacGridSection? in
-      let rows = section.rows.filter(matchesQuickFilter)
-      return rows.isEmpty ? nil : MacGridSection(header: section.header, rows: rows)
-    }
-    guard timelineOrder == .oldestFirst else { return filtered }
-    return filtered.reversed().map { section in
-      MacGridSection(header: section.header, rows: section.rows.reversed())
-    }
-  }
-
-  private var displayedRowIds: [String] { displayedSections.flatMap { $0.rows.map(\.id) } }
-
-  private func matchesQuickFilter(_ row: TimelineRow) -> Bool {
-    guard !quickFilters.contains(.all) else { return true }
-    guard !quickFilters.isEmpty else { return true }
-    let asset = loader.assetsById[row.id]
-    return quickFilters.contains { filter in
-      switch filter {
-      case .all: return true
-      case .favorites: return row.isFavorite
-      case .edited: return asset?.isEdited == true
-      case .photos: return row.mediaKind == .photo || row.mediaKind == .livePhoto
-      case .videos: return row.mediaKind == .video
-      case .screenshots: return row.mediaKind == .screenshot
-      case .capturedByMe: return asset?.ownerId == state.userId
-      case .notInAlbum: return !albumAssetIds.contains(row.id)
-      }
-    }
+    guard let range = loader.snapshot.dateRange else { return "No Photos" }
+    return
+      "\(Self.dateRangeFormatter.string(from: range.lowerBound)) – \(Self.dateRangeFormatter.string(from: range.upperBound))"
   }
 
   @ViewBuilder
@@ -570,22 +548,6 @@ struct MacLibraryBrowser: View {
     return "\(libraryDateRange) · \(count) Photo\(count == 1 ? "" : "s") Selected"
   }
 
-  private var footer: some View {
-    let rows = loader.sections.flatMap(\.rows)
-    let photos = rows.filter { $0.mediaKind != .video }.count
-    let videos = rows.filter { $0.mediaKind == .video }.count
-    return VStack(spacing: 3) {
-      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
-        .font(.headline)
-      Text(syncStatusText)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .accessibilityIdentifier("library-sync-status")
-  }
-
   private var syncStatusText: String {
     if state.isSyncing { return "Syncing with Immich…" }
     if state.lastSyncError != nil { return "Sync needs attention" }
@@ -614,29 +576,54 @@ struct MacLibraryBrowser: View {
 
   private func reload() async {
     guard let userId = state.userId, let selection else { return }
+    loader.pipeline = state.pipeline
+    // Sync the presentation before the fetch so `load` freezes the current order,
+    // filters and userId. Unchanged input is a no-op inside `setPresentation`.
+    loader.setPresentation(
+      order: timelineOrder, filters: quickFilters, userId: userId,
+      albumMemberIds: await currentAlbumMemberIds())
     await loader.load(
       store: state.store, userId: userId, destination: selection,
       grouping: grouping, switcher: switcher
     )
-    // Keep the local "Not in an Album" toolbar filter accurate without another server call.
-    var assigned = Set<String>()
-    for entry in state.albums {
-      assigned.formUnion((try? await state.store.assetIds(inAlbum: entry.album.id)) ?? [])
+    // Refresh display order for `selectedInOrder` (one map pass at navigation frequency,
+    // not per state change); the membership trim below it is O(selected).
+    selectionModel.orderedIds = loader.snapshot.ids
+    selectionModel.selected = selectionModel.selected.filter {
+      loader.snapshot.indexById[$0] != nil
     }
-    albumAssetIds = assigned
-    selectionModel.retarget(to: loader.allRowIds)
+    if let anchor = selectionModel.anchorIndex,
+      !selectionModel.orderedIds.indices.contains(anchor)
+    {
+      selectionModel.anchorIndex = nil
+    }
   }
 
-  private static let rowDateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    return formatter
-  }()
+  /// Push the sort order + quick filters into the loader. `assetIdsInAnyAlbum` is
+  /// fetched only while the `.notInAlbum` filter is active; otherwise the loader gets
+  /// `nil`. Superseded invocations are cancelled so a slow membership fetch can never
+  /// apply stale filters after the user has already moved on.
+  private func applyPresentation() {
+    presentationTask?.cancel()
+    let order = timelineOrder
+    let filters = quickFilters
+    let userId = state.userId
+    presentationTask = Task { @MainActor in
+      let memberIds: Set<String>? =
+        if let userId, filters.contains(.notInAlbum) {
+          try? await state.store.assetIdsInAnyAlbum(userId: userId)
+        } else {
+          nil
+        }
+      guard !Task.isCancelled, let userId else { return }
+      loader.setPresentation(
+        order: order, filters: filters, userId: userId, albumMemberIds: memberIds)
+    }
+  }
 
-  static func dateString(_ date: Date?) -> String {
-    guard let date else { return "" }
-    return rowDateFormatter.string(from: date)
+  private func currentAlbumMemberIds() async -> Set<String>? {
+    guard let userId = state.userId, quickFilters.contains(.notInAlbum) else { return nil }
+    return try? await state.store.assetIdsInAnyAlbum(userId: userId)
   }
 
   // MARK: - actions (focused value for menus)
@@ -660,7 +647,7 @@ struct MacLibraryBrowser: View {
         // "File > New Viewer Window": unlike a plain click, this explicitly wants a separate
         // NSWindow, so it bypasses `openViewer(id:)`'s inline in-window navigation.
         guard let first = ids.first else { return }
-        state.viewerContext = loader.allRowIds
+        state.viewerContext = loader.snapshot
         openWindow(value: MacWindow.viewer(first))
       },
       preview: {
@@ -670,15 +657,13 @@ struct MacLibraryBrowser: View {
   }
 
   private func openViewer(id: String) {
-    state.viewerContext = loader.allRowIds
+    state.viewerContext = loader.snapshot
     viewingAssetId = id
   }
 
   private func showPreview(id: String) {
     Task { @MainActor in
-      var asset = loader.assetsById[id]
-      if asset == nil { asset = try? await state.store.asset(id: id) }
-      guard let asset else { return }
+      guard let asset = try? await state.store.asset(id: id) else { return }
       MacPreviewPanel.show(asset: asset, pipeline: state.pipeline)
     }
   }
@@ -687,11 +672,17 @@ struct MacLibraryBrowser: View {
     guard !ids.isEmpty else { return }
     Task { @MainActor in
       do {
-        let assets = try await state.store.assets(ids: ids)
-        let make = !(assets.first?.isFavorite ?? false)
+        // Read the current flag from the snapshot — no store fetch, no reload. The
+        // change-center subscription applies the patch to the loader.
+        let make: Bool
+        if let first = ids.first, let index = loader.snapshot.indexById[first] {
+          make = !loader.snapshot.rows[index].isFavorite
+        } else {
+          let assets = try await state.store.assets(ids: Array(ids.prefix(1)))
+          make = !(assets.first?.isFavorite ?? false)
+        }
         try await state.assetMutations().setFavorite(ids: ids, isFavorite: make)
         MacAssetChangeCenter.shared.post(.favorite(ids: Set(ids), isFavorite: make))
-        await reload()
       } catch {
         showToast(error.localizedDescription)
       }
@@ -704,7 +695,6 @@ struct MacLibraryBrowser: View {
       do {
         try await state.assetMutations().trash(ids: ids)
         MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
-        await reload()
         showToast("Moved to Recently Deleted.")
       } catch {
         showToast(error.localizedDescription)
@@ -717,7 +707,6 @@ struct MacLibraryBrowser: View {
       let results = try await state.assetMutations().move(ids: ids, to: target)
       await state.refresh()
       MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: Set(ids)))
-      await reload()
       pendingDropMove = nil
       showToast(Self.moveSummary(results))
     } catch {
@@ -791,6 +780,92 @@ struct MacLibraryBrowser: View {
       try? await Task.sleep(for: .seconds(4))
       if toast == message { toast = nil }
     }
+  }
+}
+
+/// The grid subtree: error banner, grid, footer. Extracted so toasts, hover, sync
+/// status and other `MacLibraryBrowser` state never re-evaluate the grid, and so
+/// `MacLibraryBrowser.body` never touches `loader.snapshot.rows`.
+struct MacTimelineGridPane: View {
+  @Bindable var loader: MacGridLoader
+  var pipeline: MediaPipeline
+  var store: PhotosLocalStore
+  var exporter: MacExporter?
+  var itemSize: CGFloat
+  var usesSquareThumbnails = false
+  var isSelectionMode = false
+  @Binding var selectedIds: Set<String>
+  var syncStatusText: String
+  var onSelectionChange: ([String]) -> Void
+  var onOpen: (String) -> Void
+  var onPreview: (String) -> Void
+  var onToggleFavorite: (String) -> Void
+  var onMagnify: (CGFloat) -> Void
+  var onRetry: () -> Void
+  /// Set once loading has taken longer than 150 ms, so fast destination switches
+  /// never flash a spinner.
+  @State private var slowLoad = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      if case .failed(let message) = loader.phase {
+        HStack(spacing: 8) {
+          Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+          Button("Retry", action: onRetry)
+            .buttonStyle(.link)
+            .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .accessibilityIdentifier("timeline-error-banner")
+      }
+      if loader.phase == .loading && slowLoad && loader.snapshot.rows.isEmpty {
+        ProgressView().padding()
+      }
+      MacCollectionGridView(
+        snapshot: loader.snapshot,
+        lastPatch: loader.lastPatch,
+        pipeline: pipeline,
+        store: store,
+        exporter: exporter,
+        itemSize: itemSize,
+        usesSquareThumbnails: usesSquareThumbnails,
+        isSelectionMode: isSelectionMode,
+        selectedIds: $selectedIds,
+        onSelectionChange: onSelectionChange,
+        onOpen: onOpen,
+        onPreview: onPreview,
+        onToggleFavorite: onToggleFavorite,
+        onMagnify: onMagnify
+      )
+      footer
+    }
+    .task(id: loader.phase == .loading) {
+      // Cancellation is not an error and never shows: the loader keeps the old
+      // snapshot and returns to `.loaded`/`.idle`, which restarts this task and
+      // clears the flag.
+      guard loader.phase == .loading else {
+        slowLoad = false
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(150))
+      if !Task.isCancelled { slowLoad = loader.phase == .loading && loader.snapshot.rows.isEmpty }
+    }
+  }
+
+  private var footer: some View {
+    let photos = loader.snapshot.photoCount
+    let videos = loader.snapshot.videoCount
+    return VStack(spacing: 3) {
+      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
+        .font(.headline)
+      Text(syncStatusText)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 12)
+    .accessibilityIdentifier("library-sync-status")
   }
 }
 

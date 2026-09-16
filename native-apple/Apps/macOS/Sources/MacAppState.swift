@@ -45,8 +45,14 @@ final class MacAppState {
   var showingImportChooser = false
   var showingCameraImport = false
 
-  /// Row ids backing viewer paging (set when the viewer opens).
-  var viewerContext: [String] = []
+  /// Snapshot backing viewer paging, in display order (set when the viewer opens).
+  var viewerContext: TimelineGridSnapshot?
+  /// Bumped after every successful `syncNow`. The grid's `reloadKey` includes it so a
+  /// sync-triggered reload keeps the old snapshot until the new one is ready (same
+  /// destination). `SyncCoordinator.syncNow()` returns `true` on any completed session —
+  /// it only reports a dropped concurrent call, not a change count — so there is no
+  /// "applied changes" signal to key off; every successful sync reloads the grid.
+  var timelineVersion = 0
 
   /// Connection, sync, upload queue and media pipeline all key off `serverURL`+token, so a
   /// server switch (fresh init, or a successful login to a different host in `completeLogin`)
@@ -194,6 +200,7 @@ final class MacAppState {
       _ = try await sync.syncNow()
       lastSyncError = nil
       lastCompletedSyncAt = Date()
+      timelineVersion += 1
       await refresh()
     } catch {
       lastSyncError = error.localizedDescription

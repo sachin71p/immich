@@ -52,8 +52,15 @@ struct MacViewerView: View {
     )
   }
 
-  private var siblings: [String] { state.viewerContext }
-  private var index: Int? { siblings.firstIndex(of: assetId) }
+  /// Display-order paging context (WP2 Step 4: was the unfiltered full id list).
+  private var siblings: [String] { state.viewerContext?.ids ?? [] }
+
+  private var index: Int? {
+    guard let context = state.viewerContext, !context.rows.isEmpty,
+      let raw = context.indexById[assetId]
+    else { return nil }
+    return min(max(0, raw), context.rows.count - 1)
+  }
 
   /// Immich doesn't sync Apple's Portrait-mode depth EXIF, so unlike native Photos this can only
   /// badge what `Asset` itself already knows, without a separate `AssetExif` fetch: Live Photo.

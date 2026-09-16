@@ -5,16 +5,6 @@ import Media
 import Rules
 import SwiftUI
 
-/// One grid section: an optional bucket header plus its rows.
-///
-/// Legacy compat for the pre-snapshot grid (Step 4 deletes this with `displayedSections`).
-/// New code reads `MacGridLoader.snapshot` instead; this type only translates the snapshot
-/// for the old `MacCollectionGridView` inputs until Step 5 re-points them.
-struct MacGridSection: Sendable, Hashable {
-  var header: String?
-  var rows: [TimelineRow]
-}
-
 /// Loads grid content from the local store (A0 Architecture: the DB is the UI's only data source).
 @MainActor
 @Observable
@@ -25,7 +15,9 @@ final class MacGridLoader {
 
   /// Presentation inputs: sort order plus the include-predicate inputs. Copied by value
   /// into every off-main rebuild, so the predicate never touches main-actor state.
-  private struct Presentation: Sendable {
+  /// `Equatable` so `setPresentation` with unchanged input skips the rebuild (the view
+  /// re-syncs presentation before every load).
+  private struct Presentation: Sendable, Equatable {
     var order: TimelineOrder = .newestFirst
     var filters: Set<TimelineQuickFilter> = [.all]
     var userId = ""
@@ -71,33 +63,8 @@ final class MacGridLoader {
   @ObservationIgnored private var currentSwitcher: LibraryFilterOption = .all
   @ObservationIgnored private var currentStore: PhotosLocalStore?
   @ObservationIgnored private var currentUserId = ""
-  /// Set by the view (Step 4) so edited rows can evict stale cache entries.
+  /// Set by the view so edited rows can evict stale cache entries.
   @ObservationIgnored var pipeline: MediaPipeline?
-
-  /// Legacy compat (Step 4 deletes with `matchesQuickFilter`): the full-`Asset` map for the
-  /// old filter/preview paths. Filled best-effort after the snapshot assigns, so it never
-  /// blocks thumbnails the way the old sections-then-map ordering did (R1).
-  @ObservationIgnored private var legacyAssetsById: [String: Asset] = [:]
-
-  // MARK: - legacy readers (Step 4 deletes these with the old grid inputs)
-
-  /// Translated from the snapshot; kept so the pre-snapshot grid keeps rendering.
-  var sections: [MacGridSection] {
-    snapshot.sections.map { section in
-      MacGridSection(header: section.header, rows: Array(snapshot.rows[section.range]))
-    }
-  }
-
-  var assetsById: [String: Asset] { legacyAssetsById }
-
-  var allRowIds: [String] { snapshot.ids }
-
-  var isLoading: Bool { phase == .loading }
-
-  var error: String? {
-    if case .failed(let message) = phase { return message }
-    return nil
-  }
 
   // MARK: - load
 
@@ -136,14 +103,6 @@ final class MacGridLoader {
         self.source = sections
         self.snapshot = built
         self.phase = .loaded
-        do {
-          self.legacyAssetsById = try await Self.assetsById(store: store, ids: built.ids)
-        } catch is CancellationError {
-          // Superseded by a newer load; the next load repopulates the map.
-        } catch {
-          HeirloomLog.store.error(
-            "Legacy assetsById fetch failed: \(error.localizedDescription, privacy: .public)")
-        }
       } catch is CancellationError {
         // Cancellation is not an error: keep the current snapshot, show nothing.
         return
@@ -165,8 +124,10 @@ final class MacGridLoader {
     order: TimelineOrder, filters: Set<TimelineQuickFilter>,
     userId: String, albumMemberIds: Set<String>?
   ) {
-    presentation = Presentation(
+    let next = Presentation(
       order: order, filters: filters, userId: userId, albumMemberIds: albumMemberIds)
+    guard next != presentation else { return }
+    presentation = next
     // Rebuild only: reuse the last fetch, no store I/O, no main-thread pass over rows.
     guard currentStore != nil else { return }
     startRebuild()
@@ -383,18 +344,4 @@ final class MacGridLoader {
     return sections
   }
 
-  private static func assetsById(store: PhotosLocalStore, ids: [String]) async throws -> [String: Asset] {
-    var result: [String: Asset] = [:]
-    for chunk in ids.chunked(into: 400) {
-      for asset in try await store.assets(ids: chunk) { result[asset.id] = asset }
-    }
-    return result
-  }
-}
-
-extension Array {
-  func chunked(into size: Int) -> [[Element]] {
-    guard size > 0 else { return [self] }
-    return stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
-  }
 }
