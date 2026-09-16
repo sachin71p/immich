@@ -173,6 +173,7 @@ struct MacCollectionGridView: NSViewRepresentable {
     }
     coordinator.applyItemSize(itemSize)
     coordinator.syncSelection(selectedIds: selectedIds, snapshot: snapshot)
+    coordinator.syncSelectionMode(isSelectionMode)
   }
 
   func makeCoordinator() -> Coordinator {
@@ -192,6 +193,8 @@ struct MacCollectionGridView: NSViewRepresentable {
     /// Last selection pushed into the collection view, so re-renders with an unchanged
     /// selection skip the `selectionIndexPaths` write (which would scroll/flicker).
     var lastAppliedSelection = Set<String>()
+    /// Last `isSelectionMode` pushed to visible cells (checkmark badge only).
+    var lastSelectionMode = false
     /// Index path under the cursor (single collection-view tracking area, WP3 §3).
     var hoveredIndexPath: IndexPath?
     private var typedBuffer = ""
@@ -332,6 +335,15 @@ struct MacCollectionGridView: NSViewRepresentable {
       collectionView.selectionIndexPaths = wanted
     }
 
+    /// Pushes a mode flip to visible cells without a reload (badge-only change).
+    func syncSelectionMode(_ mode: Bool) {
+      guard let cv = collectionView, mode != lastSelectionMode else { return }
+      lastSelectionMode = mode
+      for path in cv.indexPathsForVisibleItems() {
+        (cv.item(at: path) as? MacGridCell)?.setSelectionMode(mode)
+      }
+    }
+
     // MARK: NSCollectionViewDataSource (all counts/views come from the snapshot)
 
     func numberOfSections(in collectionView: NSCollectionView) -> Int {
@@ -366,60 +378,17 @@ struct MacCollectionGridView: NSViewRepresentable {
       let item = collectionView.makeItem(withIdentifier: MacGridCell.identifier, for: indexPath)
       guard let cell = item as? MacGridCell else { return item }
       guard let row = row(at: indexPath) else { return cell }
-      let id = row.id
-      cell.representedObject = id
-      cell.view.setAccessibilityIdentifier("grid-cell-\(id)")
-      cell.view.setAccessibilityLabel("Photo \(id)")
+      cell.onFavorite = { [weak self] in self?.parent.onToggleFavorite(row.id) }
+      // WP3 S4 configure order (cache -> placeholder -> stream) lives in the cell;
+      // the coordinator only supplies the row, the mode flags and the pipeline.
+      cell.configure(
+        row: row,
+        aspectFit: !parent.usesSquareThumbnails,
+        selectionMode: lastSelectionMode,
+        itemSide: parent.itemSize,
+        pipeline: parent.pipeline)
       cell.setHover(indexPath == hoveredIndexPath)
-      cell.setFavorite(row.isFavorite)
-      cell.onFavorite = { [weak self] in self?.parent.onToggleFavorite(id) }
-      // Synchronous cache hit first — decoded image, else thumbhash placeholder — so a
-      // cell never sits blank waiting on the stream's first step (R1). The stream then
-      // upgrades to the fetched tier and stays subscribed for scroll-away cancellation.
-      cell.photoView.image = Self.syncImage(pipeline: parent.pipeline, id: id, itemSize: parent.itemSize)
-      cell.loadTask?.cancel()
-      let pipeline = parent.pipeline
-      let thumbhash = row.thumbhash
-      let edited = row.isEdited
-      let box = WeakCellBox(cell)
-      cell.loadTask = Task {
-        do {
-          for try await step in await pipeline.stream(
-            id: id, thumbhash: thumbhash, tier: .thumbnail, edited: edited)
-          {
-            let image: NSImage?
-            switch step.content {
-            case .placeholder(let placeholder): image = placeholder
-            case .tier(_, let loaded, _): image = loaded
-            }
-            await MainActor.run {
-              box.setImage(image, ifRepresentedObjectIs: id)
-            }
-            if Task.isCancelled { return }
-          }
-        } catch {
-          // Per-cell load failures (cancellation from fast scrolling, a single corrupt
-          // asset) are expected and cosmetic — the cell just keeps its placeholder.
-          // Systemic failures (wrong server URL, auth, network) surface via `lastSyncError`.
-        }
-      }
       return cell
-    }
-
-    /// Decoded-image hit, else thumbhash-placeholder hit, else nil (the stream fills in).
-    /// Both probes are synchronous and nonisolated, safe on the main thread.
-    private static func syncImage(
-      pipeline: MediaPipeline, id: String, itemSize: CGFloat
-    ) -> NSImage? {
-      if let hit = pipeline.cachedImage(id: id, tier: .thumbnail) {
-        return NSImage(
-          cgImage: hit, size: NSSize(width: hit.width, height: hit.height))
-      }
-      if let placeholder = pipeline.cachedPlaceholder(id: id) {
-        return NSImage(
-          cgImage: placeholder, size: NSSize(width: placeholder.width, height: placeholder.height))
-      }
-      return nil
     }
 
     // MARK: delegate
@@ -818,24 +787,6 @@ struct MacCollectionGridView: NSViewRepresentable {
       collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
       pushSelection()
     }
-  }
-}
-
-extension Array {
-  fileprivate subscript(safe index: Int) -> Element? {
-    indices.contains(index) ? self[index] : nil
-  }
-}
-
-/// Main-thread-confined cell reference carried across the image-load suspension.
-private final class WeakCellBox: @unchecked Sendable {
-  weak var cell: MacGridCell?
-  init(_ cell: MacGridCell) { self.cell = cell }
-
-  @MainActor
-  func setImage(_ image: NSImage?, ifRepresentedObjectIs id: String) {
-    guard let cell, cell.representedObject as? String == id else { return }
-    cell.photoView.image = image
   }
 }
 
