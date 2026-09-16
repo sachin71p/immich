@@ -60,22 +60,21 @@ struct MacCollectionGridView: NSViewRepresentable {
   var onMagnify: (CGFloat) -> Void
 
   func makeNSView(context: Context) -> NSScrollView {
-    let layout = NSCollectionViewFlowLayout()
-    layout.minimumInteritemSpacing = 8
-    layout.minimumLineSpacing = 8
-    layout.sectionInset = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-    // NB: `estimatedItemSize` was tried here to avoid a full-dataset layout pass on launch, but
-    // on this library's scale (100k+ items, aspect-ratio-varied heights via sizeForItemAt) it
-    // instead sent NSCollectionViewFlowLayout into a self-reinvalidating layout loop —
-    // `_updateVisibleCellsNow:` recursing into itself indefinitely, a full hang that is strictly
-    // worse than the multi-second synchronous layout it was meant to avoid. Reverted; the
-    // underlying scale problem needs a real fix (e.g. paginating the query) rather than this.
+    // WP3 §1: custom layout owned by the coordinator (slice 2 sets snapshot/zoom on
+    // updates; here it just compiles and renders the initial snapshot).
+    let layout = MacTimelineLayout()
+    layout.snapshot = snapshot
+    layout.targetItemSide = MacTimelineLayout.clampedItemSide(itemSize)
     let collectionView = MacKeyCollectionView()
     collectionView.collectionViewLayout = layout
     collectionView.isSelectable = true
     collectionView.allowsMultipleSelection = true
     collectionView.allowsEmptySelection = true
     collectionView.register(MacGridCell.self, forItemWithIdentifier: MacGridCell.identifier)
+    collectionView.register(
+      MacGridHeaderView.self,
+      forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
+      withIdentifier: MacGridHeaderView.identifier)
     collectionView.dataSource = context.coordinator
     collectionView.delegate = context.coordinator
     collectionView.onKeyDown = { [weak coordinator = context.coordinator] event in
