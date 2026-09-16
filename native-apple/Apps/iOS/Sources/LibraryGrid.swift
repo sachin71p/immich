@@ -544,6 +544,27 @@ struct LibraryView: View {
 
   var body: some View {
     NavigationStack {
+      // S2: session errors are visible — a dismissible banner with Retry above the grid.
+      if let syncError = session.lastError {
+        HStack {
+          Image(systemName: "exclamationmark.triangle")
+            .foregroundStyle(.yellow)
+          Text(syncError)
+            .font(.caption)
+            .lineLimit(2)
+          Spacer()
+          Button("Retry") { Task { await refreshAll() } }
+            .accessibilityIdentifier("sync-error-retry")
+          Button { session.lastError = nil } label: {
+            Image(systemName: "xmark")
+          }
+          .accessibilityIdentifier("sync-error-dismiss")
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .background(.yellow.opacity(0.15))
+        .accessibilityIdentifier("sync-error-banner")
+      }
       ZStack(alignment: .trailing) {
         PhotoGridView(
           model: loader.model, columns: columns, squareCells: squareCells, editMode: editMode,
@@ -597,7 +618,7 @@ struct LibraryView: View {
         ToolbarItem(placement: .principal) {
           VStack(spacing: 0) {
             Text("Library").font(.headline)
-            Text(libraryDateRange).font(.caption2).foregroundStyle(.secondary)
+            Text(librarySubtitle).font(.caption2).foregroundStyle(.secondary)
           }
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -684,9 +705,12 @@ struct LibraryView: View {
     }
   }
 
-  private var libraryDateRange: String {
+  private var librarySubtitle: String {
+    // S2: sync progress is visible — indeterminate state only (the coordinator exposes no counts).
+    if session.isSyncing { return "Syncing…" }
     let dates = loader.model.rowsById.values.compactMap(\.localDateTime).sorted()
-    guard let first = dates.first, let last = dates.last else { return "No Photos" }
+    guard let first = dates.first, let last = dates.last
+    else { return "No Photos · Pull down to sync" }
     let formatter = DateFormatter()
     formatter.dateFormat = "MMM d, yyyy"
     return "\(formatter.string(from: first)) – \(formatter.string(from: last))"

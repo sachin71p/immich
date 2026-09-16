@@ -33,4 +33,26 @@ final class SyncUITests: XCTestCase {
     XCTAssertTrue(app.buttons["library-switcher"].exists)
     XCTAssertGreaterThan(app.collectionViews.cells.count, 0)
   }
+
+  func testSettingsSyncNowRowExists() throws {
+    let app = XCUIApplication()
+    app.launchArguments += ["-useFixtureStore"]
+    app.launch()
+
+    XCTAssertTrue(
+      app.buttons["library-switcher"].waitForExistence(timeout: 30),
+      "library switcher (and grid) should render from the fixture DB")
+
+    app.buttons["tab-settings"].tap()
+    let syncNow = app.buttons["settings-sync-now"]
+    XCTAssertTrue(
+      syncNow.waitForExistence(timeout: 10),
+      "Settings should offer a Sync Now row")
+    // Fixture mode has no sync coordinator: tapping must be a harmless no-op.
+    syncNow.tap()
+    XCTAssertTrue(syncNow.exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["settings-last-synced"].waitForExistence(timeout: 10),
+      "Settings should show the last-synced row")
+  }
 }

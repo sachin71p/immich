@@ -17,6 +17,24 @@ struct SettingsView: View {
   var body: some View {
     NavigationStack {
       List {
+        Section("Sync") {
+          Button("Sync Now") {
+            Task { await session.syncNow() }
+          }
+          .disabled(session.isSyncing)
+          .accessibilityIdentifier("settings-sync-now")
+          LabeledContent("Last synced", value: lastSyncedText)
+            .accessibilityIdentifier("settings-last-synced")
+          if session.isSyncing {
+            ProgressView("Syncing…")
+              .accessibilityIdentifier("settings-syncing")
+          }
+          if let lastError = session.lastError {
+            Text(lastError)
+              .foregroundStyle(.red)
+              .font(.caption)
+          }
+        }
         Section("Account") {
           LabeledContent("Server", value: session.serverURL?.absoluteString ?? "—")
           LabeledContent("User", value: session.userId)
@@ -118,6 +136,13 @@ struct SettingsView: View {
         self.error = error.localizedDescription
       }
     }
+  }
+
+  private var lastSyncedText: String {
+    guard let last = session.lastSyncAt else { return "Never" }
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .full
+    return formatter.localizedString(for: last, relativeTo: Date())
   }
 
   static func formatBytes(_ bytes: Int) -> String {
