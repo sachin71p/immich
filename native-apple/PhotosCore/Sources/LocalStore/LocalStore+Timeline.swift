@@ -1,4 +1,5 @@
 import CoreModel
+import Foundation
 import GRDB
 import Rules
 
@@ -28,17 +29,25 @@ extension PhotosLocalStore {
   /// photo that owns it, never a standalone timeline item — otherwise every Live Photo would count
   /// and appear as one photo plus one extra "video". The `visibleAsset` join enforces that by
   /// dropping any row that some other asset's `livePhotoVideoId` points at.
+  /// The media-kind classifier, shared by the row projection and the SQL kind filter in
+  /// `assets(scope:mediaKind:)` — kept as one string so the two can never drift (a Photos
+  /// destination must not pull 102k rows to keep 57k).
+  static let mediaKindCaseSQL = """
+    CASE
+      WHEN asset.livePhotoVideoId IS NOT NULL THEN 'livePhoto'
+      WHEN assetExif.projectionType = 'equirectangular' THEN 'panorama'
+      WHEN asset.type = 'VIDEO' THEN 'video'
+      WHEN asset.originalFileName LIKE 'Screenshot%' OR asset.originalFileName LIKE 'screenshot%' THEN 'screenshot'
+      ELSE 'photo'
+    END
+    """
+
   static let rowSelectSQL = """
     SELECT asset.id AS id, asset.thumbhash AS thumbhash, asset.width AS width, asset.height AS height,
       asset.isFavorite AS isFavorite, asset.deletedAt AS deletedAt, asset.visibility AS visibility,
       asset.localDateTime AS localDateTime,
-      CASE
-        WHEN asset.livePhotoVideoId IS NOT NULL THEN 'livePhoto'
-        WHEN assetExif.projectionType = 'equirectangular' THEN 'panorama'
-        WHEN asset.type = 'VIDEO' THEN 'video'
-        WHEN asset.originalFileName LIKE 'Screenshot%' OR asset.originalFileName LIKE 'screenshot%' THEN 'screenshot'
-        ELSE 'photo'
-      END AS mediaKind
+      asset.ownerId AS ownerId, asset.isEdited AS isEdited, asset.durationSeconds AS durationSeconds,
+      \(mediaKindCaseSQL) AS mediaKind
     FROM asset
     JOIN (
       SELECT id FROM asset
@@ -56,6 +65,7 @@ extension PhotosLocalStore {
     } else {
       ratio = 1
     }
+    let duration: Int? = row["durationSeconds"]
     return TimelineRow(
       id: row["id"],
       thumbhash: row["thumbhash"],
@@ -64,7 +74,10 @@ extension PhotosLocalStore {
       isFavorite: row["isFavorite"],
       isTrashed: (row["deletedAt"] as String?) != nil,
       isArchived: (row["visibility"] as String) == "archive",
-      localDateTime: row["localDateTime"]
+      localDateTime: row["localDateTime"],
+      ownerId: row["ownerId"],
+      isEdited: row["isEdited"],
+      durationSeconds: duration
     )
   }
 
@@ -163,6 +176,8 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Media-type destination (Photos/Videos) — the kind filter runs in SQL via the same
+  /// `mediaKindCaseSQL` the projection uses, so the query never materializes rows it drops.
   public func assets(
     scope: ContainerScope,
     mediaKind: TimelineMediaKind,
@@ -172,14 +187,116 @@ extension PhotosLocalStore {
     let (whereSQL, args) = Self.scopeWhere(scope)
     let sql = """
       \(Self.rowSelectSQL)
-      WHERE asset.deletedAt IS NULL AND \(whereSQL)
+      WHERE asset.deletedAt IS NULL AND \(Self.mediaKindCaseSQL) = ? AND \(whereSQL)
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
     return try await dbQueue.read { db in
-      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit, offset]))
-        .map(Self.row)
-        .filter { $0.mediaKind == mediaKind }
+      try Row.fetchAll(
+        db, sql: sql, arguments: Self.sqlArgs([mediaKind.rawValue], args, [limit, offset])
+      ).map(Self.row)
+    }
+  }
+
+  /// A whole timeline in **one** read transaction — replaces the app's per-bucket
+  /// `timelineAssets` loop (one `dbQueue.read` per month bucket). Optionally restricted to
+  /// `bucketKeys`; otherwise returns every visible row in the scope, newest first.
+  public func timelineRows(
+    scope: ContainerScope,
+    bucketKeys: [String]? = nil,
+    granularity: Granularity = .month
+  ) async throws -> [TimelineRow] {
+    let (whereSQL, args) = Self.scopeWhere(scope)
+    // `let`, not `var`: the dbQueue closure below is `@Sendable`, so captured state must
+    // be immutable (Swift 6 rejects captured `var`s in concurrently-executing code).
+    let bucketSQL: String
+    let bucketArgs: [String]
+    if let bucketKeys {
+      guard !bucketKeys.isEmpty else { return [] }
+      bucketSQL =
+        "AND strftime('\(granularity.strftimeFormat)', asset.localDateTime) IN (\(bucketKeys.map { _ in "?" }.joined(separator: ",")))"
+      bucketArgs = bucketKeys
+    } else {
+      bucketSQL = ""
+      bucketArgs = []
+    }
+    let sql = """
+      \(Self.rowSelectSQL)
+      WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked' \(bucketSQL) AND \(whereSQL)
+      ORDER BY asset.localDateTime DESC
+      """
+    return try await dbQueue.read { db in
+      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(bucketArgs, args)).map(Self.row)
+    }
+  }
+
+  /// Asset ids in any album the user can see — one query replacing the app's per-album loop
+  /// (R8: mutations did one SQL query per album).
+  public func assetIdsInAnyAlbum(userId: String) async throws -> Set<String> {
+    try await dbQueue.read { db in
+      Set(
+        try String.fetchAll(
+          db,
+          sql: """
+            SELECT DISTINCT assetId FROM albumAsset
+            WHERE albumId IN (SELECT albumId FROM albumUser WHERE userId = ?)
+            """,
+          arguments: [userId]
+        ))
+    }
+  }
+
+  /// Every located pin in `scope` with its capture time — the full-library Places map.
+  /// No limit (WP6 clusters client-side); `locatedAssets(limit:)` remains for the side list.
+  public func locatedAssetPoints(scope: ContainerScope) async throws -> [LocatedPoint] {
+    let (whereSQL, args) = Self.scopeWhere(scope)
+    let sql = """
+      SELECT asset.id AS id, assetExif.latitude AS latitude, assetExif.longitude AS longitude,
+        asset.localDateTime AS localDateTime
+      FROM asset
+      JOIN assetExif ON assetExif.assetId = asset.id
+      WHERE asset.deletedAt IS NULL AND assetExif.latitude IS NOT NULL
+        AND assetExif.longitude IS NOT NULL AND \(whereSQL)
+      """
+    return try await dbQueue.read { db in
+      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args)).compactMap { row in
+        guard let latitude: Double = row["latitude"], let longitude: Double = row["longitude"] else {
+          return nil
+        }
+        let id: String = row["id"]
+        let localDateTime: Date? = row["localDateTime"]
+        return LocatedPoint(
+          id: id, latitude: latitude, longitude: longitude, localDateTime: localDateTime)
+      }
+    }
+  }
+
+  /// People summaries for WP6's People grid — one query (person + visible-face count on
+  /// non-trashed assets), named persons first, then by count descending. The asset↔person
+  /// link is the `face` table (`face.personId` → `face.assetId`).
+  public func peopleSummaries(userId: String) async throws -> [PersonSummary] {
+    try await dbQueue.read { db in
+      try Row.fetchAll(
+        db,
+        sql: """
+          SELECT person.id AS id, person.name AS name, person.isHidden AS isHidden,
+            person.birthDate AS birthDate,
+            COUNT(DISTINCT CASE WHEN face.isVisible = 1 AND face.deletedAt IS NULL
+              AND asset.id IS NOT NULL THEN face.assetId END) AS assetCount
+          FROM person
+          LEFT JOIN face ON face.personId = person.id
+          LEFT JOIN asset ON asset.id = face.assetId AND asset.deletedAt IS NULL
+          WHERE person.ownerId = ?
+          GROUP BY person.id
+          ORDER BY (person.name != '') DESC, assetCount DESC, person.name ASC
+          """,
+        arguments: [userId]
+      ).map { row in
+        let count: Int = row["assetCount"]
+        return PersonSummary(
+          id: row["id"], name: row["name"], isHidden: row["isHidden"], assetCount: count,
+          birthDate: row["birthDate"])
+      }
     }
   }
 

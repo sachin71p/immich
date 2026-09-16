@@ -22,6 +22,12 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
   public var isTrashed: Bool
   public var isArchived: Bool
   public var localDateTime: Date?
+  /// Owning user — lets cells and menus resolve the container without hydrating `Asset`.
+  public var ownerId: String
+  /// Whether the server holds an edited rendition (viewer offers edited vs original).
+  public var isEdited: Bool
+  /// Video duration in seconds; nil for stills (viewer progress + duration badges).
+  public var durationSeconds: Int?
 
   public init(
     id: String,
@@ -31,7 +37,10 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
     isFavorite: Bool,
     isTrashed: Bool,
     isArchived: Bool,
-    localDateTime: Date?
+    localDateTime: Date?,
+    ownerId: String = "",
+    isEdited: Bool = false,
+    durationSeconds: Int? = nil
   ) {
     self.id = id
     self.thumbhash = thumbhash
@@ -41,6 +50,9 @@ public struct TimelineRow: Sendable, Hashable, Identifiable {
     self.isTrashed = isTrashed
     self.isArchived = isArchived
     self.localDateTime = localDateTime
+    self.ownerId = ownerId
+    self.isEdited = isEdited
+    self.durationSeconds = durationSeconds
   }
 }
 
@@ -58,7 +70,25 @@ extension TimelineRow {
     self.init(
       id: asset.id, thumbhash: asset.thumbhash, aspectRatio: ratio, mediaKind: kind,
       isFavorite: asset.isFavorite, isTrashed: asset.deletedAt != nil,
-      isArchived: asset.visibility == .archive, localDateTime: asset.localDateTime)
+      isArchived: asset.visibility == .archive, localDateTime: asset.localDateTime,
+      ownerId: asset.ownerId, isEdited: asset.isEdited, durationSeconds: asset.durationSeconds)
+  }
+}
+
+/// A map pin for the full-library Places map — like `LocatedAsset` but carrying the capture
+/// time so pins can be clustered/filtered by date. No limit is applied by the query (WP6 renders
+/// all pins); the bounded `locatedAssets(limit:)` remains for the side list.
+public struct LocatedPoint: Sendable, Hashable, Identifiable {
+  public var id: String
+  public var latitude: Double
+  public var longitude: Double
+  public var localDateTime: Date?
+
+  public init(id: String, latitude: Double, longitude: Double, localDateTime: Date? = nil) {
+    self.id = id
+    self.latitude = latitude
+    self.longitude = longitude
+    self.localDateTime = localDateTime
   }
 }
 
