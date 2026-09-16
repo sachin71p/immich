@@ -106,6 +106,19 @@ final class PhotoGridViewController: UIViewController {
       snapshot.appendItems(model.rowIdsByBucket[bucket.key] ?? [], toSection: bucket.key)
     }
     dataSource.apply(snapshot, animatingDifferences: false)
+    // L5 interim: the snapshot/layout reset above doesn't touch already-visible headers, so
+    // their Select buttons go stale when `editMode` flips — reconfigure them in place.
+    // (WP1 stops resetting layout/snapshot on editMode entirely.)
+    for (section, bucket) in model.buckets.enumerated() {
+      if let header = collectionView.supplementaryView(
+        forElementKind: UICollectionView.elementKindSectionHeader,
+        at: IndexPath(item: 0, section: section)) as? BucketHeaderView
+      {
+        header.titleLabel.text = Self.bucketTitle(bucket.key)
+        header.showsSelectButton = editMode
+        header.onSelectAll = { [weak self] in self?.selectAll(in: section) }
+      }
+    }
     // Restore selection after snapshot changes.
     for id in selectedIds {
       if let indexPath = dataSource.indexPath(for: id) {

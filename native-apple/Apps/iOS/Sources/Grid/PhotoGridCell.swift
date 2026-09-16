@@ -38,11 +38,28 @@ final class PhotoGridCell: UICollectionViewCell {
       containerBadge.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 4),
       containerBadge.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
     ])
-    // Selected state for multi-select (brief task 5).
-    selectedBackgroundView = UIView()
-    selectedBackgroundView?.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.35)
-    selectedBackgroundView?.layer.borderColor = UIColor.systemBlue.cgColor
-    selectedBackgroundView?.layer.borderWidth = 3
+    // L3 interim: the selection overlay sits ABOVE the image. (`selectedBackgroundView`
+    // renders behind `contentView`, which the image fills, so selection was invisible.)
+    // WP1 replaces this with the native circle/check badges.
+    selectionOverlay.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.3)
+    selectionOverlay.layer.borderColor = UIColor.systemBlue.cgColor
+    selectionOverlay.layer.borderWidth = 3
+    selectionOverlay.isHidden = true
+    selectionOverlay.translatesAutoresizingMaskIntoConstraints = false
+    contentView.addSubview(selectionOverlay)
+    NSLayoutConstraint.activate([
+      selectionOverlay.topAnchor.constraint(equalTo: contentView.topAnchor),
+      selectionOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      selectionOverlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      selectionOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+    ])
+  }
+
+  /// L3 interim selection veil, above `imageView` and the badges.
+  let selectionOverlay = UIView()
+
+  override var isSelected: Bool {
+    didSet { selectionOverlay.isHidden = !isSelected }
   }
 
   @available(*, unavailable)
@@ -53,5 +70,6 @@ final class PhotoGridCell: UICollectionViewCell {
     loadTask?.cancel()
     loadTask = nil
     imageView.image = nil
+    selectionOverlay.isHidden = true
   }
 }
