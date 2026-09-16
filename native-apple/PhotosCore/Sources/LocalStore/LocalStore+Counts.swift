@@ -46,6 +46,29 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Filename/classification counts for the Media Types shelf tiles that open a
+  /// `NativeMediaCollection` — the exact predicate `mediaAssets` uses for that
+  /// collection (same `WHERE`, same scope), so tile and grid agree.
+  public func nativeCollectionCount(
+    scope: ContainerScope, collection: NativeMediaCollection
+  ) async throws -> Int {
+    let predicate: String
+    switch collection {
+    case .videos: predicate = "asset.type = 'VIDEO'"
+    case .selfies: predicate = "lower(asset.originalFileName) LIKE '%selfie%'"
+    case .livePhotos: predicate = "asset.livePhotoVideoId IS NOT NULL"
+    case .portraits: predicate = "lower(asset.originalFileName) LIKE '%portrait%'"
+    case .screenshots: predicate = "lower(asset.originalFileName) LIKE 'screenshot%'"
+    case .screenRecordings:
+      predicate =
+        "asset.type = 'VIDEO' AND (lower(asset.originalFileName) LIKE 'screen recording%' OR lower(asset.originalFileName) LIKE 'screenrecording%')"
+    }
+    return try await scalarCount(
+      scope: scope,
+      predicate:
+        "asset.deletedAt IS NULL AND asset.visibility != 'locked' AND \(predicate)")
+  }
+
   /// Favorites tile — same predicate as `favoriteAssets`.
   public func favoriteCount(scope: ContainerScope) async throws -> Int {
     try await scalarCount(

@@ -71,5 +71,10 @@ struct LocalStoreCountsTests {
     #expect(try await store.hiddenCount(scope: Self.scope()) == 1)
     #expect(try await store.trashCount(scope: Self.scope()) == 1)
     #expect(try await store.locatedCount(scope: Self.scope()) == 1)
+    #expect(try await store.nativeCollectionCount(scope: Self.scope(), collection: .videos) == 1)
+    #expect(
+      try await store.nativeCollectionCount(scope: Self.scope(), collection: .screenshots) == 1)
+    #expect(
+      try await store.nativeCollectionCount(scope: Self.scope(), collection: .selfies) == 0)
   }
 }

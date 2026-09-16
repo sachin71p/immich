@@ -257,6 +257,8 @@ struct MacLibraryBrowser: View {
       MacSearchView(state: state, onOpenViewer: openViewer)
     case .map:
       MacMapPlacesView(state: state, openViewer: openViewer)
+    case .some where selection == .collections:
+      MacCollectionsView(state: state, select: selectDestination)
     case .people:
       MacPeopleView(state: state)
     case .memories:
@@ -1118,6 +1120,7 @@ extension SidebarDestination {
     case .mediaPhotos: return "media-photos"
     case .mediaVideos: return "media-videos"
     case .mediaScreenshots: return "media-screenshots"
+    case .mediaPanoramas: return "media-panoramas"
     case .media(let collection): return "media-\(collection.rawValue)"
     case .space(let id): return "space:\(id)"
     case .externalLibrary(let id): return "extlib:\(id)"
@@ -1146,6 +1149,7 @@ extension SidebarDestination {
     if restorableID == "media-photos" { self = .mediaPhotos; return }
     if restorableID == "media-videos" { self = .mediaVideos; return }
     if restorableID == "media-screenshots" { self = .mediaScreenshots; return }
+    if restorableID == "media-panoramas" { self = .mediaPanoramas; return }
     if restorableID == "duplicates" { self = .duplicates; return }
     if restorableID == "all-albums" { self = .allAlbums; return }
     if restorableID == "captured-by-me" { self = .capturedByMe; return }

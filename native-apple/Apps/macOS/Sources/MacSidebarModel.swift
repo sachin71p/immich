@@ -18,6 +18,7 @@ public enum SidebarDestination: Sendable, Hashable {
   case mediaPhotos
   case mediaVideos
   case mediaScreenshots
+  case mediaPanoramas
   case media(NativeMediaCollection)
   case space(String)
   case externalLibrary(String)
@@ -46,6 +47,7 @@ public enum SidebarDestination: Sendable, Hashable {
     case .mediaPhotos: return "Photos"
     case .mediaVideos: return "Videos"
     case .mediaScreenshots: return "Screenshots"
+    case .mediaPanoramas: return "Panoramas"
     case .media(let collection): return collection.title
     case .space: return "Shared Library"
     case .externalLibrary: return "External Library"
@@ -108,6 +110,8 @@ public enum SidebarDestination: Sendable, Hashable {
       return ("No Videos", "No videos in this view.", "video")
     case .mediaScreenshots:
       return ("No Screenshots", "No screenshots in this view.", "camera.viewfinder")
+    case .mediaPanoramas:
+      return ("No Panoramas", "No panoramas in this view.", "pano")
     case .media(let collection):
       return ("No \(collection.title)", "Nothing here yet.", collection.systemImage)
     case .space(let id):
@@ -153,6 +157,7 @@ public enum SidebarDestination: Sendable, Hashable {
     case .mediaPhotos: return "photo"
     case .mediaVideos: return "video"
     case .mediaScreenshots: return "camera.viewfinder"
+    case .mediaPanoramas: return "pano"
     case .media(let collection): return collection.systemImage
     case .space: return "person.2.circle"
     case .externalLibrary: return "externaldrive"
@@ -208,6 +213,7 @@ extension SidebarDestination {
     case .mediaPhotos: return .media(.photo, nil)
     case .mediaVideos: return .media(.video, nil)
     case .mediaScreenshots: return .media(.screenshot, nil)
+    case .mediaPanoramas: return .media(.panorama, nil)
     case .media(let collection): return .mediaCollection(collection, nil)
     case .space(let id): return .timeline(.space(id))
     case .externalLibrary(let id): return .timeline(.library(id))
