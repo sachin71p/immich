@@ -94,7 +94,7 @@ export class JobService extends BaseService {
       const response = await this.jobRepository.run(job);
       await this.eventRepository.emit('JobSuccess', { job, response });
       if (response && typeof response === 'string' && [JobStatus.Success, JobStatus.Skipped].includes(response)) {
-        await this.onDone(job);
+        await this.onDone(job, response as JobStatus);
       }
     } catch (error: Error | any) {
       await this.eventRepository.emit('JobError', { job, error });
@@ -106,7 +106,7 @@ export class JobService extends BaseService {
   /**
    * Queue follow up jobs
    */
-  private async onDone(item: JobItem) {
+  private async onDone(item: JobItem, response?: JobStatus) {
     switch (item.name) {
       case JobName.SidecarCheck: {
         await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: item.data });
@@ -114,6 +114,12 @@ export class JobService extends BaseService {
       }
 
       case JobName.SidecarWrite: {
+        // fork: shared-libraries (R4-01) - a skipped write changed nothing on
+        // disk, so re-extracting would replace user tags added after the write
+        // was queued with file-derived ones (applyTagList replaces).
+        if (response === JobStatus.Skipped) {
+          break;
+        }
         await this.jobRepository.queue({
           name: JobName.AssetExtractMetadata,
           data: { id: item.data.id, source: 'sidecar-write' },

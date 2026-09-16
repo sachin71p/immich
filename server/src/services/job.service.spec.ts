@@ -38,7 +38,7 @@ describe(JobService.name, () => {
         jobs: [JobName.AssetExtractMetadata],
       },
       {
-        item: { name: JobName.SidecarCheck, data: { id: 'asset-1' } },
+        item: { name: JobName.SidecarWrite, data: { id: 'asset-1' } },
         jobs: [JobName.AssetExtractMetadata],
       },
       {
@@ -118,5 +118,14 @@ describe(JobService.name, () => {
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });
     }
+
+    it('[R4-01] should not queue extraction when a SidecarWrite job is skipped', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+
+      await sut.onJobRun(QueueName.BackgroundTask, { name: JobName.SidecarWrite, data: { id: 'asset-1' } });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
   });
 });
