@@ -102,6 +102,24 @@ public struct Person: Sendable, Identifiable, Hashable {
   }
 }
 
+/// A People-grid cell — `Person` plus its visible-face count, so WP6 renders the grid
+/// without one query per person. Sorted named-first, then by `assetCount` descending.
+public struct PersonSummary: Sendable, Identifiable, Hashable {
+  public var id: String
+  public var name: String
+  public var isHidden: Bool
+  public var assetCount: Int
+  public var birthDate: Date?
+
+  public init(id: String, name: String, isHidden: Bool, assetCount: Int, birthDate: Date? = nil) {
+    self.id = id
+    self.name = name
+    self.isHidden = isHidden
+    self.assetCount = assetCount
+    self.birthDate = birthDate
+  }
+}
+
 /// Mirrors `SyncAssetFaceV2`.
 public struct Face: Sendable, Identifiable, Hashable {
   public var id: String

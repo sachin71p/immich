@@ -1,5 +1,5 @@
-import CoreModel
 import CoreGraphics
+import CoreModel
 import Foundation
 import ImageIO
 import Nuke
@@ -22,22 +22,19 @@ public struct MediaServer: Sendable {
   }
 }
 
-/// The Nuke seam — brief task 2 runs on Nuke (memory cache, request coalescing, priorities,
-/// prefetching, cancellation). Production is `NukeMediaImageService`; tests inject a stub.
+/// The Nuke seam — `data(for:)` is the only network primitive the thumbnail/preview path
+/// uses (WP1 §4.2: one fetch, then local decode). `image(for:)` remains for callers that
+/// need Nuke's decoder, but the pipeline itself no longer calls it on the grid path.
 public protocol MediaImageService: Sendable {
   func image(for request: ImageRequest) async throws -> PlatformImage
   func data(for request: ImageRequest) async throws -> Data
-  func prefetch(_ requests: [ImageRequest])
-  func stopPrefetching()
 }
 
 public struct NukeMediaImageService: MediaImageService {
   public var pipeline: ImagePipeline
-  public var prefetcher: ImagePrefetcher
 
-  public init(pipeline: ImagePipeline = .shared, prefetcher: ImagePrefetcher? = nil) {
+  public init(pipeline: ImagePipeline = .shared) {
     self.pipeline = pipeline
-    self.prefetcher = prefetcher ?? ImagePrefetcher(pipeline: pipeline)
   }
 
   public func image(for request: ImageRequest) async throws -> PlatformImage {
@@ -46,14 +43,6 @@ public struct NukeMediaImageService: MediaImageService {
 
   public func data(for request: ImageRequest) async throws -> Data {
     try await pipeline.data(for: request).0
-  }
-
-  public func prefetch(_ requests: [ImageRequest]) {
-    prefetcher.startPrefetching(with: requests)
-  }
-
-  public func stopPrefetching() {
-    prefetcher.stopPrefetching()
   }
 }
 
@@ -80,24 +69,46 @@ public struct MediaLoadedImage: Sendable {
 }
 
 /// Progressive image pipeline — brief task 2: thumbhash placeholder → thumbnail → preview →
-/// original (on zoom or explicit), Nuke-backed with device-sized memory cache, per-tier disk
+/// original (on zoom or explicit), with device-sized memory cache, per-tier disk
 /// cache underneath, request priorities + cancellation for fast scroll, and a grid prefetcher.
+///
+/// WP1 §4 changes: single network fetch per tier (`data` then local `decodeImage` — never
+/// `service.image` on the thumbnail/preview path), a synchronous `MediaMemoryCache` for
+/// cell configuration, a thumbhash placeholder cache, in-flight de-duplication between
+/// visible and prefetch consumers, and a lazy `TieredMediaCache` index.
 public actor MediaPipeline {
   private let service: any MediaImageService
   private let diskCache: TieredMediaCache
   private let server: MediaServer
   private var offline: Bool
 
+  /// Synchronous decoded-image store — cells hit this on the main thread via `cachedImage`.
+  public nonisolated let memory: MediaMemoryCache
+
+  /// In-flight fetch shared by visible and prefetch consumers of the same bytes.
+  private struct InFlightEntry {
+    var task: Task<CGImage, any Error>
+    var visible: Int
+    var prefetch: Bool
+    var id: String
+    var epoch: UInt64
+  }
+
+  private var inFlight: [String: InFlightEntry] = [:]
+  private var epochCounter: UInt64 = 0
+
   public init(
     service: any MediaImageService,
     diskCache: TieredMediaCache,
     server: MediaServer,
-    offline: Bool = false
+    offline: Bool = false,
+    memory: MediaMemoryCache = MediaMemoryCache(costLimit: memoryCacheCostLimit())
   ) {
     self.service = service
     self.diskCache = diskCache
     self.server = server
     self.offline = offline
+    self.memory = memory
   }
 
   /// Default pipeline: a dedicated Nuke pipeline whose memory cache is sized to the device.
@@ -105,8 +116,8 @@ public actor MediaPipeline {
     var configuration = ImagePipeline.Configuration()
     configuration.imageCache = ImageCache(costLimit: memoryCacheCostLimit())
     let pipeline = ImagePipeline(configuration: configuration)
-    let service = NukeMediaImageService(pipeline: pipeline, prefetcher: ImagePrefetcher(pipeline: pipeline))
-    return MediaPipeline(service: service, diskCache: diskCache, server: server)
+    return MediaPipeline(
+      service: NukeMediaImageService(pipeline: pipeline), diskCache: diskCache, server: server)
   }
 
   /// Memory cache budget: 15% of RAM clamped to 32–256 MB.
@@ -121,11 +132,34 @@ public actor MediaPipeline {
     self.offline = offline
   }
 
+  // MARK: - synchronous cache probes (main-thread cell configuration)
+
+  /// Decoded-image hit without suspending — `nil` means "start (or join) a `stream`".
+  public nonisolated func cachedImage(id: String, tier: MediaTier, edited: Bool = false) -> CGImage? {
+    memory.cached(id: id, tier: tier, edited: edited)
+  }
+
+  /// Thumbhash-placeholder hit without suspending.
+  public nonisolated func cachedPlaceholder(id: String) -> CGImage? {
+    memory.cachedPlaceholder(id: id)
+  }
+
+  /// Decodes (then memoizes) the thumbhash placeholder for `id`.
+  public func placeholder(id: String, thumbhash: String?) async -> CGImage? {
+    if let hit = memory.cachedPlaceholder(id: id) { return hit }
+    guard let thumbhash,
+      let decoded = try? ThumbHash.decode(base64: thumbhash),
+      let cgImage = decoded.makeCGImage()
+    else { return nil }
+    memory.storePlaceholder(cgImage, id: id)
+    return cgImage
+  }
+
   // MARK: - loading
 
   /// Progressive steps for an asset: instant thumbhash placeholder (when present), then the best
   /// cached tier, then network tiers from the requested one downward. Breaking out of the
-  /// iteration cancels the in-flight Nuke work (fast-scroll reuse).
+  /// iteration cancels the in-flight fetch (fast-scroll reuse).
   public func stream(
     asset: Asset,
     tier requested: MediaTier,
@@ -133,59 +167,78 @@ public actor MediaPipeline {
     pixelSize: Int? = nil,
     format: MediaFormatInfo? = nil
   ) -> AsyncThrowingStream<MediaLoadedImage, any Error> {
-    let service = self.service
-    let diskCache = self.diskCache
-    let server = self.server
-    let offline = self.offline
-    let pixelSize = pixelSize ?? requested.defaultPixelSize
     let format = format ?? MediaFormatInfo.classify(fileName: asset.originalFileName)
+    return stream(
+      id: asset.id, thumbhash: asset.thumbhash, tier: requested, edited: edited,
+      pixelSize: pixelSize, format: format)
+  }
+
+  /// Row-based progressive steps — needs no full `Asset`, so WP2's cells load from
+  /// `TimelineRow` fields alone (R9: "cells need a full Asset to load").
+  public func stream(
+    id: String,
+    thumbhash: String?,
+    tier requested: MediaTier,
+    edited: Bool = false,
+    pixelSize: Int? = nil,
+    format: MediaFormatInfo = .standardDefault
+  ) -> AsyncThrowingStream<MediaLoadedImage, any Error> {
+    let pipeline = self
+    let pixelSize = pixelSize ?? requested.defaultPixelSize
     return AsyncThrowingStream { continuation in
       let task = Task.detached {
         do {
-          if let thumbhash = asset.thumbhash,
-            let decoded = try? ThumbHash.decode(base64: thumbhash),
-            let cgImage = decoded.makeCGImage()
-          {
+          if let image = await pipeline.placeholder(id: id, thumbhash: thumbhash) {
             continuation.yield(
               MediaLoadedImage(
-                content: .placeholder(Self.platformImage(cgImage: cgImage)),
-                dynamicRange: format.dynamicRange
-              ))
+                content: .placeholder(Self.platformImage(cgImage: image)),
+                dynamicRange: format.dynamicRange))
           }
 
+          if let hit = pipeline.memory.cached(id: id, tier: requested, edited: edited) {
+            continuation.yield(
+              MediaLoadedImage(
+                content: .tier(requested, Self.platformImage(cgImage: hit), fromCache: true),
+                dynamicRange: format.dynamicRange))
+            continuation.finish()
+            return
+          }
+
+          let offline = await pipeline.isOffline
           if offline {
-            // Task 4: serve the best cached tier regardless of which tier was requested.
-            let cached = await diskCache.cachedTiers(assetID: asset.id, edited: edited)
+            let cached = await pipeline.diskCache.cachedTiers(assetID: id, edited: edited)
             guard let best = cached.first else {
               throw MediaError.unavailableOffline(requested: requested, bestCached: nil)
             }
-            guard let data = await diskCache.retrieve(assetID: asset.id, tier: best, edited: edited),
-              let cgImage = Self.decodeImage(data, pixelSize: pixelSize)
+            guard
+              let data = await pipeline.diskCache.retrieve(
+                assetID: id, tier: best, edited: edited),
+              let cgImage = await Self.decodeOffActor(data, pixelSize: pixelSize)
             else {
               throw MediaError.unavailableOffline(requested: requested, bestCached: best)
             }
+            pipeline.memory.store(cgImage, id: id, tier: best, edited: edited)
             continuation.yield(
               MediaLoadedImage(
                 content: .tier(best, Self.platformImage(cgImage: cgImage), fromCache: true),
-                dynamicRange: format.dynamicRange
-              ))
+                dynamicRange: format.dynamicRange))
             continuation.finish()
             return
           }
 
           let order = MediaTier.fallbackOrder(from: requested)
           var yielded: Set<MediaTier> = []
-          let cached = await diskCache.cachedTiers(assetID: asset.id, edited: edited)
+          let cached = await pipeline.diskCache.cachedTiers(assetID: id, edited: edited)
             .filter { order.contains($0) }
           if let best = cached.first,
-            let data = await diskCache.retrieve(assetID: asset.id, tier: best, edited: edited),
-            let cgImage = Self.decodeImage(data, pixelSize: pixelSize)
+            let data = await pipeline.diskCache.retrieve(assetID: id, tier: best, edited: edited),
+            let cgImage = await Self.decodeOffActor(data, pixelSize: pixelSize)
           {
+            pipeline.memory.store(cgImage, id: id, tier: best, edited: edited)
             continuation.yield(
               MediaLoadedImage(
                 content: .tier(best, Self.platformImage(cgImage: cgImage), fromCache: true),
-                dynamicRange: format.dynamicRange
-              ))
+                dynamicRange: format.dynamicRange))
             yielded.insert(best)
             if best == requested {
               continuation.finish()
@@ -201,18 +254,16 @@ public actor MediaPipeline {
             try Task.checkCancellation()
             do {
               let size = tier == requested ? pixelSize : tier.defaultPixelSize
-              let request = await Self.networkRequest(
-                server: server, assetID: asset.id, tier: tier, edited: edited,
-                priority: .high, pixelSize: size
-              )
-              let data = try await service.data(for: request)
-              try await diskCache.store(data, assetID: asset.id, tier: tier, edited: edited)
-              let image = try await service.image(for: request)
+              let url = MediaEndpoint(
+                serverURL: await pipeline.serverBaseURL, assetID: id
+              ).url(for: tier, edited: edited)
+              let cgImage = try await pipeline.fetchTier(
+                cacheID: id, id: id, url: url, tier: tier, edited: edited,
+                pixelSize: size, priority: .high, asPrefetch: false)
               continuation.yield(
                 MediaLoadedImage(
-                  content: .tier(tier, image, fromCache: false),
-                  dynamicRange: format.dynamicRange
-                ))
+                  content: .tier(tier, Self.platformImage(cgImage: cgImage), fromCache: false),
+                  dynamicRange: format.dynamicRange))
               continuation.finish()
               return
             } catch {
@@ -223,6 +274,71 @@ public actor MediaPipeline {
           if yielded.isEmpty {
             throw lastError ?? MediaError.nothingLoaded
           }
+          continuation.finish()
+        } catch {
+          continuation.finish(throwing: error)
+        }
+      }
+      continuation.onTermination = { _ in task.cancel() }
+    }
+  }
+
+  /// Person thumbnail for the People grid — same cache path as assets (memory → disk →
+  /// network) with tier `.thumbnail` and cache key prefix `person:`, served from
+  /// `GET /people/{id}/thumbnail`.
+  public func personThumbnail(id: String) -> AsyncThrowingStream<MediaLoadedImage, any Error> {
+    let pipeline = self
+    let cacheID = "person:\(id)"
+    return AsyncThrowingStream { continuation in
+      let task = Task.detached {
+        do {
+          if let hit = pipeline.memory.cached(id: cacheID, tier: .thumbnail, edited: false) {
+            continuation.yield(
+              MediaLoadedImage(
+                content: .tier(.thumbnail, Self.platformImage(cgImage: hit), fromCache: true),
+                dynamicRange: .sdr))
+            continuation.finish()
+            return
+          }
+          if await pipeline.isOffline {
+            guard
+              let data = await pipeline.diskCache.retrieve(
+                assetID: cacheID, tier: .thumbnail),
+              let cgImage = await Self.decodeOffActor(
+                data, pixelSize: MediaTier.thumbnail.defaultPixelSize)
+            else {
+              throw MediaError.unavailableOffline(requested: .thumbnail, bestCached: nil)
+            }
+            pipeline.memory.store(cgImage, id: cacheID, tier: .thumbnail, edited: false)
+            continuation.yield(
+              MediaLoadedImage(
+                content: .tier(.thumbnail, Self.platformImage(cgImage: cgImage), fromCache: true),
+                dynamicRange: .sdr))
+            continuation.finish()
+            return
+          }
+          if let data = await pipeline.diskCache.retrieve(assetID: cacheID, tier: .thumbnail),
+            let cgImage = await Self.decodeOffActor(
+              data, pixelSize: MediaTier.thumbnail.defaultPixelSize)
+          {
+            pipeline.memory.store(cgImage, id: cacheID, tier: .thumbnail, edited: false)
+            continuation.yield(
+              MediaLoadedImage(
+                content: .tier(.thumbnail, Self.platformImage(cgImage: cgImage), fromCache: true),
+                dynamicRange: .sdr))
+            continuation.finish()
+            return
+          }
+          try Task.checkCancellation()
+          let url = MediaEndpoint.personThumbnailURL(
+            serverURL: await pipeline.serverBaseURL, personID: id)
+          let cgImage = try await pipeline.fetchTier(
+            cacheID: cacheID, id: id, url: url, tier: .thumbnail, edited: false,
+            pixelSize: MediaTier.thumbnail.defaultPixelSize, priority: .high, asPrefetch: false)
+          continuation.yield(
+            MediaLoadedImage(
+              content: .tier(.thumbnail, Self.platformImage(cgImage: cgImage), fromCache: false),
+              dynamicRange: .sdr))
           continuation.finish()
         } catch {
           continuation.finish(throwing: error)
@@ -254,21 +370,58 @@ public actor MediaPipeline {
 
   // MARK: - prefetch (grid)
 
-  /// Warms Nuke's memory cache for upcoming grid cells at the lowest priority — task 2.
-  public func prefetch(ids: [String], tier: MediaTier, edited: Bool = false) async {
-    var requests: [ImageRequest] = []
-    for id in ids {
-      requests.append(
-        await Self.networkRequest(
-          server: server, assetID: id, tier: tier, edited: edited,
-          priority: .veryLow, pixelSize: tier.defaultPixelSize
-        ))
+  /// Warms the memory and disk caches for upcoming grid cells. Work is capped at 8
+  /// concurrent network loads; `cancelPrefetch(keeping:)` drops the rest. Prefetch loads
+  /// run at `.low` priority while visible loads run `.high`, and a cell that scrolls into
+  /// view joins an in-flight prefetch task instead of starting a new fetch.
+  public func prefetch(_ items: [(id: String, thumbhash: String?)], tier: MediaTier) async {
+    await withTaskGroup(of: Void.self) { group in
+      var active = 0
+      for item in items {
+        if Task.isCancelled { break }
+        if active >= 8 {
+          await group.next()
+          active -= 1
+        }
+        group.addTask { await self.prefetchOne(id: item.id, tier: tier, edited: false) }
+        active += 1
+      }
     }
-    service.prefetch(requests)
+  }
+
+  /// Cancels prefetch work for every id outside `keeping` — the grid calls this as the
+  /// visible window moves. Tasks with a visible consumer are kept (their prefetch hold is
+  /// just released); shared visible+prefetch tasks survive until the cell cancels.
+  public func cancelPrefetch(keeping ids: Set<String>) {
+    for (key, entry) in inFlight where entry.prefetch && !ids.contains(entry.id) {
+      if entry.visible == 0 {
+        entry.task.cancel()
+        inFlight.removeValue(forKey: key)
+      } else {
+        inFlight[key]?.prefetch = false
+      }
+    }
+  }
+
+  /// Pre-WP1 entry points, kept until WP2/WP3 migrate (the app still calls `prefetch(ids:)`).
+  /// Now routed through the same dedup/memory/disk path as the grid prefetcher.
+  public func prefetch(ids: [String], tier: MediaTier, edited: Bool = false) async {
+    await withTaskGroup(of: Void.self) { group in
+      var active = 0
+      for id in ids {
+        if Task.isCancelled { break }
+        if active >= 8 {
+          await group.next()
+          active -= 1
+        }
+        group.addTask { await self.prefetchOne(id: id, tier: tier, edited: edited) }
+        active += 1
+      }
+    }
   }
 
   public func cancelPrefetch() {
-    service.stopPrefetching()
+    cancelPrefetch(keeping: [])
   }
 
   // MARK: - offline keeps (pinning)
@@ -312,6 +465,147 @@ public actor MediaPipeline {
     await diskCache.evict(freeing: byteCount, from: tier)
   }
 
+  // MARK: - deduped fetch
+
+  private var isOffline: Bool { offline }
+
+  private var serverBaseURL: URL { server.baseURL }
+
+  private func prefetchOne(id: String, tier: MediaTier, edited: Bool) async {
+    // Memory hits need no work; a disk hit still warms the memory cache for the cell.
+    if memory.cached(id: id, tier: tier, edited: edited) != nil { return }
+    if let data = await diskCache.retrieve(assetID: id, tier: tier, edited: edited),
+      let cgImage = await Self.decodeOffActor(data, pixelSize: tier.defaultPixelSize)
+    {
+      memory.store(cgImage, id: id, tier: tier, edited: edited)
+      return
+    }
+    if offline { return }
+    let url = MediaEndpoint(serverURL: server.baseURL, assetID: id).url(
+      for: tier, edited: edited)
+    do {
+      _ = try await fetchTier(
+        cacheID: id, id: id, url: url, tier: tier, edited: edited,
+        pixelSize: tier.defaultPixelSize, priority: .low, asPrefetch: true)
+    } catch is CancellationError {
+      // Scrolled past or superseded — routine, not a failure.
+    } catch {
+      HeirloomLog.media.error(
+        "prefetch failed for \(id, privacy: .public): \(error, privacy: .public)")
+    }
+  }
+
+  /// Fetches one tier through the in-flight table: a visible cell joins an existing
+  /// prefetch task for the same bytes instead of starting a new fetch.
+  private func fetchTier(
+    cacheID: String, id: String, url: URL, tier: MediaTier, edited: Bool,
+    pixelSize: Int?, priority: ImageRequest.Priority, asPrefetch: Bool
+  ) async throws -> CGImage {
+    let service = self.service
+    let diskCache = self.diskCache
+    let server = self.server
+    let memory = self.memory
+    let key = "\(cacheID)|\(tier.rawValue)|\(edited)|\(pixelSize ?? -1)"
+    return try await fetchDeduped(key: key, id: id, asPrefetch: asPrefetch) {
+      try Task.checkCancellation()
+      var urlRequest = URLRequest(url: url)
+      if let token = await server.tokenProvider() {
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+      }
+      // The Resize processor downsamples to the target pixel size at decode time so full
+      // files never inflate to full bitmaps for grid cells. Prefetch runs `.low`,
+      // visible loads `.high`.
+      var processors: [any ImageProcessing] = []
+      if let pixelSize {
+        processors.append(
+          ImageProcessors.Resize(
+            size: CGSize(width: pixelSize, height: pixelSize), unit: .pixels,
+            contentMode: .aspectFit))
+      }
+      let request = ImageRequest(
+        urlRequest: urlRequest, processors: processors, priority: priority)
+      let data: Data
+      do {
+        data = try await HeirloomSignpost.interval(HeirloomSignpost.thumbnailFetch) {
+          try await service.data(for: request)
+        }
+      } catch {
+        HeirloomLog.media.error(
+          "fetch failed for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public): \(error, privacy: .public)")
+        throw error
+      }
+      // Single network fetch (WP1 §4.2): bytes go to disk, then decode locally — the old
+      // `service.image(for:)` second fetch is gone.
+      try await diskCache.store(data, assetID: cacheID, tier: tier, edited: edited)
+      guard let cgImage = await Self.decodeOffActor(data, pixelSize: pixelSize) else {
+        HeirloomLog.media.error(
+          "decode failed for \(id, privacy: .public) tier \(tier.rawValue, privacy: .public)")
+        throw MediaError.nothingLoaded
+      }
+      memory.store(cgImage, id: cacheID, tier: tier, edited: edited)
+      return cgImage
+    }
+  }
+
+  /// Joins the in-flight task for `key`, or starts it. Cancellation only cancels the
+  /// shared task once the last visible consumer goes away *and* no prefetch holds it
+  /// (reference count). Completion removes the entry; stragglers holding the task handle
+  /// still get its value. `epoch` guards against a new entry reusing the key mid-flight.
+  private func fetchDeduped(
+    key: String, id: String, asPrefetch: Bool,
+    work: @Sendable @escaping () async throws -> CGImage
+  ) async throws -> CGImage {
+    let task: Task<CGImage, any Error>
+    let epoch: UInt64
+    if var entry = inFlight[key] {
+      task = entry.task
+      epoch = entry.epoch
+      if asPrefetch {
+        entry.prefetch = true
+      } else {
+        entry.visible += 1
+      }
+      inFlight[key] = entry
+    } else {
+      epochCounter += 1
+      epoch = epochCounter
+      task = Task.detached(priority: asPrefetch ? .low : .userInitiated, operation: work)
+      inFlight[key] = InFlightEntry(
+        task: task, visible: asPrefetch ? 0 : 1, prefetch: asPrefetch, id: id, epoch: epoch)
+    }
+    do {
+      let image = try await withTaskCancellationHandler(operation: { try await task.value }) {
+        Task { await self.releaseLoad(key: key, epoch: epoch, asPrefetch: asPrefetch) }
+      }
+      completeLoad(key: key, epoch: epoch)
+      return image
+    } catch {
+      completeLoad(key: key, epoch: epoch)
+      throw error
+    }
+  }
+
+  private func releaseLoad(key: String, epoch: UInt64, asPrefetch: Bool) {
+    guard var entry = inFlight[key], entry.epoch == epoch else { return }
+    if asPrefetch {
+      entry.prefetch = false
+    } else {
+      entry.visible = max(0, entry.visible - 1)
+    }
+    if entry.visible == 0, !entry.prefetch {
+      entry.task.cancel()
+      inFlight.removeValue(forKey: key)
+    } else {
+      inFlight[key] = entry
+    }
+  }
+
+  private func completeLoad(key: String, epoch: UInt64) {
+    if inFlight[key]?.epoch == epoch {
+      inFlight.removeValue(forKey: key)
+    }
+  }
+
   // MARK: - requests & decoding
 
   static func networkRequest(
@@ -336,6 +630,17 @@ public actor MediaPipeline {
           size: CGSize(width: pixelSize, height: pixelSize), unit: .pixels, contentMode: .aspectFit))
     }
     return ImageRequest(urlRequest: urlRequest, processors: processors, priority: priority)
+  }
+
+  /// ImageIO thumbnail decode on a non-actor background task (never the main thread):
+  /// applies EXIF orientation and downsamples to the target pixel size without inflating
+  /// the full bitmap. Returns `nil` for undecodable bytes (treated as a tier miss).
+  static func decodeOffActor(_ data: Data, pixelSize: Int?) async -> CGImage? {
+    await Task.detached(priority: .userInitiated) {
+      HeirloomSignpost.interval(HeirloomSignpost.thumbnailDecode) {
+        Self.decodeImage(data, pixelSize: pixelSize)
+      }
+    }.value
   }
 
   /// Local-file decode path (disk hits, offline): ImageIO thumbnailing applies EXIF orientation

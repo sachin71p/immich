@@ -295,6 +295,15 @@ enum Schema {
       try db.create(index: "asset_on_livePhotoVideoId", on: "asset", columns: ["livePhotoVideoId"])
     }
 
+    // WP1: the timeline hot path filters `deletedAt IS NULL AND visibility != 'locked'` and
+    // orders by `localDateTime` on every grid query — a composite index keeps the planner off
+    // full scans at 100k+ rows. New migration, never an edit to an old one.
+    migrator.registerMigration("v3_timeline_cover_index") { db in
+      try db.create(
+        index: "asset_on_deleted_visibility_localDateTime", on: "asset",
+        columns: ["deletedAt", "visibility", "localDateTime"])
+    }
+
     return migrator
   }
 }
