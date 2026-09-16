@@ -10,8 +10,8 @@ import VisionKit
 
 /// Asset viewer (brief task 3): in-window and full-screen, arrow-key paging, pinch/scroll zoom
 /// with tier upgrade (thumbnail → preview → original through `MediaPipeline`), floating Info
-/// inspector (⌘I), favorite (.), rotate (⌘R, display-only until A8 persists edits), delete (⌘⌫),
-/// move to… (⌘⇧M), add to album.
+/// inspector (⌘I), favorite (.), rotate (⌘R, persisted through the edit path for photos),
+/// delete (⌘⌫), move to… (⌘⇧M), add to album.
 struct MacViewerView: View {
   @Bindable var state: MacAppState
   var assetId: String
@@ -29,7 +29,12 @@ struct MacViewerView: View {
   @State private var viewSize: CGSize = .zero
   /// Live magnification from the zoom view for the > 1.5× fullsize check.
   @State private var magnification: Double = 1
-  @State private var rotation: Double = 0
+  /// Display rotation in clockwise quarter turns (WP5 item 4): reset on every page change;
+  /// the persisted rotation arrives back through the pipeline, never through this state.
+  @State private var quarterTurns = 0
+  @State private var rotationError: String?
+  /// "San Jose, California" for the title subtitle (WP5 item 5), from the EXIF row.
+  @State private var titlePlace: String?
   @State private var showingInspector = false
   @State private var showingMove = false
   @State private var showingEdit = false
@@ -59,6 +64,45 @@ struct MacViewerView: View {
     )
   }
 
+  /// Window title (WP5 item 5): capture date ("February 8, 2026"). The filename moved to
+  /// the inspector.
+  private var viewerTitle: String {
+    guard let date = asset?.localDateTime else { return "Viewer" }
+    return date.formatted(date: .long, time: .omitted)
+  }
+
+  /// Subtitle: time plus place when known ("1:44 AM · San Jose, California").
+  private var viewerSubtitle: String {
+    guard let date = asset?.localDateTime else { return "" }
+    let time = date.formatted(date: .omitted, time: .shortened)
+    guard let place = titlePlace, !place.isEmpty else { return time }
+    return "\(time) · \(place)"
+  }
+
+  /// Display rotation in degrees from the quarter-turn count.
+  private var rotationDegrees: Double { Double(((quarterTurns % 4) + 4) % 4) * 90 }
+
+  /// Re-fit scale for 90°/270° turns (WP5 item 4): the ratio of the swapped-aspect fit to the
+  /// base fit, so the rotated image stays inside the container instead of overflowing it.
+  private func rotationFitScale(container: CGSize) -> CGFloat {
+    guard quarterTurns % 2 != 0 else { return 1 }
+    let w: CGFloat
+    let h: CGFloat
+    if let aw = asset?.width, let ah = asset?.height, aw > 0, ah > 0 {
+      w = CGFloat(aw)
+      h = CGFloat(ah)
+    } else if let size = image?.size, size.width > 0, size.height > 0 {
+      w = size.width
+      h = size.height
+    } else {
+      return 1
+    }
+    guard container.width > 0, container.height > 0 else { return 1 }
+    let fit = min(container.width / w, container.height / h)
+    guard fit > 0 else { return 1 }
+    return min(container.width / h, container.height / w) / fit
+  }
+
   /// Display-order paging context (WP2 Step 4: was the unfiltered full id list).
   /// Falls back to a one-element snapshot when `viewerContext` is nil (a window
   /// opened from Search, Map or a deep link — WP5 item 1). The fallback stays local
@@ -79,13 +123,6 @@ struct MacViewerView: View {
     return index < context.rows.count - 1
   }
 
-  /// Immich doesn't sync Apple's Portrait-mode depth EXIF, so unlike native Photos this can only
-  /// badge what `Asset` itself already knows, without a separate `AssetExif` fetch: Live Photo.
-  private var mediaTypeBadge: (title: String, systemImage: String)? {
-    guard let asset, asset.livePhotoVideoId != nil else { return nil }
-    return ("Live", "livephoto")
-  }
-
   var body: some View {
     ZStack {
       if let asset, asset.type == .video {
@@ -95,32 +132,32 @@ struct MacViewerView: View {
       } else if let asset, let motionId = asset.livePhotoVideoId {
         MacLivePhotoPageView(asset: asset, motionAssetId: motionId, state: state)
       } else if let image {
-        if liveTextEnabled {
-          MacLiveTextView(image: image, analysis: liveText)
-            .rotationEffect(.degrees(rotation))
-        } else {
-          MacZoomableImageView(
-            image: image, onZoomBeyondPreview: upgradeTier,
-            onMagnification: { magnification = $0 }
-          )
-          .rotationEffect(.degrees(rotation))
+        // Rotation re-fit (WP5 item 4): the representable fills the container aspect-fit, so a
+        // 90°/270° turn must shrink the whole rendered view to the swapped-aspect fit size —
+        // otherwise the rotated image overflows the bounds. Animated 0.2 s per the brief.
+        GeometryReader { proxy in
+          Group {
+            if liveTextEnabled {
+              MacLiveTextView(image: image, analysis: liveText)
+            } else {
+              MacZoomableImageView(
+                image: image, onZoomBeyondPreview: upgradeTier,
+                onMagnification: { magnification = $0 }
+              )
+            }
+          }
+          .rotationEffect(.degrees(rotationDegrees))
+          .scaleEffect(rotationFitScale(container: proxy.size))
         }
+        .animation(.easeInOut(duration: 0.2), value: quarterTurns)
       } else {
         ProgressView().controlSize(.large)
       }
       if let error {
         Text(error).foregroundStyle(.red).font(.caption).padding()
       }
-    }
-    .overlay(alignment: .topLeading) {
-      if let badge = mediaTypeBadge {
-        Label(badge.title, systemImage: badge.systemImage)
-          .font(.caption.weight(.semibold))
-          .labelStyle(.titleAndIcon)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 5)
-          .background(.thinMaterial, in: Capsule())
-          .padding(12)
+      if let rotationError {
+        Text(rotationError).foregroundStyle(.red).font(.caption).padding()
       }
     }
     .frame(minWidth: 640, minHeight: 480)
@@ -130,7 +167,8 @@ struct MacViewerView: View {
       }
     )
     .onPreferenceChange(ViewerSizeKey.self) { viewSize = $0 }
-    .navigationTitle(asset?.originalFileName ?? "Viewer")
+    .navigationTitle(viewerTitle)
+    .navigationSubtitle(viewerSubtitle)
     .focusedValue(\.macAssetActions, assetActions)
     .toolbar {
       if let onClose {
@@ -163,20 +201,36 @@ struct MacViewerView: View {
           Button { showingEdit = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
         }
         Button { rotateClockwise() } label: { Label("Rotate", systemImage: "rotate.right") }
+          .disabled(asset?.type == .video)
+          .help(
+            asset?.type == .video
+              ? "Rotation is not available for videos" : "Rotate 90° clockwise (⌘R)")
         Button { showingInspector.toggle() } label: { Label("Info", systemImage: "info.circle") }
         Toggle("Live Text", isOn: $liveTextEnabled)
+          .disabled(asset?.type == .video)
       }
     }
     .inspector(isPresented: $showingInspector) {
       if let asset {
-        MacInfoPanel(asset: asset, state: state)
+        MacInspectorView(asset: asset, state: state)
       }
     }
     .sheet(isPresented: $showingMove) {
-      MacMoveSheet(state: state, assetIds: [assetId]) { _ in showingMove = false }
+      MacMoveSheet(state: state, assetIds: [assetId]) { results in
+        showingMove = false
+        // Same posts as the grid's move sheet (MacMainWindow): moved rows leave every
+        // context without a reload; when this asset moved out, advance past it (item 7).
+        let moved = Set(results.filter { $0.status == .moved }.map(\.assetId))
+        guard !moved.isEmpty else { return }
+        MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: moved))
+        if moved.contains(assetId) { advanceAfterRemoval(removedId: assetId) }
+      }
     }
     .sheet(isPresented: $showingAddToAlbum) {
-      MacAddToAlbumSheet(state: state, assetIds: [assetId]) { showingAddToAlbum = false }
+      MacAddToAlbumSheet(state: state, assetIds: [assetId]) {
+        showingAddToAlbum = false
+        MacAssetChangeCenter.shared.post(.albumsChanged)
+      }
     }
     .sheet(isPresented: $showingEdit) {
       if let asset, let preview = editPreview {
@@ -209,10 +263,23 @@ struct MacViewerView: View {
       return .handled
     }
     .task(id: assetId) {
+      // Display-only state never carries across pages (rotation re-fit is per photo; the
+      // persisted rotation arrives back through the pipeline, not through this state).
+      quarterTurns = 0
+      rotationError = nil
+      liveText = nil
+      titlePlace = nil
       await ensureFallbackContext()
       await loadProgressive()
     }
     .onAppear { isFocused = true }
+    .task(id: liveTextEnabled) {
+      // Toggling Live Text on after load still needs an analysis (item 10); the preview
+      // tier is enough — analysis runs on whatever tier is currently displayed.
+      if liveTextEnabled, liveText == nil, image != nil, asset?.type != .video {
+        await analyzeLiveText()
+      }
+    }
   }
 
   /// Clamped paging through `viewerContext` display order (WP5 item 1): no wrap,
@@ -257,6 +324,9 @@ struct MacViewerView: View {
       guard let fresh = try await state.store.asset(id: id) else { return }
       try Task.checkCancellation()
       asset = fresh
+      if id == assetId {
+        titlePlace = try? await state.store.exifSummary(assetId: id)?.placeString
+      }
       for try await step in await state.pipeline.stream(asset: fresh, tier: .preview) {
         try Task.checkCancellation()
         switch step.content {
@@ -383,13 +453,55 @@ struct MacViewerView: View {
     return tmp
   }
 
-  /// Rotation hook (WP5 item 4): WP4's persistence decision, written at the top of
-  /// `reports/WP4-REPORT.md`, fills this single function in. Until then rotation is
-  /// display-only and nothing here touches persistence.
-  private func persistRotationIfEnabled() { }
+  /// Rotation persistence (WP5 item 4): the path WP4 decided PERSISTABLE — the same
+  /// EditRecipe/PUT-edits/KV route the grid uses (`MacMainWindow.rotate(ids:)`), minus the
+  /// render/upload, which pure rotation does not need (`requiresClientRender == false`).
+  /// Videos are excluded per that decision (their rotation is a `VideoRecipe` client export).
+  private func persistRotationIfEnabled() {
+    guard let asset, asset.type != .video else { return }
+    let id = asset.id
+    let width = asset.width ?? 0
+    let height = asset.height ?? 0
+    guard width > 0, height > 0 else {
+      rotationError = "Could not save rotation: unknown image size."
+      return
+    }
+    Task {
+      do {
+        let persistence = RESTEditPersistence(
+          serverURL: state.serverURL,
+          token: { [connection = state.connection] in await connection.tokenStore.get() })
+        // 404 → fresh recipe; any other fetch failure aborts rather than clobbers.
+        let stored = try await persistence.fetchRecipe(assetId: id)
+        var recipe = stored?.recipe ?? EditRecipe()
+        var crop = recipe.crop ?? CropRecipe()
+        crop.quarterTurns = (crop.quarterTurns + 1) % 4
+        recipe.crop = crop
+        // Full merged split, like the grid: a 4th turn wraps to 0 upstream turns and emits
+        // no items, so clear instead of hitting the empty no-op guard (stale server rotate).
+        let split = try EditSplitter.split(
+          recipe, imageSize: CGSize(width: width, height: height))
+        if split.upstream.isEmpty {
+          try await persistence.clearUpstreamEdits(assetId: id)
+        } else {
+          try await persistence.applyUpstreamEdits(assetId: id, items: split.upstream)
+        }
+        try await persistence.saveRecipe(EditPersistencePayload(
+          sourceAssetId: id, recipe: recipe, renderedAssetId: stored?.renderedAssetId))
+        MacAssetChangeCenter.shared.post(.edited(ids: [id]))
+        rotationError = nil
+        // Re-stream the preview so the persisted orientation shows up here too.
+        await loadProgressive()
+      } catch is CancellationError {
+      } catch {
+        rotationError = "Could not save rotation: \(error.localizedDescription)"
+        HeirloomLog.ui.error("viewer rotate failed: \(String(describing: error))")
+      }
+    }
+  }
 
   private func rotateClockwise() {
-    rotation += 90
+    quarterTurns = (quarterTurns + 1) % 4
     persistRotationIfEnabled()
   }
 
@@ -581,46 +693,6 @@ struct MacZoomableImageView: NSViewRepresentable {
 
     deinit {
       if let observer { NotificationCenter.default.removeObserver(observer) }
-    }
-  }
-}
-
-/// Floating Info panel content (⌘I): everything the local mirror knows about the asset.
-struct MacInfoPanel: View {
-  var asset: Asset
-  var state: MacAppState
-  @State private var ownerName: String?
-
-  var body: some View {
-    Form {
-      Section("Info") {
-        LabeledContent("Name", value: asset.originalFileName)
-        if let date = asset.localDateTime {
-          LabeledContent("Date", value: date.formatted(date: .abbreviated, time: .shortened))
-        }
-        LabeledContent("Container", value: containerName)
-        LabeledContent("Owner", value: ownerName ?? asset.ownerId)
-          .task(id: asset.ownerId) {
-            ownerName = try? await state.store.user(id: asset.ownerId)?.name
-          }
-        if let w = asset.width, let h = asset.height {
-          LabeledContent("Dimensions", value: "\(w) × \(h)")
-        }
-        LabeledContent("Favorite", value: asset.isFavorite ? "Yes" : "No")
-      }
-      MacFullExifBrowser(assetId: asset.id, state: state)
-    }
-    .formStyle(.grouped)
-    .frame(minWidth: 260)
-  }
-
-  private var containerName: String {
-    switch asset.container {
-    case .personal: return "Personal Library"
-    case .space(let id):
-      return state.spaces.first(where: { $0.space.id == id })?.space.name ?? "Shared Library"
-    case .library(let id):
-      return state.libraries.first(where: { $0.library.id == id })?.library.name ?? "External Library"
     }
   }
 }
