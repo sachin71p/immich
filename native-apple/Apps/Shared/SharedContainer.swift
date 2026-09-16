@@ -14,16 +14,28 @@ public enum SharedContainer {
   public static let databaseFileName = "heirloom.sqlite"
   public static let serverURLKey = "Heirloom.serverURL"
 
+  /// `containerURL(forSecurityApplicationGroupIdentifier:)` returns a non-nil URL even when the
+  /// process's code signature can't actually use it (e.g. ad-hoc signing with entitlements
+  /// stripped) — the denial only surfaces later, as an opaque SQLite "authorization denied" once
+  /// something tries to open a file inside it. Probe with a real write so callers get a clean
+  /// nil up front and take the Application Support fallback below.
   public static func groupURL() -> URL? {
-    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
+    guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
+    else { return nil }
+    guard (try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)) != nil
+    else { return nil }
+    let probe = url.appendingPathComponent(".heirloom-access-probe")
+    guard (try? Data().write(to: probe)) != nil else { return nil }
+    try? FileManager.default.removeItem(at: probe)
+    return url
   }
 
   public static var isSharedStorageAvailable: Bool { groupURL() != nil }
 
   /// File-backed DB location: app-group container when present, else Application Support.
+  /// `groupURL()` already verified the directory exists and is writable.
   public static func databaseURL() throws -> URL {
     if let group = groupURL() {
-      try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
       return group.appendingPathComponent(databaseFileName)
     }
     let support = try FileManager.default.url(

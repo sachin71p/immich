@@ -86,7 +86,8 @@ import Upload
 
   @Test("[A5] SHA1 hex matches the known vector")
   func sha1Vector() {
-    #expect(UploadSHA1.hex(of: Data("abc".utf8)) == "a9993e364706816aba3e25717850c26c9cd0d4d")
+    // True SHA-1("abc") per FIPS 180-1 (verified against hashlib, 40 hex chars).
+    #expect(UploadSHA1.hex(of: Data("abc".utf8)) == "a9993e364706816aba3e25717850c26c9cd0d89d")
   }
 
   // MARK: - edit policy

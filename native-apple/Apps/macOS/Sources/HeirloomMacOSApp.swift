@@ -1,26 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// `WindowGroup(for:)` scenes don't auto-open a window on a state-restoration-free launch
-/// (fresh install, or `-ApplePersistenceIgnoreState YES` under XCTest); open the library
-/// window explicitly once AppKit finishes launching.
-private final class AppDelegate: NSObject, NSApplicationDelegate {
-  var onLaunch: (() -> Void)?
-  func applicationDidFinishLaunching(_ notification: Notification) {
-    onLaunch?()
-  }
-}
-
 /// macOS shell entry (A4): connect screen until signed in, then the Photos-for-Mac style
 /// library window. `--fixture-seed` launches the seeded in-memory world for UI smoke tests.
 @main
 struct HeirloomMacOSApp: App {
-  @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @Environment(\.openWindow) private var openWindow
   @State private var state: MacAppState?
 
   var body: some Scene {
-    let _ = appDelegate.onLaunch = { openWindow(value: MacWindow.library) }
     WindowGroup(id: "main", for: MacWindow.self) { $value in
       Group {
         if let state {
@@ -66,7 +53,10 @@ struct HeirloomMacOSApp: App {
     }
     let savedURL = UserDefaults.standard.string(forKey: "Heirloom.serverURL")
       .flatMap { URL(string: $0) }
-    let defaultURL = savedURL ?? URL(string: "https://")!
+    // A placeholder with no host fails `ImmichConnection`'s server-URL validation, so
+    // `MacAppState.standard` throws and `state` never leaves nil on a fresh install
+    // (matches the dummy host `seeded()` uses below for the same reason).
+    let defaultURL = savedURL ?? URL(string: "https://unconfigured.invalid")!
     return try? MacAppState.standard(serverURL: defaultURL)
   }
 }

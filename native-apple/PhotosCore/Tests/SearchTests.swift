@@ -39,7 +39,8 @@ struct SearchTests {
       .asset(
         Asset(
           id: "a-video", ownerId: alice, originalFileName: "VID_1.MOV", checksum: "c3",
-          localDateTime: Self.date("2024-06-03T12:00:00Z"), type: .video)),
+          localDateTime: Self.date("2024-06-03T12:00:00Z"), type: .video,
+          width: 3840, height: 2160)),
       .assetExif(AssetExif(assetId: "a-video", fileSizeInByte: 100_000_000, fps: 60)),
       .person(
         Person(

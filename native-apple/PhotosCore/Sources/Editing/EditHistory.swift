@@ -61,17 +61,28 @@ public struct EditHistory: Sendable, Equatable {
   }
 
   /// Parses pasteboard data. Foreign/unknown payloads throw `EditHistoryError.incompatiblePaste`.
+  /// The format tag is checked before the recipe body decodes: `EditRecipe` requires its
+  /// `adjust` section, so decoding the full payload first would surface a `DecodingError`
+  /// for foreign payloads instead of the documented `incompatiblePaste`.
   public static func pastedRecipe(from data: Data) throws -> EditRecipe {
-    let decoded = try JSONDecoder().decode(CopiedEdits.self, from: data)
-    guard decoded.format == EditRecipeKey.current else {
+    let format = try? JSONDecoder().decode(PasteFormatProbe.self, from: data).format
+    guard format == EditRecipeKey.current else {
       throw EditHistoryError.incompatiblePaste
     }
-    return decoded.recipe
+    do {
+      return try JSONDecoder().decode(CopiedEdits.self, from: data).recipe
+    } catch {
+      throw EditHistoryError.incompatiblePaste
+    }
   }
 
   private struct CopiedEdits: Codable {
     var format: String
     var recipe: EditRecipe
+  }
+
+  private struct PasteFormatProbe: Decodable {
+    var format: String
   }
 }
 
