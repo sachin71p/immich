@@ -192,7 +192,12 @@ def parse_signpost_intervals(paths):
                 dur_ns = int(cells["duration"][0])
             except (KeyError, ValueError):
                 continue
-            name = cells.get("name", ("", ""))[1] or cells.get("name", ("", ""))[0]
+            name = (
+                cells.get("signpost-name", ("", ""))[1]
+                or cells.get("signpost-name", ("", ""))[0]
+                or cells.get("name", ("", ""))[1]
+                or cells.get("name", ("", ""))[0]
+            )
             durations.setdefault(name or "(unnamed)", []).append(dur_ns / 1e9)
     return durations
 
@@ -212,7 +217,12 @@ def parse_signpost_events(paths):
                 continue
             etype = cells.get("event-type", ("", ""))[1].lower()
             ident = cells.get("identifier", ("", ""))[0] or cells.get("identifier", ("", ""))[1]
-            name = cells.get("name", ("", ""))[1] or cells.get("name", ("", ""))[0]
+            name = (
+                cells.get("signpost-name", ("", ""))[1]
+                or cells.get("signpost-name", ("", ""))[0]
+                or cells.get("name", ("", ""))[1]
+                or cells.get("name", ("", ""))[0]
+            )
             if "begin" in etype:
                 begins[ident] = (ts, name)
             elif "end" in etype and ident in begins:
