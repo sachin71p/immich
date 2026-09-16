@@ -125,7 +125,8 @@ struct SelectionActionBar: View {
         }
         window.rootViewController?.present(activity, animated: true)
       } catch {
-        onError(error.localizedDescription)
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { onError(error.localizedDescription) }
       }
     }
   }
@@ -136,7 +137,8 @@ struct SelectionActionBar: View {
         try await work()
         try await session.refresh()
       } catch {
-        onError(error.localizedDescription)
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { onError(error.localizedDescription) }
       }
     }
   }

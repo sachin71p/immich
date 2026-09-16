@@ -133,7 +133,8 @@ struct SettingsView: View {
         try await session.prefsMutations?.update(prefs, for: session.userId)
         try await session.refresh()
       } catch {
-        self.error = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { self.error = error.localizedDescription }
       }
     }
   }
@@ -170,7 +171,8 @@ struct UploadTargetPicker: View {
               try await session.prefsMutations?.update(prefs, for: session.userId)
               try await session.refresh()
             } catch {
-              self.error = error.localizedDescription
+              // L2: cancellation is never a user-facing error.
+              if !error.isCancellation { self.error = error.localizedDescription }
             }
           }
         })
@@ -267,7 +269,8 @@ struct TimelineSourcesSheet: View {
       libraryToggles = Dictionary(
         uniqueKeysWithValues: ctx.libraryMemberships.map { ($0.libraryId, $0.showInTimeline) })
     } catch {
-      self.error = error.localizedDescription
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { self.error = error.localizedDescription }
     }
   }
 
@@ -279,7 +282,8 @@ struct TimelineSourcesSheet: View {
         try await session.prefsMutations?.update(prefs, for: session.userId)
         try await session.refresh()
       } catch {
-        self.error = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { self.error = error.localizedDescription }
       }
     }
   }
@@ -291,7 +295,8 @@ struct TimelineSourcesSheet: View {
         try await session.spaceMutations?.setShowInTimeline(spaceId: spaceId, show: show)
         try await session.refresh()
       } catch {
-        self.error = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { self.error = error.localizedDescription }
       }
     }
   }

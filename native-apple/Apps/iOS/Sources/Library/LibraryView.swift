@@ -118,7 +118,7 @@ struct LibraryView: View {
               selectedIds: selectedIds,
               onClear: { selectedIds = [] },
               onMove: { showMoveSheet = true },
-              onError: { actionError = $0 }
+              onError: { if !$0.isCancellationMessage { actionError = $0 } }
             )
           }
           Picker("Zoom", selection: $zoom) {
@@ -204,11 +204,14 @@ struct LibraryView: View {
 
   private func reload() async {
     guard let store = session.store else { return }
+    // L2: a stale cancellation banner from a previous launch never survives a fresh load.
+    await ErrorFilter.clearStaleCancellation(in: session)
     do {
       let scope = try await session.timelineScope(explicit: source.filter)
       await loader.load(scope: scope, granularity: zoom.granularity, store: store)
     } catch {
-      session.lastError = error.localizedDescription
+      // L2: `.task(id:)` restarts cancel in-flight loads — cancellation is not an error.
+      if !error.isCancellation { session.lastError = error.localizedDescription }
     }
   }
 
