@@ -34,19 +34,19 @@
 
 ## P1–P2 — confirmed integrity and relocation gaps
 
-| Severity | Contract | Location | Finding |
-|---|---|---|---|
-| P1 | I3 | `server/src/services/metadata.service.ts:728` | Motion-asset creation copies `libraryId` but omits the source `spaceId`, so a live-photo pair can be split across containers. |
-| P1 | I3 | `server/src/repositories/asset.repository.ts:818` | Live-photo matching is keyed by owner/type/CID without container predicates, allowing halves from different containers to be linked. |
-| P1 | I6 | `server/src/services/asset-media.service.ts:179` | Uploading directly into a space writes the staged asset with `spaceId` but creates no relocation row, despite staging needing asynchronous container relocation. |
-| P1 | I6 | `server/src/schema/migrations/1789426700279-SharedLibraries.ts:112` | The space foreign key uses `ON DELETE SET NULL`, permitting a container change without the required relocation record. |
-| P1 | R17 | `server/src/services/library.service.ts:346` | Upload-path containment is prefix-only; a normalized path such as `/allowed/../outside` passes although it is outside the import path. |
-| P1 | R17 | `server/src/services/storage-template.service.ts:363` | Template root validation is prefix-only, so a sibling whose name starts with the root can escape its assigned container tree. |
-| P1 | I4 | `server/src/cores/storage.core.ts:255` | A non-EXDEV rename error is logged and returned rather than propagated, enabling callers to continue after the original file did not move. |
-| P1 | I6 | `server/src/services/storage-template.service.ts:275` | Template relocation suppresses `moveFile` failures, allowing the relocation workflow to finish its row after a failed move. |
-| P1 | I7 | `web/src/lib/components/asset-viewer/AssetViewerNavBar.svelte:203` | Space/library members are offered the Locked visibility action for container assets, contrary to the invariant (server rejection was not rechecked in this client-only review). |
-| P2 | I4 | `server/src/cores/storage.core.ts:274` | After copy-and-verify on EXDEV, failure to unlink the old file is only logged; the new path and move record are finalized, leaving an unmanaged original outside the container tree. |
-| P2 | I4 | `server/src/cores/storage.core.ts:290` | Destination-only crash recovery stats the missing old path before using known asset data, preventing recovery of a completed copy after a crash. |
+| Severity | Contract | Location | Finding | Outcome |
+|---|---|---|---|---|
+| P1 | I3 | `server/src/services/metadata.service.ts:728` | Motion-asset creation copies `libraryId` but omits the source `spaceId`, so a live-photo pair can be split across containers. | pending (Task 6) |
+| P1 | I3 | `server/src/repositories/asset.repository.ts:818` | Live-photo matching is keyed by owner/type/CID without container predicates, allowing halves from different containers to be linked. | pending (Task 6) |
+| P1 | I6 | `server/src/services/asset-media.service.ts:179` | Uploading directly into a space writes the staged asset with `spaceId` but creates no relocation row, despite staging needing asynchronous container relocation. | pending (Task 6) |
+| P1 | I6 | `server/src/schema/migrations/1789426700279-SharedLibraries.ts:112` | The space foreign key uses `ON DELETE SET NULL`, permitting a container change without the required relocation record. | pending (Task 6) |
+| P1 | R17 | `server/src/services/library.service.ts:346` | Upload-path containment is prefix-only; a normalized path such as `/allowed/../outside` passes although it is outside the import path. | pending (Task 6) |
+| P1 | R17 | `server/src/services/storage-template.service.ts:363` | Template root validation is prefix-only, so a sibling whose name starts with the root can escape its assigned container tree. | pending (Task 6) |
+| P1 | I4 | `server/src/cores/storage.core.ts:255` | A non-EXDEV rename error is logged and returned rather than propagated, enabling callers to continue after the original file did not move. | pending (Task 6) |
+| P1 | I6 | `server/src/services/storage-template.service.ts:275` | Template relocation suppresses `moveFile` failures, allowing the relocation workflow to finish its row after a failed move. | pending (Task 6) |
+| P1 | I7 | `web/src/lib/components/asset-viewer/AssetViewerNavBar.svelte:203` | Space/library members are offered the Locked visibility action for container assets, contrary to the invariant (server rejection was not rechecked in this client-only review). | FIXED — server rejects with a clean 400 (`BadRequestException('Shared assets cannot be locked')` in both `update` and `updateAll`; DB CHECK `asset_container_not_locked` backstops), and the UI no longer offers the toggle on container assets (new `isPersonalAsset` gate). Tests: `[I7]` update/updateAll rejections in `asset.service.spec` (78/78 pass); `isPersonalAsset` in `asset-permissions.spec` (11/11 pass). Web tsc + svelte-check clean; web eslint environmentally crashed (pre-existing tscompat/TS6 issue, reproduces on untouched files). |
+| P2 | I4 | `server/src/cores/storage.core.ts:274` | After copy-and-verify on EXDEV, failure to unlink the old file is only logged; the new path and move record are finalized, leaving an unmanaged original outside the container tree. | pending (Task 6) |
+| P2 | I4 | `server/src/cores/storage.core.ts:290` | Destination-only crash recovery stats the missing old path before using known asset data, preventing recovery of a completed copy after a crash. | pending (Task 6) |
 
 ## Coverage gaps
 

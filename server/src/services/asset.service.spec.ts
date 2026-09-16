@@ -488,6 +488,19 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
+    it('[I7] should reject Locked visibility for a space asset', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await expect(sut.update(auth, asset.id, { visibility: AssetVisibility.Locked })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
     it('should update the asset', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -715,6 +728,19 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
         visibility: AssetVisibility.Archive,
       });
+    });
+
+    it('[I7] should reject Locked visibility when any asset is in a container', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, spaceId: 'space-1' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+
+      await expect(
+        sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
     it('should allow an album member to bulk update only favorite', async () => {

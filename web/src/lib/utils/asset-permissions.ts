@@ -30,6 +30,9 @@ export const canEditAsset = (asset: PermissionAsset, context: PermissionContext)
   return false;
 };
 
+/** Personal container only (DECISIONS I7: Locked visibility is personal-only). */
+export const isPersonalAsset = (asset: PermissionAsset): boolean => !asset.spaceId && !asset.libraryId;
+
 /** Favorite: everyone canEditAsset() covers, plus members of any album containing the asset. Partners: no. */
 export const canFavoriteAsset = (
   asset: PermissionAsset,

@@ -28,7 +28,7 @@
   import { getSharedLink, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   // fork: shared-libraries
-  import { canEditAsset } from '$lib/utils/asset-permissions';
+  import { canEditAsset, isPersonalAsset } from '$lib/utils/asset-permissions';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetTypeEnum,
@@ -200,7 +200,9 @@
         <ActionMenuItem action={Actions.ViewInTimeline} />
         <ActionMenuItem action={Actions.ViewSimilar} />
 
-        {#if !asset.isTrashed && isOwner}
+        {#if !asset.isTrashed && isOwner && isPersonalAsset(asset)}
+          <!-- fork: shared-libraries (I7: Locked visibility is personal-only, so container
+            members are not offered the toggle; the server also rejects it with a 400) -->
           <SetVisibilityAction asset={toTimelineAsset(asset)} {onAction} {preAction} />
         {/if}
 

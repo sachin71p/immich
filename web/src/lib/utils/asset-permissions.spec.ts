@@ -1,4 +1,4 @@
-import { canEditAsset, canFavoriteAsset, type PermissionContext } from '$lib/utils/asset-permissions';
+import { canEditAsset, canFavoriteAsset, isPersonalAsset, type PermissionContext } from '$lib/utils/asset-permissions';
 
 const context = (overrides: Partial<PermissionContext> = {}): PermissionContext => ({
   userId: 'me',
@@ -30,6 +30,20 @@ describe('canEditAsset', () => {
   it('denies access to a member of a different space', () => {
     const asset = { ownerId: 'other', spaceId: 'space-1' };
     expect(canEditAsset(asset, context({ spaceIds: new Set(['space-2']) }))).toBe(false);
+  });
+});
+
+describe('isPersonalAsset', () => {
+  it('is true for an asset with no container', () => {
+    expect(isPersonalAsset({ ownerId: 'me' })).toBe(true);
+  });
+
+  it('is false for a space asset', () => {
+    expect(isPersonalAsset({ ownerId: 'me', spaceId: 'space-1' })).toBe(false);
+  });
+
+  it('is false for a library asset', () => {
+    expect(isPersonalAsset({ ownerId: 'me', libraryId: 'library-1' })).toBe(false);
   });
 });
 
