@@ -84,6 +84,8 @@ struct WireAsset: Decodable {
   var fileModifiedAt: Date?
   var createdAt: Date?
   var localDateTime: Date?
+  /// Video duration in **milliseconds** (server `duration` is a ms `Int`); converted to whole
+  /// seconds in `model` below.
   var duration: Int?
   var type: String
   var deletedAt: Date?
@@ -101,7 +103,10 @@ struct WireAsset: Decodable {
     Asset(
       id: id, ownerId: ownerId, originalFileName: originalFileName, thumbhash: thumbhash, checksum: checksum,
       fileCreatedAt: fileCreatedAt, fileModifiedAt: fileModifiedAt, createdAt: createdAt,
-      localDateTime: localDateTime, durationSeconds: duration, type: AssetKind(rawValue: type) ?? .other,
+      // Server `duration` is milliseconds; the local column is whole seconds (integer division;
+      // nil stays nil; sub-second truncates to 0).
+      localDateTime: localDateTime, durationSeconds: duration.map { $0 / 1000 },
+      type: AssetKind(rawValue: type) ?? .other,
       deletedAt: deletedAt, isFavorite: isFavorite, visibility: AssetVisibilityKind(rawValue: visibility) ?? .timeline,
       livePhotoVideoId: livePhotoVideoId, stackId: stackId, libraryId: libraryId, spaceId: spaceId, width: width,
       height: height, isEdited: isEdited

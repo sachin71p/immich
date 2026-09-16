@@ -304,6 +304,15 @@ enum Schema {
         columns: ["deletedAt", "visibility", "localDateTime"])
     }
 
+    // Backfill for the wire-duration bug: `WireAsset.model` used to persist the server's millisecond
+    // `duration` verbatim into the seconds column, so every existing non-NULL value is 1000x too big.
+    // Unconditional on purpose — the column is only ever written via `AssetRecords` from that path,
+    // so there are no legitimate pre-existing second-scale values to preserve; NULLs are untouched.
+    migrator.registerMigration("v4_duration_ms_to_s") { db in
+      try db.execute(
+        sql: "UPDATE asset SET durationSeconds = CAST(durationSeconds / 1000 AS INTEGER) WHERE durationSeconds IS NOT NULL")
+    }
+
     return migrator
   }
 }
