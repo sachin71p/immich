@@ -10,17 +10,24 @@ IOS_BUNDLE_ID  := com.immich.heirloom.ios
 SERVER_URL     := http://localhost:2283
 DEVELOPMENT_TEAM ?= 599Z443923
 export DEVELOPMENT_TEAM
+# R0: install-macos used to build Debug (no -configuration), shipping an
+# unoptimized bundle. Default to Release; developers can still opt into Debug.
+CONFIGURATION ?= Release
 
 .DEFAULT_GOAL := help
 
-.PHONY: help xcodegen build-ios build-macos install-macos \
+.PHONY: help xcodegen build-ios build-macos build-macos-debug install-macos \
+        test-core test-macos-ui \
         mock-server mock-server-down mock-server-logs ios-sim clean
 
 help:
 	@echo "Heirloom native app targets:"
 	@echo "  make build-ios          Build the iOS app for the Simulator"
-	@echo "  make build-macos        Build the macOS app"
+	@echo "  make build-macos        Build the macOS app (CONFIGURATION=$(CONFIGURATION), default Release)"
+	@echo "  make build-macos-debug  Build the macOS app in Debug (developer iteration)"
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
+	@echo "  make test-core          Run the PhotosCore SwiftPM test suite"
+	@echo "  make test-macos-ui      Run the macOS UI tests (Heirloom-macOS-UITests)"
 	@echo "  make mock-server        Start the local Heirloom server via Docker (built from source)"
 	@echo "  make mock-server-down   Stop the local Docker server"
 	@echo "  make mock-server-logs   Tail the local server's logs"
@@ -52,20 +59,45 @@ build-macos: xcodegen
 	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild \
 		-project Heirloom.xcodeproj \
 		-scheme Heirloom-macOS \
+		-configuration $(CONFIGURATION) \
 		-destination 'platform=macOS' \
 		-derivedDataPath .build/DerivedData \
 		-skipPackagePluginValidation \
 		-allowProvisioningUpdates \
 		build
 
+# Debug iteration build. `build-macos`/`install-macos` default to Release (R0);
+# use this target when stepping through app code with the debugger.
+build-macos-debug: xcodegen
+	@$(MAKE) build-macos CONFIGURATION=Debug
+
 install-macos: build-macos
-	@app=$$(find $(DERIVED_DATA)/Build/Products -maxdepth 2 -iname 'Heirloom-macOS.app' -type d | head -1); \
-	if [ -z "$$app" ]; then echo "error: Heirloom-macOS.app not found under $(DERIVED_DATA)/Build/Products" >&2; exit 1; fi; \
+	@app="$(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Heirloom-macOS.app"; \
+	if [ ! -d "$$app" ]; then echo "error: $$app not found; run 'make build-macos CONFIGURATION=$(CONFIGURATION)' first" >&2; exit 1; fi; \
+	echo "Quitting a running Heirloom instance (if any) before overwriting /Applications"; \
+	osascript -e 'tell application id "com.immich.heirloom.macos" to quit' 2>/dev/null || true; \
+	for i in 1 2 3; do pgrep -x Heirloom-macOS >/dev/null || break; sleep 1; done; \
+	if pgrep -x Heirloom-macOS >/dev/null; then pkill -x Heirloom-macOS || true; sleep 1; fi; \
 	echo "Installing $$app -> /Applications/Heirloom-macOS.app"; \
 	rm -rf "/Applications/Heirloom-macOS.app"; \
 	cp -R "$$app" /Applications/; \
 	xattr -dr com.apple.quarantine "/Applications/Heirloom-macOS.app" 2>/dev/null || true; \
 	open "/Applications/Heirloom-macOS.app"
+
+test-core:
+	swift test --package-path $(NATIVE_DIR)/PhotosCore
+
+test-macos-ui: xcodegen
+	@mkdir -p $(MODULE_CACHE)
+	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild test \
+		-project Heirloom.xcodeproj \
+		-scheme Heirloom-macOS \
+		-configuration $(CONFIGURATION) \
+		-destination 'platform=macOS' \
+		-derivedDataPath .build/DerivedData \
+		-skipPackagePluginValidation \
+		-allowProvisioningUpdates \
+		-only-testing:Heirloom-macOS-UITests
 
 $(DOCKER_DIR)/.env:
 	cp $(DOCKER_DIR)/example.env $(DOCKER_DIR)/.env
