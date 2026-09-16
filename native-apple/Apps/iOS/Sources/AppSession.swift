@@ -24,6 +24,11 @@ final class AppSession: ObservableObject {
   @Published var spaces: [Space] = []
   @Published var libraries: [Library] = []
   @Published var lastError: String?
+  /// S1: observable sync state — the Library subtitle, error banner and Settings all read these.
+  @Published var isSyncing = false
+  @Published var lastSyncAt: Date?
+  /// S1: bumped after every successful sync so store-reading views can re-key their reloads.
+  @Published var timelineVersion = 0
   /// A9.6: tab the app should land on (set from the intents pending route).
   @Published var requestedTab = "library"
 
@@ -32,6 +37,9 @@ final class AppSession: ObservableObject {
   var pipeline: MediaPipeline?
   var sync: SyncCoordinator?
   var uploadQueue: UploadQueue?
+  /// S3: token `start()` last built the session from — `reload()` skips the rebuild when the
+  /// keychain token and server URL are unchanged.
+  private var activeToken: String?
 
   static let serverURLKey = "Heirloom.serverURL"
 
@@ -59,6 +67,8 @@ final class AppSession: ObservableObject {
   /// becomes active, or boots the deterministic fixture world for `-useFixtureStore` (XCUITest).
   func reload() async {
     if CommandLine.arguments.contains("-useFixtureStore") {
+      // Fixture mode: the in-memory store survives foregrounding — don't reseed it away.
+      if signedIn && isFixture && store != nil { return }
       await startFixture()
       return
     }
@@ -68,6 +78,15 @@ final class AppSession: ObservableObject {
         let url = URL(string: urlString)
       else {
         signedIn = false
+        return
+      }
+      // S3: already running against this server + token — don't rebuild the connection, store,
+      // sync coordinator and pipeline (which also races an in-flight sync). Just top up the sync
+      // when it never ran or went stale (> 60 s).
+      if signedIn && serverURL?.absoluteString == urlString && activeToken == token && store != nil {
+        if lastSyncAt == nil || Date().timeIntervalSince(lastSyncAt!) > 60 {
+          await syncNow()
+        }
         return
       }
       try await start(serverURL: url, token: token)
@@ -107,9 +126,12 @@ final class AppSession: ObservableObject {
     self.serverURL = serverURL
     self.userId = userId
     self.isFixture = false
+    self.activeToken = token
     await connection.tokenStore.set(token)
     try await refresh()
     signedIn = true
+    // S1: a fresh sign-in always syncs — the Library must fill without any user action.
+    Task { await syncNow() }
   }
 
   /// Fixture mode: in-memory store seeded via `FixtureSeed`; network calls fail gracefully behind
@@ -166,11 +188,36 @@ final class AppSession: ObservableObject {
 
   func syncNow() async {
     guard let sync, !isFixture else { return }
+    // S1: no overlapping syncs — the coordinator also drops concurrent calls, but only the
+    // session flag keeps the UI (subtitle, Settings row) truthful.
+    guard !isSyncing else { return }
+    isSyncing = true
+    defer { isSyncing = false }
+    let started = Date()
+    HeirloomLog.sync.info("sync start")
     do {
-      try await sync.syncNow()
+      // The coordinator exposes no progress stream (it returns did-run only), so the UI shows
+      // an indeterminate "Syncing…" state while this is in flight.
+      let didRun = try await sync.syncNow()
+      let duration = Date().timeIntervalSince(started)
+      if !didRun {
+        HeirloomLog.sync.info("sync dropped (already running)")
+        return
+      }
       try await refresh()
+      lastError = nil
+      lastSyncAt = Date()
+      timelineVersion += 1
+      HeirloomLog.sync.info("sync finish duration=\(duration, privacy: .public)s")
+    } catch is CancellationError {
+      // A cancelled sync is not an error worth surfacing.
+      HeirloomLog.sync.info("sync cancelled")
     } catch {
+      let duration = Date().timeIntervalSince(started)
       lastError = error.localizedDescription
+      HeirloomLog.sync.error(
+        "sync failure duration=\(duration, privacy: .public)s error=\(error.localizedDescription, privacy: .public)"
+      )
     }
   }
 
@@ -182,6 +229,8 @@ final class AppSession: ObservableObject {
     pipeline = nil
     sync = nil
     uploadQueue = nil
+    activeToken = nil
+    lastSyncAt = nil
     signedIn = false
   }
 
