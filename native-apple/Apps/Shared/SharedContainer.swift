@@ -73,7 +73,9 @@ public enum SharedContainer {
   /// backed by a domain the process can't persist to. A plain set-then-read probe would still
   /// report success (the in-memory cache echoes it back regardless), so force a real disk write
   /// via `synchronize()` — the same probe pattern as `groupURL()`, just at the plist layer.
-  public static let sharedDefaults: UserDefaults = resolveSharedDefaults()
+  /// `UserDefaults` is thread-safe (concurrent reads/writes are serialized by the class),
+  /// so sharing one decided instance across actors needs no further synchronization.
+  nonisolated(unsafe) public static let sharedDefaults: UserDefaults = resolveSharedDefaults()
 
   private static func resolveSharedDefaults() -> UserDefaults {
     guard let suite = UserDefaults(suiteName: groupIdentifier) else { return .standard }
