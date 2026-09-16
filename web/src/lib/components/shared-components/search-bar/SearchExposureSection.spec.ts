@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import SearchExposureSection from '$lib/components/shared-components/search-bar/SearchExposureSection.svelte';
 import { searchManager } from '$lib/managers/search-manager.svelte';
@@ -27,7 +27,9 @@ describe('SearchExposureSection component', () => {
     render(SearchExposureSection);
 
     const inputs = screen.getAllByRole('spinbutton');
-    await user.type(inputs[2], '1.4');
+    // happy-dom number inputs drop the '.' keystroke, so decimals are set via
+    // an input event (real browsers accept '.' while typing).
+    await fireEvent.input(inputs[2], { target: { value: '1.4' } });
     await user.type(inputs[3], '8');
 
     expect(searchManager.filter.exposure.fNumberMin).toBe(1.4);

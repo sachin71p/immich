@@ -7,13 +7,21 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import MoveToLibraryModal from './MoveToLibraryModal.svelte';
 
-const { moveAssetsMock } = vi.hoisted(() => ({ moveAssetsMock: vi.fn() }));
+const { moveAssetsMock, getAllSpacesMock, getSharedLibrariesMock } = vi.hoisted(() => ({
+  moveAssetsMock: vi.fn(),
+  getAllSpacesMock: vi.fn().mockResolvedValue([]),
+  getSharedLibrariesMock: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('@immich/sdk', async () => {
   const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
   return {
     ...sdk,
     moveAssets: moveAssetsMock,
+    // sharedSpaces.refresh() fires on mount; resolve empty (each test sets
+    // spaces/libraries directly) so no live fetch escapes the suite.
+    getAll: getAllSpacesMock,
+    getSharedLibraries: getSharedLibrariesMock,
   };
 });
 
