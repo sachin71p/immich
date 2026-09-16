@@ -24,7 +24,11 @@ class SharedSpacesStore {
   }
 
   async ensureLoaded() {
-    if (!this.loaded && !this.loading) {
+    // A refresh already in flight (e.g. from the sidebar) must not skip this:
+    // callers proceed against an empty list and silently degrade (library
+    // settings restore fell back to the personal target). Concurrent refreshes
+    // are idempotent fetches; awaiting our own guarantees populated state.
+    if (!this.loaded) {
       await this.refresh();
     }
   }
