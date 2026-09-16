@@ -219,6 +219,56 @@ brief demand). New-test tags `[R16]`/`[C3]`/`[I6]`/`[I7]`/unbracketed `PERM-11` 
 intentionally invisible to the coverage gate (matrix has no such sub-cases); `[LC-01]` and
 `[R16-04]`-adjacent tags ride existing IDs.
 
+## Upstream reconciliation (merge `a64fced5d`, 16-Sep)
+
+`v3.2.0` is now an ancestor of the branch (merge-base was `e61312084`,
+v3.2.0-rc.0). `git cherry HEAD v3.2.0 e61312084` showed **35 of the 40**
+delta commits were already present via main-line originals the fork had
+picked up after branching — the merge's only new content is the
+release-line version bumps plus the resolutions below. No migration
+changes on either side beyond the fork's own two; schema gap: none.
+
+What merged cleanly: all 35 already-present commits (no-op), the four
+version-bump commits (tree already at 3.2.0 everywhere), the maplibre-gl
+v6 backport `163d3c71f` (main-line `68e340930` already in HEAD; identical
+`setWorkerUrl` hunk auto-merged).
+
+What conflicted (9 files) and how each bolded collision was resolved:
+- `d66756fca` (untracked-file unlink race) — COVERS, no resolution
+  needed. The fix is integrity-subsystem-only (`getTrackedPaths` + three
+  `integrity.service.ts` guards); its original `c1f2756f6` is an
+  ancestor. C7's `moveFile` rewrite is disjoint (move-registry paths);
+  layering a tracked-path check onto `unlink(oldPath)` would block every
+  EXDEV move. No conflict occurred in these files.
+- `8139af6e0` (cross-user face move on merge) — COVERS. Fork
+  `reassignFaces` already holds the fix verbatim + the S9 `spaceId` leg;
+  the upstream regression tests are already in the fork medium spec,
+  adapted to bulk `mergePeople` (first id wins per scope). One conflict
+  hunk in `person.repository.ts` resolved by keeping the fork hunk whole
+  (reasoning comment added); the spec's `mergePerson`-vs-`mergePeople`
+  hunk resolved to `mergePeople` with an equivalence comment. No test
+  port was needed — the scout's port prescription was voided on
+  inspection (fork `7b51c50a9` already covers both upstream cases).
+- `bf75aaa81` (partner timeline) — COVERS, zero-byte cherry-pick of
+  `040ae6bc0` in HEAD. No conflict.
+- `583243901` (live-photo transcode visibility) — COVERS, zero-byte
+  cherry-pick of `58fb1ed4a` in HEAD. No conflict, no SQL regen.
+- Mechanical, fork-side-kept throughout: ESM `.js`-suffix imports
+  (`asset-job.repository.ts`, `mappers.ts`, medium spec);
+  `people_picker.dart` kept `Store.people.all()` (fork `6874c07db`
+  refactor) over the removed provider name; `pnpm-lock.yaml` kept the
+  fork's svelte 5.56.10 peer variant (2 hunks); `search-bar-utils.ts`
+  kept both fork filter helpers and upstream `isPopoverContent`;
+  both-added spec files resolved to the fork supersets (verified to
+  contain upstream's tests verbatim).
+- Correction to the brief's table: `d66756fca` never touched
+  `storage.core.ts`, so the "highest risk" C7 collision was a
+  non-collision; the only functional upstream delta (`163d3c71f`) was
+  already applied.
+
+Sandbox re-verification of the merged tree: see `## Re-verification`
+(session-merge entry to follow).
+
 ## Contradictions in plan documentation
 
 - ~~`STATUS.md` describes the S0 base as v3.1.0, while this audit brief describes upstream base `e55ac299a` as v3.2.0 plus 98 commits.~~ — RESOLVED 16-Sep: `git describe` gives `v3.1.0-379-ge55ac299a`; S0 row corrected to the describe output (package 3.2.0 is the dev version, not a tag).
