@@ -25,9 +25,15 @@ final class SyncUITests: XCTestCase {
     grid.swipeDown()
 
     // The control reports "refreshing" while `refreshAll` runs and must return to "idle".
-    let idle = NSPredicate(format: "value == 'idle'")
-    expectation(for: idle, evaluatedWith: refresh, handler: nil)
-    waitForExpectations(timeout: 30)
+    // (Polled directly: `waitForExpectations` is MainActor-isolated in this SDK and the test
+    // case isn't Sendable under Swift 6 strict concurrency.)
+    let deadline = Date().addingTimeInterval(30)
+    var settled = false
+    while !settled && Date() < deadline {
+      settled = (refresh.value as? String) == "idle"
+      if !settled { Thread.sleep(forTimeInterval: 0.5) }
+    }
+    XCTAssertTrue(settled, "refresh control should run refreshAll and return to idle")
 
     // The refresh cycle must leave a working grid behind.
     XCTAssertTrue(app.buttons["library-switcher"].exists)
