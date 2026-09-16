@@ -113,14 +113,24 @@ describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
         { id: space.id, sharedSpaceMembersDto: { userIds: [userId('alice')] } },
         { headers: auth(token('dave')) },
       );
-      await deleteUserAdmin({ id: userId('dave'), userAdminDeleteDto: {} }, { headers: auth(adminToken) });
+      // force:true runs the UserDelete job (with the §8 pre-step) immediately; without
+      // it the 7-day deleteDelay means the transfer would never happen inside the test.
+      await deleteUserAdmin({ id: userId('dave'), userAdminDeleteDto: { force: true } }, { headers: auth(adminToken) });
       await waitForUserGone('dave');
       await settle(adminToken);
+      // The transfer runs in the background queue: poll for the observable end state.
+      let transferred = false;
+      for (let attempt = 0; attempt < 60 && !transferred; attempt++) {
+        const members = await getSpaceMembers({ id: space.id }, { headers: auth(token('alice')) });
+        transferred = members.find((member) => member.userId === userId('alice'))?.role === 'owner';
+        if (!transferred) {
+          await sleep(2000);
+        }
+      }
+      expect(transferred).toBe(true);
       await expect(getSharedSpacesById({ id: space.id }, { headers: auth(token('alice')) })).resolves.toMatchObject({
         id: space.id,
       });
-      const members = await getSpaceMembers({ id: space.id }, { headers: auth(token('alice')) });
-      expect(members.find((member) => member.userId === userId('alice'))?.role).toBe('owner');
     }, 300_000);
 
     it('[LC-02] deleting a user preserves shared contributions under the space owner', async () => {
@@ -128,9 +138,30 @@ describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
         (manifestId) => world.assets.find((a) => a.manifestId === manifestId)!.id,
       );
       const bobPersonal = world.assets.find((a) => a.manifestId === 'fork-15')!;
-      await deleteUserAdmin({ id: userId('bob'), userAdminDeleteDto: {} }, { headers: auth(adminToken) });
+      // force:true runs the UserDelete job (with the §8 pre-step) immediately; without
+      // it the 7-day deleteDelay means the re-own would never happen inside the test.
+      await deleteUserAdmin({ id: userId('bob'), userAdminDeleteDto: { force: true } }, { headers: auth(adminToken) });
       await waitForUserGone('bob');
       await settle(adminToken);
+      // Re-own lands early in the job but folder deletion lands late: poll until both
+      // the personal asset row is gone and the derived folders are gone, then assert.
+      let finished = false;
+      for (let attempt = 0; attempt < 60 && !finished; attempt++) {
+        let gone = false;
+        try {
+          await getAs('admin', bobPersonal.id);
+        } catch {
+          gone = true;
+        }
+        finished =
+          gone &&
+          !existsSync(join(forkDataDir, 'thumbs', userId('bob'))) &&
+          !existsSync(join(forkDataDir, 'encoded-video', userId('bob')));
+        if (!finished) {
+          await sleep(2000);
+        }
+      }
+      expect(finished).toBe(true);
       // Contributions survive in the space, re-owned by the space owner (alice).
       for (const id of cameraIds) {
         await expect(getAs('alice', id)).resolves.toMatchObject({ ownerId: userId('alice'), spaceId: world.spaces.camera.id });

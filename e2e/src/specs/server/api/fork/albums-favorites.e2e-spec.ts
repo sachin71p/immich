@@ -36,7 +36,10 @@ describe('fork albums and favorites', () => {
 
   it('[R11-01] album viewer adds and removes any album asset', async () => {
     const mine = world.assets.find((a) => a.manifestId === 'fork-15')!;
-    const hers = world.assets.find((a) => a.manifestId === 'fork-01')!;
+    // Remove fork-02 (alice's space asset in Trip), not fork-01: R16-01/R16-02 run
+    // later against this same world and need fork-01 to still be in Trip so bob
+    // favorites it via album membership.
+    const hers = world.assets.find((a) => a.manifestId === 'fork-02')!;
     await addAssetsToAlbumSdk(
       { id: world.albumTrip.id, bulkIdsDto: { ids: [mine.id] } },
       { headers: auth(token('bob')) },
