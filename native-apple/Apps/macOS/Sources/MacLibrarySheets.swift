@@ -21,6 +21,7 @@ struct MacNewSpaceSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
         Button("Create") { Task { await create() } }
           .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
           .accessibilityIdentifier("new-space-create")
@@ -41,7 +42,10 @@ struct MacNewSpaceSheet: View {
       )
       await state.refresh()
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Create space failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -56,6 +60,7 @@ struct MacSpaceManageSheet: View {
   @State private var description: String = ""
   @State private var members: [SpaceMember] = []
   @State private var newMemberId = ""
+  @State private var showInTimeline = true
   @State private var error: String?
 
   var body: some View {
@@ -64,6 +69,13 @@ struct MacSpaceManageSheet: View {
       TextField("Name", text: $name)
       TextField("Description", text: $description)
       Button("Save") { Task { await save() } }.accessibilityIdentifier("space-save")
+      // Per-space timeline toggle (controls-table gap): mirrors the Settings caption that
+      // promises visibility control in each library's manage view.
+      Toggle("Show in timeline", isOn: Binding(
+        get: { showInTimeline },
+        set: { value in Task { await setTimelineVisible(value) } }
+      ))
+      .accessibilityIdentifier("space-show-in-timeline")
       Divider()
       Text("Members").font(.subheadline)
       ForEach(members, id: \.userId) { member in
@@ -95,6 +107,7 @@ struct MacSpaceManageSheet: View {
         }
         Spacer()
         Button("Done") { onDone() }
+          .keyboardShortcut(.cancelAction)
       }
       if let error { Text(error).foregroundStyle(.red).font(.caption) }
     }
@@ -104,6 +117,24 @@ struct MacSpaceManageSheet: View {
       name = space.name
       description = space.description
       members = (try? await state.store.spaceMembers(spaceId: space.id)) ?? []
+      if let me = state.userId,
+        let mine = members.first(where: { $0.userId == me })
+      {
+        showInTimeline = mine.showInTimeline
+      }
+    }
+  }
+
+  private func setTimelineVisible(_ show: Bool) async {
+    do {
+      try await state.spaceMutations().setShowInTimeline(spaceId: space.id, show: show)
+      showInTimeline = show
+      await state.refresh()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the toggle where it was.
+    } catch {
+      HeirloomLog.ui.error("Timeline visibility failed: \(error.localizedDescription, privacy: .public)")
+      self.error = "Couldn't change timeline visibility."
     }
   }
 
@@ -115,7 +146,10 @@ struct MacSpaceManageSheet: View {
         description: description == space.description ? nil : description
       )
       await state.refresh()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Update space failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -125,7 +159,10 @@ struct MacSpaceManageSheet: View {
       try await state.spaceMutations().addMembers(userIds: [newMemberId], toSpace: space.id)
       newMemberId = ""
       members = (try? await state.store.spaceMembers(spaceId: space.id)) ?? []
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Add member failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -135,7 +172,10 @@ struct MacSpaceManageSheet: View {
       try await state.spaceMutations().removeMember(userId: userId, fromSpace: space.id)
       members = (try? await state.store.spaceMembers(spaceId: space.id)) ?? []
       await state.refresh()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Remove member failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -151,7 +191,10 @@ struct MacSpaceManageSheet: View {
       try await state.spaceMutations().deleteSpace(id: space.id)
       await state.refresh()
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Delete space failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -172,6 +215,7 @@ struct MacNewAlbumSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
         Button("Create") { Task { await create() } }
           .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
           .keyboardShortcut(.defaultAction)
@@ -188,7 +232,10 @@ struct MacNewAlbumSheet: View {
       )
       await state.refresh()
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Create album failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }
@@ -215,6 +262,11 @@ struct MacAddToAlbumSheet: View {
       }
       .frame(minHeight: 160)
       if let error { Text(error).foregroundStyle(.red).font(.caption) }
+      HStack {
+        Spacer()
+        Button("Cancel") { onDone() }
+          .keyboardShortcut(.cancelAction)
+      }
     }
     .padding()
     .frame(minWidth: 300)
@@ -224,7 +276,10 @@ struct MacAddToAlbumSheet: View {
     do {
       _ = try await state.albumMutations().addAssets(assetIds, toAlbum: albumId)
       onDone()
+    } catch is CancellationError {
+      // Cancellation isn't a failure: leave the sheet open with no error.
     } catch {
+      HeirloomLog.ui.error("Add to album failed: \(error.localizedDescription, privacy: .public)")
       self.error = error.localizedDescription
     }
   }

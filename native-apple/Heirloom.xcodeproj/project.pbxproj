@@ -55,6 +55,7 @@
 		8558FDD60F9DA6DFD825D262 /* MacPreviewFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1621E72990EA01E79B8DD583 /* MacPreviewFixtures.swift */; };
 		86EF52D1B77BFA740DE5369C /* MacSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D854212B2715B96C5BB42DC1 /* MacSelection.swift */; };
 		8B42ECF6B1AF7C434B602742 /* FixtureSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */; };
+		8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */; };
 		8BE193705534A8D74F73A0D4 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */; };
 		9072FA0D2B3536D5DD098ECD /* HeirloomWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B423EDAD3D1C1AC259A1BE /* HeirloomWidgets.swift */; };
 		90F9E6ACBD138F7275D37FCB /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 1BE688DBA40C3BEC4B449CBA /* SyncEngine */; };
@@ -139,6 +140,7 @@
 		0B95AF9F4C147A63DA1C1CE0 /* MacMoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMoveSheet.swift; sourceTree = "<group>"; };
 		0DCB8DBDC4ACB6E8F052C452 /* MacAppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppState.swift; sourceTree = "<group>"; };
 		0FF650963FA8FDFD1AB4485A /* Albums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Albums.swift; sourceTree = "<group>"; };
+		1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFunctionalTests.swift; sourceTree = "<group>"; };
 		13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibrarySheets.swift; sourceTree = "<group>"; };
 		14131A6D7F58E899A3F0DF12 /* HeirloomMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomMacOSApp.swift; sourceTree = "<group>"; };
 		1621E72990EA01E79B8DD583 /* MacPreviewFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewFixtures.swift; sourceTree = "<group>"; };
@@ -336,6 +338,7 @@
 		374EFBFCB4559EDB2A76D05E /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */,
 				5418423DA37D1695A127DE89 /* MacSmokeTests.swift */,
 			);
 			name = UITests;
@@ -810,6 +813,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */,
 				1A928DD22CF697C8B5937F13 /* MacSmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

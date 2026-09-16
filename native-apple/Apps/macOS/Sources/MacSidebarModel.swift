@@ -60,6 +60,82 @@ public enum SidebarDestination: Sendable, Hashable {
     }
   }
 
+  /// Resolved display title (U24/U25): `.space`/`.album`/`.externalLibrary` carry only an
+  /// id, so the toolbar and window title resolve the live name from app state, falling back to
+  /// the generic label when the entry hasn't synced yet. Main-actor: state is `@Observable`.
+  @MainActor
+  func title(in state: MacAppState) -> String {
+    switch self {
+    case .space(let id):
+      return state.spaces.first { $0.space.id == id }?.space.name ?? title
+    case .album(let id):
+      return state.albums.first { $0.album.id == id }?.album.name ?? title
+    case .externalLibrary(let id):
+      return state.libraries.first { $0.library.id == id }?.library.name ?? title
+    default:
+      return title
+    }
+  }
+
+  /// Destinations that render the timeline grid (full grid toolbar). Map, People, Memories,
+  /// Collections, Search, All Albums and Duplicates render their own views with a minimal
+  /// toolbar (U15/U16/U18).
+  public var usesGridToolbar: Bool {
+    switch self {
+    case .map, .people, .memories, .collections, .search, .allAlbums, .duplicates:
+      return false
+    default:
+      return true
+    }
+  }
+
+  /// Empty-state copy for grid destinations (U23): shown when the snapshot is empty and the
+  /// loader phase is `.loaded`. Nil for destinations with their own views.
+  @MainActor
+  func emptyState(in state: MacAppState) -> (title: String, message: String, symbol: String)? {
+    switch self {
+    case .library, .collections:
+      return ("No Photos", "Your library is empty.", "photo")
+    case .favorites:
+      return ("No Favorites", "Click ♡ on a photo to add it.", "heart")
+    case .recentlySaved:
+      return ("No Recent Saves", "Newly saved photos will appear here.", "tray.and.arrow.down")
+    case .mediaPhotos:
+      return ("No Photos", "No photos in this view.", "photo")
+    case .mediaVideos:
+      return ("No Videos", "No videos in this view.", "video")
+    case .mediaScreenshots:
+      return ("No Screenshots", "No screenshots in this view.", "camera.viewfinder")
+    case .media(let collection):
+      return ("No \(collection.title)", "Nothing here yet.", collection.systemImage)
+    case .space(let id):
+      let name = state.spaces.first { $0.space.id == id }?.space.name ?? "shared library"
+      return ("No Items", "No items in \(name) yet.", "person.2.circle")
+    case .externalLibrary(let id):
+      let name = state.libraries.first { $0.library.id == id }?.library.name ?? "external library"
+      return ("No Items", "No items in \(name) yet.", "externaldrive")
+    case .album(let id):
+      let name = state.albums.first { $0.album.id == id }?.album.name ?? "this album"
+      return ("Empty Album", "No photos in \(name) yet.", "rectangle.stack")
+    case .imports:
+      return ("No Imports", "Imported files will appear here.", "square.and.arrow.down")
+    case .recentlyDeleted:
+      return ("Trash Is Empty", "Deleted items appear here for 30 days.", "trash")
+    case .capturedByMe:
+      return ("No Photos by You", "Photos you captured will appear here.", "person.crop.circle.badge.checkmark")
+    case .camera(let model):
+      return ("No Photos", "No photos captured with \(model) yet.", "camera")
+    case .hidden:
+      return ("No Hidden Photos", "Hidden photos will appear here.", "eye.slash")
+    case .archive:
+      return ("No Archived Photos", "Archived photos will appear here.", "archivebox")
+    case .locked:
+      return ("Locked", "Unlock to view locked photos.", "lock")
+    case .map, .people, .memories, .search, .allAlbums, .duplicates:
+      return nil
+    }
+  }
+
   /// SF Symbol per destination (system components only — A0 Architecture, App Review 5.2.5).
   public var systemImage: String {
     switch self {

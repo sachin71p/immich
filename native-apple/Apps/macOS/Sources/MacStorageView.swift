@@ -131,8 +131,11 @@ struct MacStorageView: View {
     guard let userId = state.userId else { return }
     do {
       try await state.store.setStoragePrefs(storage, for: userId)
+    } catch is CancellationError {
+      // Cancellation isn't a failure: keep the previous storage prefs.
     } catch {
-      self.error = error.localizedDescription
+      HeirloomLog.ui.error("Storage prefs save failed: \(error.localizedDescription, privacy: .public)")
+      self.error = "Couldn't save storage settings."
     }
   }
 
