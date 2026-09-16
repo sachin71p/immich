@@ -50,7 +50,9 @@ describe('fork timeline scope', () => {
         ['fork-02', 'fork-08', 'fork-12', 'fork-03', 'fork-16', 'fork-19', 'fork-09b'].includes(a.manifestId),
       )
       .map((a) => a.id),
-    ...world.assets.filter((a) => ['fork-11', 'fork-12', 'fork-13'].includes(a.manifestId)).map((a) => a.id),
+    ...world.assets
+      .filter((a) => ['scan-fork-11', 'scan-fork-12', 'scan-fork-13'].includes(a.manifestId))
+      .map((a) => a.id),
   ];
   const cameraIds = () =>
     world.assets.filter((a) => ['fork-03', 'fork-16', 'fork-19', 'fork-09b'].includes(a.manifestId)).map((a) => a.id);

@@ -79,14 +79,15 @@ describe.sequential('fork spaces', () => {
       const target = world.assets.find((a) => a.manifestId === 'fork-01')!;
       for (const outsider of ['bob', 'carol'] as const) {
         const headers = { Authorization: `Bearer ${token(outsider)}` };
-        // Upstream metadata reads deny with 400 (requireAccess); file
-        // endpoints deny with 404 (asset-media access), per the e2e run.
+        // Denial statuses are endpoint-specific: metadata and thumbnail reads
+        // deny with 400 (requireAccess), while the original-file download
+        // denies with 404 (asset-file access). Per the e2e run.
         const { status } = await request(app).get(`/assets/${target.id}`).set(headers);
         expect(status, `${outsider} metadata`).toBe(400);
-        for (const path of [`/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
-          const { status: fileStatus } = await request(app).get(path).set(headers);
-          expect(fileStatus, `${outsider} ${path}`).toBe(404);
-        }
+        const { status: thumbStatus } = await request(app).get(`/assets/${target.id}/thumbnail`).set(headers);
+        expect(thumbStatus, `${outsider} thumbnail`).toBe(400);
+        const { status: fileStatus } = await request(app).get(`/assets/${target.id}/original`).set(headers);
+        expect(fileStatus, `${outsider} original`).toBe(404);
         // Upstream bulk update reports no-access as 400, not 403.
         await expect(
           updateAssets({ assetBulkUpdateDto: { ids: [target.id], description: 'nope' } }, { headers }),
@@ -344,14 +345,15 @@ describe.sequential('fork spaces', () => {
     it('[R6-06] outsider gets 403/error for every space-asset op', async () => {
       const target = familyAsset();
       const headers = { Authorization: `Bearer ${token('carol')}` };
-      // Upstream metadata reads deny with 400 (requireAccess); file endpoints
-      // deny with 404 (asset-media access), per the e2e run.
+      // Denial statuses are endpoint-specific: metadata and thumbnail reads
+      // deny with 400 (requireAccess), while the original-file download
+      // denies with 404 (asset-file access). Per the e2e run.
       const { status } = await request(app).get(`/assets/${target.id}`).set(headers);
       expect(status, 'metadata').toBe(400);
-      for (const path of [`/assets/${target.id}/original`, `/assets/${target.id}/thumbnail`]) {
-        const { status: fileStatus } = await request(app).get(path).set(headers);
-        expect(fileStatus, path).toBe(404);
-      }
+      const { status: thumbStatus } = await request(app).get(`/assets/${target.id}/thumbnail`).set(headers);
+      expect(thumbStatus, 'thumbnail').toBe(400);
+      const { status: fileStatus } = await request(app).get(`/assets/${target.id}/original`).set(headers);
+      expect(fileStatus, 'original').toBe(404);
       // Upstream bulk update reports no-access as 400, not 403.
       await expect(
         updateAssets({ assetBulkUpdateDto: { ids: [target.id], description: 'nope' } }, { headers }),

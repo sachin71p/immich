@@ -19,6 +19,7 @@ import {
   unlockAuthSession,
   updateAssets,
   updateConfig,
+  updatePartner,
   type AssetResponseDto,
   type LoginResponseDto,
   type SharedSpaceResponseDto,
@@ -200,7 +201,13 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
   const carol = await signup('carol@test.com', 'carol');
   const dave = await signup('dave@test.com', 'dave');
   // dave is alice's partner with timeline access (upstream partner flow).
+  // New partnerships default inTimeline=false, so dave opts in the way the
+  // app does; without this his partner buckets are empty (R8-05 saw 0).
   await utils.createPartner(alice.login.accessToken, dave.login.userId);
+  await updatePartner(
+    { id: alice.login.userId, partnerUpdateDto: { inTimeline: true } },
+    { headers: asBearerAuth(dave.login.accessToken) },
+  );
 
   // Spaces: Family Mobile (alice owner, bob contributor), Camera
   // (bob owner, alice contributor), Carol Solo (carol owner).
@@ -250,16 +257,17 @@ export const buildWorld = async ({ storageTemplate }: BuildWorldOptions): Promis
 
   // External-library scans are not uploads: record the scanned assets so the
   // R8/R17 oracles account for every file the world owns (originals and their
-  // derived thumbs). The seeded filenames match the fixtures, so the manifest
-  // id is the file stem. Owners read their own library: alice owns Archive,
-  // admin owns NAS-RO.
+  // derived thumbs). Manifest ids are scan-prefixed so `.find('fork-12')`
+  // keeps resolving the space upload, not the same-named archive scan
+  // (LC-01 regressed on that collision). Owners read their own library:
+  // alice owns Archive, admin owns NAS-RO.
   const archived = await utils.searchAssets(alice.login.accessToken, { libraryId: archive.id });
   for (const item of archived.assets.items) {
-    track(item.id, parse(item.originalFileName).name, 'alice');
+    track(item.id, `scan-${parse(item.originalFileName).name}`, 'alice');
   }
   const nasroScanned = await utils.searchAssets(admin.accessToken, { libraryId: nasro.id });
   for (const item of nasroScanned.assets.items) {
-    track(item.id, parse(item.originalFileName).name, 'admin');
+    track(item.id, `scan-${parse(item.originalFileName).name}`, 'admin');
   }
 
   // Per-container assets: >=3 synthetic fixtures each, incl. a sidecar one and a GPS one.

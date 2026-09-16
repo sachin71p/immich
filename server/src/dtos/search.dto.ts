@@ -26,7 +26,9 @@ const BaseSearchSchema = z
   .object({
     // fork: shared-libraries
     spaceId: z.uuidv4().optional().describe('Filter assets by a shared space'),
-    personalOnly: stringToBool.optional().describe('Only include personal assets'),
+    // Native boolean: this schema serves JSON POST bodies (unlike the query
+    // DTOs below), and stringToBool rejects real booleans with a 400.
+    personalOnly: z.boolean().optional().describe('Only include personal assets'),
     libraryId: z.uuidv4().nullish().describe('Library ID to filter by').meta(DEPRECATED_FLAT_FIELD),
     type: AssetTypeSchema.optional().meta(DEPRECATED_FLAT_FIELD),
     isEncoded: z.boolean().optional().describe('Filter by encoded status').meta(DEPRECATED_FLAT_FIELD),
@@ -68,7 +70,7 @@ const BaseSearchSchema = z
       .meta(DEPRECATED_FLAT_FIELD),
     mimeTypes: z.array(z.string().min(1)).optional().describe('MIME types to include').meta(DEPRECATED_FLAT_FIELD),
     projectionType: z.string().optional().describe('Projection type').meta(DEPRECATED_FLAT_FIELD),
-    hasLocation: stringToBool.optional().describe('Whether the asset has GPS coordinates').meta(DEPRECATED_FLAT_FIELD),
+    hasLocation: z.boolean().optional().describe('Whether the asset has GPS coordinates').meta(DEPRECATED_FLAT_FIELD),
     orientation: z.string().optional().describe('EXIF orientation').meta(DEPRECATED_FLAT_FIELD),
     fpsMin: z.number().min(0).optional().describe('Minimum frames per second').meta(DEPRECATED_FLAT_FIELD),
     fpsMax: z.number().min(0).optional().describe('Maximum frames per second').meta(DEPRECATED_FLAT_FIELD),

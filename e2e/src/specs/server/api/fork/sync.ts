@@ -15,11 +15,30 @@ export interface SyncEvent {
 
 const allTypes = Object.values(SyncRequestType);
 
-export const readSync = async (accessToken: string, types: SyncRequestType[] = allTypes): Promise<SyncEvent[]> => {
-  const { text, status } = await request(app)
+export const readSync = async (
+  accessToken: string,
+  types: SyncRequestType[] = allTypes,
+  timeoutMs = 0,
+): Promise<SyncEvent[]> => {
+  // Note: ackAll() below never observes quiet (it posts no acks, so every pass
+  // returns the full backfill). Prefer a targeted readSync + explicit assertions.
+  // The stream answers `application/jsonlines+json`, which superagent tries to
+  // JSON.parse as one document and chokes on; collect the raw text instead.
+  const pending = request(app)
     .post('/sync/stream')
     .set('Authorization', `Bearer ${accessToken}`)
-    .send({ types });
+    .send({ types })
+    .buffer(true)
+    .parse((res, callback) => {
+      let text = '';
+      res.on('data', (chunk: Buffer) => {
+        text += chunk.toString();
+      });
+      res.on('end', () => callback(null, { text }));
+    });
+  const response = await (timeoutMs > 0 ? pending.timeout(timeoutMs) : pending);
+  const { status } = response;
+  const text = (response.body as { text?: string }).text ?? response.text ?? '';
   if (status !== 200) {
     throw new Error(`sync stream failed with status ${status}: ${text.slice(0, 200)}`);
   }
