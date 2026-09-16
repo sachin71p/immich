@@ -54,10 +54,60 @@ public struct ImmichConnection: Sendable {
   public let tokenStore: TokenStore
   public let client: Client
 
+  /// Production requires HTTPS — A0 pins server reachability to Tailscale MagicDNS
+  /// (`https://<host>.<tailnet>.ts.net`) with no ATS exceptions.
+  ///
+  /// DEBUG builds additionally accept plain HTTP to loopback, because the e2e stack
+  /// (`docker-compose.fork.yml`, port 2285) serves HTTP only and there is otherwise no way to run
+  /// the app against the deterministic test world. Release builds are unchanged: HTTPS or nothing.
+  static func isPermittedServerURL(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else {
+      return false
+    }
+    if scheme == "https" {
+      return true
+    }
+    #if DEBUG
+      return scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(host)
+    #else
+      return false
+    #endif
+  }
+
+  /// Resolves a user-entered server URL to the API base the generated client expects.
+  ///
+  /// `immich-openapi-specs.json` declares `servers: [{ url: "/api" }]` and operation paths relative
+  /// to it (`pingServer` is `/server/ping`), so the client must be constructed with the `/api` base.
+  /// Users enter the server's origin — `https://host.tailnet.ts.net` — and a raw origin makes the
+  /// client request `/server/ping`, which the server answers with the web app's HTML: HTTP 200, but
+  /// not `pong`, surfacing as an opaque `unexpectedPingResponse`.
+  ///
+  /// Idempotent, and preserves a non-root base path (`https://host/photos` → `https://host/photos/api`)
+  /// for reverse-proxy deployments.
+  static func normalizedAPIBaseURL(_ url: URL) -> URL {
+    guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+      return url
+    }
+    // An API base carries neither of these; dropping them keeps request URLs well-formed.
+    components.query = nil
+    components.fragment = nil
+
+    var path = components.path
+    while path.hasSuffix("/") {
+      path.removeLast()
+    }
+    if path != "/api", !path.hasSuffix("/api") {
+      path += "/api"
+    }
+    components.path = path
+    return components.url ?? url
+  }
+
   public init(serverURL: URL, accessToken: String? = nil) throws {
-    guard serverURL.scheme?.lowercased() == "https", serverURL.host != nil else {
+    guard Self.isPermittedServerURL(serverURL) else {
       throw ConnectionError.insecureServerURL
     }
+    let serverURL = Self.normalizedAPIBaseURL(serverURL)
     self.serverURL = serverURL
     let tokenStore = TokenStore(token: accessToken)
     self.tokenStore = tokenStore

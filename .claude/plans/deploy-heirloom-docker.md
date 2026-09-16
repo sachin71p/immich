@@ -40,6 +40,30 @@ Deleting an external library removes its DB rows, **never the source files** und
 - Autosnapshots already run on `seagate_hdd/apps/immich` — use a distinct manual snapshot name
   so the autosnap pruner never tries to destroy a clone origin.
 
+### Runtime divergence from production — read before deploying
+
+| | Production (LXC 401) | This fork |
+|---|---|---|
+| Immich version | `v3.2.0` (tagged release) | branched at `v3.2.0-rc.0`; `v3.2.0` merged 16-Sep |
+| Module system | **CommonJS** (`server/package.json` has no `"type"`) | **ESM** (`"type": "module"`) |
+| Framework | NestJS 11 | **NestJS 12** |
+
+The fork carries `2a6262204 feat: NestJS 12 and ESM (#31237)` (2026-09-10, **626 files changed**),
+which production does not have. **This is the largest fork↔production gap — larger than any feature
+in the fork.** Earlier revisions of this plan described the base as "v3.2.0 + 98 commits" and judged
+risk from the migration set alone; the schema conclusion still holds (identical apart from the two
+fork migrations, so no reprocessing), but the *runtime* is a framework-major and module-system change.
+
+It is not theoretical. The migration left `require()` calls in ESM modules, crashing every
+transactional email (`NotifyAlbumInvite` → `ReferenceError: require is not defined`). Found and fixed
+in-fork on 16-Sep; **upstream has not fixed it.** Assume other ESM paths that no test covers exist —
+see `HOST-VERIFICATION-BRIEF.md` §2f.
+
+Practical consequences for this plan:
+- Tier-1 rollback (swap back to 401) still works — the schema is compatible in both directions.
+- But a fork↔prod A/B comparison is not comparing one feature set; it is comparing two runtimes.
+- Exercise notification paths explicitly after cutover. They are not covered by the fork's own tests.
+
 > **ZFS clones make this nearly free.** Both are real datasets, so `zfs clone` yields an instant
 > writable copy at ~0 bytes, growing only as it diverges. The earlier "zfs_proxmox can't hold a
 > second cache" constraint does not apply.
@@ -308,10 +332,24 @@ Both must be green before you restore the database.
 ```bash
 # on 401 — quiesce first for a consistent dump
 pct exec 401 -- systemctl stop immich-web immich-ml immich-dedup
-pct exec 401 -- su - postgres -c "pg_dump --clean --if-exists -d immich" | gzip > /tmp/immich.sql.gz
+pct exec 401 -- su postgres -c "pg_dump --clean --if-exists -d immich" | gzip > /tmp/immich.sql.gz
 pct exec 401 -- systemctl start immich-web immich-ml immich-dedup   # 401 goes straight back to service
 ```
 > Plain SQL, not `-Fc` — custom-format dumps interact badly with VectorChord columns on restore.
+>
+> Use `su postgres -c`, **not** `su - postgres -c` — the dash makes it a login shell, which prints
+> the community-scripts container's ANSI MOTD banner to stdout ahead of the real `pg_dump` output.
+> That banner gets piped straight into the gzip'd dump and shows up as ~6 syntax errors at the very
+> top of the restore log (harmless — psql skips them and continues — but avoidable). Confirmed on
+> 2026-09-16: banner contamination was confined to the first 17 lines, all-table row counts on
+> restore matched the 401 baseline exactly (assets 218823, users 4, libraries 4, albums 9,
+> people 7133), so this is cosmetic, not a data-integrity risk — but the `su postgres -c` form
+> avoids it outright.
+>
+> Also expect ~19 `role "dedup_ro" does not exist` errors on restore — harmless, that role only
+> exists for 401's separate `immich_dedup` database. And budget more than the dump's own runtime for
+> downtime: the 2026-09-16 run took ~9 minutes end-to-end on a 5.4GB DB (2.0GB gzip'd dump), not the
+> ~1-2 min a bare `pg_dump` estimate suggests — plan the maintenance window accordingly.
 
 ```bash
 # on 403
@@ -328,6 +366,19 @@ Expect exactly `SharedLibraries` then `SpacePeople` to apply. Both are additive 
 renders with thumbnails (proves cloned derivatives resolve), and play a video (proves NVENC).
 Asset count should read 218,824. If thumbnails are missing, `IMMICH_MEDIA_LOCATION` is wrong —
 fix it here, before the reorg.
+
+**Clean up the dump once the checkpoint is green.** The gzip'd dump is a full copy of every user's
+personal photo metadata (paths, faces, people names) sitting in plaintext outside the DB — don't
+leave it lying around longer than needed. Two copies exist by this point, host and 403:
+
+```bash
+rm -f /tmp/immich.sql.gz                              # on the Proxmox host
+pct exec 403 -- rm -f /opt/heirloom/immich.sql.gz     # inside the container
+```
+
+Do this only after the checkpoint above passes — it's your only pre-migration restore point until
+you trust the running instance. If you want a fallback a little longer (e.g. through Phase 6's
+reorg), keep the host copy until then and delete it before Phase 10 decommission at the latest.
 
 ---
 

@@ -101,17 +101,17 @@ struct SearchTests {
 
   @Test func localCameraAndRanges() async throws {
     let store = try await Self.seed()
-    #expect(ids(try await store.filterAssets(LocalAssetFilter(make: "Canon"), scope: Self.scope)) == ["a-canon"])
+    #expect(Self.ids(try await store.filterAssets(LocalAssetFilter(make: "Canon"), scope: Self.scope)) == ["a-canon"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(isoMin: 100, isoMax: 800), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(isoMin: 100, isoMax: 800), scope: Self.scope))
         == ["a-canon"])
     #expect(
-      ids(
+      Self.ids(
         try await store.filterAssets(
           LocalAssetFilter(fNumberMin: 2, fNumberMax: 3, focalLengthMin: 30, focalLengthMax: 40),
           scope: Self.scope)) == ["a-canon"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(lensModel: "RF 24-70mm"), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(lensModel: "RF 24-70mm"), scope: Self.scope))
         == ["a-canon"])
   }
 
@@ -119,12 +119,12 @@ struct SearchTests {
     let store = try await Self.seed()
     // 1/125s = 0.008s; the fraction text must compare as seconds, not lexicographically.
     #expect(
-      ids(
+      Self.ids(
         try await store.filterAssets(
           LocalAssetFilter(exposureTimeMin: 0.007, exposureTimeMax: 0.009), scope: Self.scope))
         == ["a-canon"])
     #expect(
-      ids(
+      Self.ids(
         try await store.filterAssets(
           LocalAssetFilter(exposureTimeMin: 0.015, exposureTimeMax: 0.025), scope: Self.scope))
         == ["a-nikon"])
@@ -133,35 +133,35 @@ struct SearchTests {
   @Test func localLocationFavoriteTypeAndSize() async throws {
     let store = try await Self.seed()
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(hasLocation: true), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(hasLocation: true), scope: Self.scope))
         == ["a-canon"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(hasLocation: false), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(hasLocation: false), scope: Self.scope))
         == ["a-nikon", "a-video"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(isFavorite: true), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(isFavorite: true), scope: Self.scope))
         == ["a-canon"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(mediaType: .video), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(mediaType: .video), scope: Self.scope))
         == ["a-video"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(fileExtensions: ["mov"]), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(fileExtensions: ["mov"]), scope: Self.scope))
         == ["a-video"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(mimeTypes: ["image/jpeg"]), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(mimeTypes: ["image/jpeg"]), scope: Self.scope))
         == ["a-canon"])
     #expect(
-      ids(
+      Self.ids(
         try await store.filterAssets(
           LocalAssetFilter(fileSizeMin: 50_000_000, widthMin: 1000), scope: Self.scope)) == ["a-video"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(fpsMin: 30), scope: Self.scope)) == ["a-video"])
-    #expect(ids(try await store.filterAssets(LocalAssetFilter(rating: 5), scope: Self.scope)) == ["a-canon"])
+      Self.ids(try await store.filterAssets(LocalAssetFilter(fpsMin: 30), scope: Self.scope)) == ["a-video"])
+    #expect(Self.ids(try await store.filterAssets(LocalAssetFilter(rating: 5), scope: Self.scope)) == ["a-canon"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(city: "San Francisco"), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(city: "San Francisco"), scope: Self.scope))
         == ["a-canon"])
     #expect(
-      ids(try await store.filterAssets(LocalAssetFilter(personIds: ["person-ada"]), scope: Self.scope))
+      Self.ids(try await store.filterAssets(LocalAssetFilter(personIds: ["person-ada"]), scope: Self.scope))
         == ["a-canon"])
   }
 
@@ -170,10 +170,10 @@ struct SearchTests {
     let empty = ContainerScope(personalUserIds: ["user-nobody"])
     #expect(try await store.filterAssets(LocalAssetFilter(), scope: empty).isEmpty)
     #expect(
-      ids(
+      Self.ids(
         try await store.filterAssets(
           LocalAssetFilter(
-            takenAfter: Self.Self.date("2024-06-02T00:00:00Z"), takenBefore: Self.Self.date("2024-06-02T23:59:59Z")),
+            takenAfter: Self.date("2024-06-02T00:00:00Z"), takenBefore: Self.date("2024-06-02T23:59:59Z")),
           scope: Self.scope)) == ["a-nikon"])
   }
 
@@ -182,8 +182,8 @@ struct SearchTests {
   @Test func metadataBodyMapping() {
     let filter = SearchFilter(
       local: LocalAssetFilter(
-        make: "Canon", isoMin: 100, isoMax: 800, hasLocation: true, mediaType: .image,
-        fileExtensions: ["jpg"], personIds: ["p1"]),
+        make: "Canon", isoMin: 100, isoMax: 800, fileExtensions: ["jpg"], hasLocation: true,
+        mediaType: .image, personIds: ["p1"]),
       scope: .space("space-1"),
       tagIds: ["t1"])
     let body = filter.metadataBody()

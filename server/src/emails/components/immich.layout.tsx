@@ -1,6 +1,11 @@
 import { Body, Container, Font, Head, Hr, Html, Img, Preview, Section, Tailwind, Text } from '@react-email/components';
+import { createRequire } from 'node:module';
 import * as React from 'react';
 import { ImmichFooter } from 'src/emails/components/footer.template.js';
+
+// `tailwindcss-preset-email` is CommonJS and ships no types; the server is ESM
+// ("type": "module"), where bare `require` is undefined and crashes email render.
+const require = createRequire(import.meta.url);
 
 interface ImmichLayoutProps {
   children: React.ReactNode;
@@ -11,7 +16,6 @@ export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
   <Html>
     <Tailwind
       config={{
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, unicorn/prefer-module
         presets: [require('tailwindcss-preset-email')],
         theme: {
           extend: {

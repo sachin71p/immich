@@ -12,8 +12,13 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { createRequire } from 'node:module';
 import * as React from 'react';
-import { ImmichFooter } from './footer.template.js';
+import { ImmichFooter } from 'src/emails/components/footer.template.js';
+
+// `tailwindcss-preset-email` is CommonJS and ships no types; the server is ESM
+// ("type": "module"), where bare `require` is undefined and crashes email render.
+const require = createRequire(import.meta.url);
 
 interface FutoLayoutProps {
   children: React.ReactNode;

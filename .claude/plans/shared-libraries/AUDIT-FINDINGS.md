@@ -337,3 +337,65 @@ environmentally (tscompat/TS6, untouched files).
 - ~~`STATUS.md` describes the S0 base as v3.1.0, while this audit brief describes upstream base `e55ac299a` as v3.2.0 plus 98 commits.~~ — RESOLVED 16-Sep: `git describe` gives `v3.1.0-379-ge55ac299a`; S0 row corrected to the describe output (package 3.2.0 is the dev version, not a tag).
 - `TESTING.md` §8 says phases with server-behavior tiers not run must remain awaiting a host run, but `STATUS.md` marks several such phases complete while their verifier records say those tiers were blocked or not run. — ACKNOWLEDGED, not re-marked: remediation appended explicit host re-run notes to the S2/S3/S4/S5/S6/S9/T0 rows it touches (the fixes invalidate prior host greens for those areas) and leaves phase-status decisions to the host owner.
 - ~~`STATUS.md` records S10 as pending OpenAPI/SQL regeneration, while the checked-in OpenAPI spec already has an operation-ID collision; the plan gives no single artifact-regeneration state that reconciles those facts.~~ — RESOLVED 16-Sep: collision recorded as DEFERRED with a rename prescription (see Task 4); S10 row now notes the regen must carry it.
+
+## Re-verification (host, 16-Sep — `run.sh all upgrade --template both`, report 20260916-012553)
+
+Ran at HEAD `e01b0c856` (`final`, feat/shared-libraries; log e01b0c856/a0d19cf01/6167df212/c7bca38c8/3229d34cd).
+`git rev-parse @{u}` fails — no upstream branch, nothing pushed. Tree at run time was dirty
+(`AM Makefile`, `M mise.lock`, `M native-apple/project.yml`, `? e2e/test-assets`); results are
+attributed to `e01b0c856` plus that dirt. Full log: `/tmp/gate-full-20260916-012553.log` (5188 lines);
+aggregate: `e2e/.fork-report/20260916-012553.md`.
+
+§0 split NOT DONE: `f6bd80b62` still mixes `AUDIT-FINDINGS.md` docs with the R4-01 fix
+(`metadata.service.ts`, `metadata.service.spec.ts`, `moves.e2e-spec.ts`) and sits 10 commits deep
+with a later R4-01 follow-up (`4a3e65308`) built on it. No upstream exists so a rebase would be
+locally safe, but the gate below is red, which dominates — splitting is deferred until the tree
+is green and the history is being prepared for push.
+
+§1 prerequisites (proof): `packages/plugin-core/dist/plugin.wasm` 2522844 bytes, mtime Sep 16 00:32;
+`mise` present at `/opt/homebrew/bin/mise` (2026.9.9). `ffprobe` resolves to
+`/opt/homebrew/bin/ffprobe` **9.0.1 Homebrew — NOT the pinned `jellyfin-ffmpeg 7.1.3-6`**.
+Per the brief §1 this is a host-setup problem to fix, not a result to waive; the two
+`upstream-medium` audio-video failures (`eiffel-tower.mp4`, `train.mov`) are suspect on exactly
+this ground. Docker Desktop was up (fork-stack tiers ran).
+
+Canary (§2a): upstream `album.e2e-spec.ts` 40/40 PASS including the 5 R11/S2 specs (prior
+standalone result at an older HEAD `e3dd5532d`, not re-run on this tree — STOP not triggered,
+but treat as stale, not as fresh canary evidence). Note: the gate's `upstream-e2e` album FAIL
+is DB-infra (`ECONNREFUSED 5435`), not an authorization regression.
+
+Per-tier (§2b/§2c; **never PASS for a tier that did not run**):
+
+- unit: PASS — 115/115 files, 2437 passed + 1 xfail.
+- unit-web: FAIL — 42/23 files fail at import (`localStorage` TypeError); 359 runnable passed.
+  Root cause (env vs regression) needs owner triage.
+- medium: PASS — 2/2 suites, 4/4.
+- e2e-api: FAIL — 2 failed tests (`moves` R4-01 personal-move identity; `world` R17-03 auditDisk
+  orphans) across 2 files; S9 person re-run inside this tier PASS 8/8 files, 75 passed/1 skipped.
+- e2e-web: FAIL — 48 passed / 1 failed / 1 skipped of 50 (album map-view Map-marker `toBeVisible`,
+  not retried standalone — possibly flaky, unconfirmed).
+- apple: FAIL — 129 tests / 18 suites, 3 issues (Editing copy/paste `keyNotFound` adjust;
+  UploadQueue SHA1 `abc`; SearchTests `localLocationFavoriteTypeAndSize`).
+- upstream-medium: FAIL — 1/73 files, 2 failed / 667 passed (audio-video goldens, see ffprobe note).
+- upstream-e2e: FAIL — 33/1 files, 9 failed / 2 passed / 469 skipped; collapse is DB-infra
+  (connection refused/terminated), NOT a true upstream run on the correct `/data` stack — that run
+  is still owed (needs stack swap + long serial run).
+- coverage: FAIL — matrix 85 cases, 82 tagged; MISSING all S10: `INV-02`, `INV-03`, `UP-01`.
+- upgrade + openapi-diff: NOT RUN — `run.sh:128 `keep[@]` unbound variable` crash under bash 3.2;
+  INV-02/INV-03/UP-01 have zero evidence.
+
+Downgrades: any `FIXED` claim touching R4-01 relocation identity, R17-03 audit orphans, unit-web
+imports, or audio-video goldens does not survive this host run — all four fail here.
+
+§2d coverage-matrix decision: matrix (85/82, S10 trio missing) cannot be accepted as-is; S10 tests
+are owed. The invisible-tag question (`[C3]`, `[R16]`, `[I6]`, `[I7]`, unbracketed `PERM-11`) is
+left OPEN for the owner — a test the gate cannot see can silently disappear, so either the matrix
+gains them or the tests are retagged; no silent third option.
+
+§2e S10 regen: NOT DONE. §2f C7 two-filesystem exercise: NOT RUN (no automated coverage; still owed).
+
+Verdict: **do not deploy.** Conjunction status: canary-green YES (stale HEAD) / no-failing-fork NO
+/ INV-02·INV-03-green NO (never ran) / S9-rerun-green YES (8/8). Anything short of all four is red,
+and this is short by two plus a red fork tier. Runner fixes recommended before re-run: bash-3.2-safe
+`keep` array at `run.sh:128`, `stack_up` before the upstream tier, `--maxWorkers=1` + `/data` stack
+for the upstream tier, bracket tags for S10 shell gates.

@@ -2,8 +2,8 @@ name: Heirloom
 options:
   minimumXcodeGenVersion: 2.44.0
   deploymentTarget:
-    iOS: '26.1'
-    macOS: '26.0'
+    iOS: '27.0'
+    macOS: '27.0'
 packages:
   PhotosCore:
     path: PhotosCore
@@ -12,6 +12,8 @@ settings:
     SWIFT_VERSION: '6.0'
     SWIFT_STRICT_CONCURRENCY: complete
     GENERATE_INFOPLIST_FILE: YES
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    CODE_SIGN_STYLE: Automatic
 targets:
   Heirloom-iOS:
     type: application
