@@ -39,7 +39,8 @@ process-entry frames are skipped); and per-name count/p50/p95/max for the
 
 The parser resolves xctrace's id/ref string dedup (threads, states, frames,
 binaries, backtraces) and streams the time-profile table, so a ~200 s trace
-parses in under a minute. Empty tables (e.g. no signposts fired) print a
+parses in under a minute. Interval names are read from the export's
+`signpost-name` cell (`name` kept as fallback for older exports). Empty tables (e.g. no signposts fired) print a
 placeholder row instead of crashing.
 
 ## Scripted scenario (WP7 §3)
