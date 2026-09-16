@@ -384,7 +384,8 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
       MediaPipeline.classify(
         ImagePipeline.Error.dataLoadingFailed(
           error: DataLoader.Error.statusCodeUnacceptable(403))) == .permanent(statusCode: 403))
-    // Transient failures are never negatively cached.
+    // Transient failures are never negatively cached (401 exempt so a token refresh can retry).
+    #expect(MediaPipeline.classify(DataLoader.Error.statusCodeUnacceptable(401)) == .transient)
     #expect(MediaPipeline.classify(DataLoader.Error.statusCodeUnacceptable(500)) == .transient)
     #expect(MediaPipeline.classify(URLError(.timedOut)) == .transient)
     #expect(MediaPipeline.classify(StubError.failed) == .transient)
@@ -417,6 +418,20 @@ private func tierOf(_ loaded: MediaLoadedImage) -> TierStep? {
     await h.pipeline.prefetch([(id: "flaky", thumbhash: nil)], tier: .thumbnail)
     await h.pipeline.prefetch([(id: "flaky", thumbhash: nil)], tier: .thumbnail)
     #expect(await h.service.dataRequests.count == 2)
+  }
+
+  @Test("[WP3FIX] 401 is NOT negatively cached (silent refresh recovery); 403 still held")
+  func noNegativeCache401() async throws {
+    let h = try await Harness.make()
+    await h.service.failWithStatus(url: h.thumbnailURL(id: "unauth"), status: 401)
+    await h.pipeline.prefetch([(id: "unauth", thumbhash: nil)], tier: .thumbnail)
+    await h.pipeline.prefetch([(id: "unauth", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 2)
+    // Control: 403 stays under the negative hold — one request total.
+    await h.service.failWithStatus(url: h.thumbnailURL(id: "denied"), status: 403)
+    await h.pipeline.prefetch([(id: "denied", thumbhash: nil)], tier: .thumbnail)
+    await h.pipeline.prefetch([(id: "denied", thumbhash: nil)], tier: .thumbnail)
+    #expect(await h.service.dataRequests.count == 3)
   }
 
   @Test("[WP3FIX] cancelPrefetch never cancels a task with a live visible consumer")

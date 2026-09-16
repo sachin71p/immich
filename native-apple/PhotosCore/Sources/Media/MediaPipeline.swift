@@ -521,8 +521,9 @@ public actor MediaPipeline {
     var id: String
   }
 
-  /// How a fetch failure is handled: cancellations log at debug, permanent HTTP failures take
-  /// a 10-minute negative-cache hold, everything else just logs (throttled).
+  /// How a fetch failure is handled: cancellations log at debug, permanent HTTP failures
+  /// (4xx except 401, which must survive a silent token refresh) take a 10-minute
+  /// negative-cache hold, everything else just logs (throttled).
   enum FetchFailureClass: Equatable {
     case cancelled
     case permanent(statusCode: Int)
@@ -540,7 +541,9 @@ public actor MediaPipeline {
       return .cancelled
     }
     if let code = httpStatusCode(of: error) {
-      return (400..<500).contains(code) ? .permanent(statusCode: code) : .transient
+      // 401 is transient: an in-place token refresh must retry within the hold window
+      // instead of staying suppressed until expiry/rebuild.
+      return code != 401 && (400..<500).contains(code) ? .permanent(statusCode: code) : .transient
     }
     return .transient
   }
