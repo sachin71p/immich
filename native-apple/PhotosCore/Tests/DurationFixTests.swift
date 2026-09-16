@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import CoreModel
 @testable import LocalStore
@@ -59,5 +60,59 @@ import Testing
   @Test("formatter: non-positive clamps to 0:00 (positive durations show >= 0:01)") func minimum() {
     #expect(VideoDurationFormat.string(seconds: 0) == "0:00")
     #expect(VideoDurationFormat.string(seconds: 1) == "0:01")
+  }
+
+  @Test("v4 migration rescales stored ms to s") func migration() throws {
+    let queue = try DatabaseQueue()
+    try queue.write { db in
+      // Pre-migration `asset` table (v1 shape from Schema.swift).
+      try db.create(table: "asset") { t in
+        t.primaryKey("id", .text)
+        t.column("ownerId", .text).notNull()
+        t.column("originalFileName", .text).notNull()
+        t.column("thumbhash", .text)
+        t.column("checksum", .text).notNull()
+        t.column("fileCreatedAt", .datetime)
+        t.column("fileModifiedAt", .datetime)
+        t.column("createdAt", .datetime)
+        t.column("localDateTime", .datetime)
+        t.column("durationSeconds", .integer)
+        t.column("type", .text).notNull()
+        t.column("deletedAt", .datetime)
+        t.column("isFavorite", .boolean).notNull().defaults(to: false)
+        t.column("visibility", .text).notNull().defaults(to: "timeline")
+        t.column("livePhotoVideoId", .text)
+        t.column("stackId", .text)
+        t.column("libraryId", .text)
+        t.column("spaceId", .text)
+        t.column("width", .integer)
+        t.column("height", .integer)
+        t.column("isEdited", .boolean).notNull().defaults(to: false)
+        t.column("localIdentifier", .text)
+      }
+      try db.execute(
+        sql: """
+          INSERT INTO asset (id, ownerId, originalFileName, checksum, durationSeconds, type)
+          VALUES ('v1', 'u1', 'VID.MOV', 'c1', 110708, 'VIDEO'), ('s1', 'u1', 'IMG.HEIC', 'c2', NULL, 'IMAGE')
+          """)
+      // Pretend every migration up to the new one already ran, so the migrator only applies v4.
+      try db.execute(sql: "CREATE TABLE grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)")
+      for id in [
+        "v1_users_partners", "v1_assets_exif", "v1_albums", "v1_stacks", "v1_spaces_libraries",
+        "v1_people_faces", "v1_memories", "v1_prefs_sync_cache", "v2_album_sharing_type",
+        "v2_upload_queue", "v2_livephoto_video_index", "v3_timeline_cover_index",
+      ] {
+        try db.execute(sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)", arguments: [id])
+      }
+    }
+    try Schema.makeMigrator().migrate(queue)
+    let seconds: Int? = try queue.read { db in
+      try Int.fetchOne(db, sql: "SELECT durationSeconds FROM asset WHERE id = 'v1'")
+    }
+    #expect(seconds == 111)
+    let still: Int? = try queue.read { db in
+      try Int.fetchOne(db, sql: "SELECT durationSeconds FROM asset WHERE id = 's1'")
+    }
+    #expect(still == nil)
   }
 }

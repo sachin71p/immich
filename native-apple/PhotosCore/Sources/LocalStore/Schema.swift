@@ -304,6 +304,19 @@ enum Schema {
         columns: ["deletedAt", "visibility", "localDateTime"])
     }
 
+    // Duration unit fix: rows synced before the ms→s wire mapping stored milliseconds in
+    // `asset.durationSeconds`. One-shot rescale to seconds (GRDB runs each registered migration
+    // exactly once). Re-syncs are harmless — the fixed mapping rewrites these rows in seconds anyway,
+    // so the sync checkpoint needs no reset.
+    migrator.registerMigration("v4_asset_duration_ms_to_s") { db in
+      try db.execute(
+        sql: """
+          UPDATE asset
+          SET durationSeconds = CAST(ROUND(durationSeconds / 1000.0) AS INTEGER)
+          WHERE durationSeconds IS NOT NULL
+          """)
+    }
+
     return migrator
   }
 }
