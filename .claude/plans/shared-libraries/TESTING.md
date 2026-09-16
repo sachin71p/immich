@@ -147,7 +147,7 @@ cases for phases already done when this plan was added).
 | R11-01 | R11 | E | T1 | bob (viewer) adds his asset to Trip and removes alice's asset from Trip |
 | R11-02 | R11 | E,U | T1 | album user cannot change own role or set role owner |
 | R16-01 | R16 | E | T1 | bob (album viewer) favorites alice's personal asset in Trip → alice's favorites view includes it |
-| R16-02 | R16 | E,U | T1 | favorite-only bulk update by album member OK; mixed update → 403 |
+| R16-02 | R16 | E,U | T1 | favorite-only bulk update by album member OK; mixed update → 400 |
 | R16-03 | R16 | E | T1 | dave (partner) cannot favorite alice's asset |
 | R16-04 | R16 | E | S6 | album/space/library sync streams carry the real isFavorite; partner stream unchanged |
 | R12-01 | R12 | E | S7 | `/assets/:id/exif/full` returns groups with manifest-expected values; binary tags stripped |
