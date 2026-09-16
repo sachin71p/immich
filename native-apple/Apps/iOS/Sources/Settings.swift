@@ -172,8 +172,9 @@ struct UploadTargetPicker: View {
 
 /// Toggles which containers appear on the timeline: personal (preference), each shared library
 /// (`space_member.showInTimeline`), each shared external library. Library-member toggles have no
-/// wired client endpoint (the generator can only include one of the two `updateMyTimeline`
-/// operationIds — A1 handoff) so they display read-only; see the handoff open issues.
+/// wired client endpoint (the generator can only include one of the two member-update
+/// operationIds — A1 handoff; the space toggle is `updateMySpaceTimeline` since S10)
+/// so they display read-only; see the handoff open issues.
 struct TimelineSourcesSheet: View {
   @EnvironmentObject var session: AppSession
   @State private var spaceToggles: [String: Bool] = [:]

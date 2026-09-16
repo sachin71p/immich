@@ -43,8 +43,9 @@ filter:
     # membership-loss handling) and Rules' AccessContext/TimelineContext.
     - getMyUser
   # Shared-spaces member endpoints reuse the same bare operationIds (getMembers,
-  # addMembers, updateMyTimeline, removeMember) as /libraries/{id}/members. The generator
-  # validates operationId uniqueness on the *filtered* document, so both the library and
+  # addMembers, removeMember) as /libraries/{id}/members (the space timeline toggle is
+  # updateMySpaceTimeline since S10, so it no longer collides). The generator validates
+  # operationId uniqueness on the *filtered* document, so both the library and
   # shared-space variants of these ids can never be included together (regardless of
   # operations-by-id vs paths-by-path filtering) — A1 only needs the shared-spaces ones.
   paths:

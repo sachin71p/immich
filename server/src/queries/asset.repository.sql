@@ -398,7 +398,11 @@ with
       "asset"."id",
       "asset"."visibility",
       asset."isFavorite"
-      and asset."ownerId" = $1 as "isFavorite",
+      and (
+        asset."ownerId" = $1
+        or asset."spaceId" is not null
+        or asset."libraryId" is not null
+      ) as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."livePhotoVideoId",

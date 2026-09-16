@@ -8,7 +8,7 @@ import {
   searchAssetStatistics,
   searchSmart,
   updateMyPreferences,
-  updateMyTimeline2,
+  updateMySpaceTimeline,
   type AssetResponseDto,
 } from '@immich/sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -81,7 +81,7 @@ describe('fork timeline scope', () => {
     const beforeStats = await searchAssetStatistics({ statisticsSearchDto: {} }, { headers: auth(token('bob')) });
     expect(beforeBuckets).toBeGreaterThan(0);
 
-    await updateMyTimeline2(
+    await updateMySpaceTimeline(
       { id: world.spaces.camera.id, sharedSpaceTimelineDto: { showInTimeline: false } },
       { headers: auth(token('bob')) },
     );
@@ -104,7 +104,7 @@ describe('fork timeline scope', () => {
       hidden.size,
     );
 
-    await updateMyTimeline2(
+    await updateMySpaceTimeline(
       { id: world.spaces.camera.id, sharedSpaceTimelineDto: { showInTimeline: true } },
       { headers: auth(token('bob')) },
     );

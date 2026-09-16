@@ -22,7 +22,7 @@
     await savePreferences({ defaultUploadTarget: option.value === 'personal' ? { type: sdk.Type3.Personal } : { type: sdk.Type4.Space, spaceId: option.value as string } });
   };
   const setPersonal = async (value: boolean) => { showPersonal = value; await savePreferences({ showPersonalInTimeline: value }); };
-  const setSpaceTimeline = async (spaceId: string, showInTimeline: boolean) => { await sdk.updateMyTimeline2({ id: spaceId, sharedSpaceTimelineDto: { showInTimeline } }); await sharedSpaces.refresh(); };
+  const setSpaceTimeline = async (spaceId: string, showInTimeline: boolean) => { await sdk.updateMySpaceTimeline({ id: spaceId, sharedSpaceTimelineDto: { showInTimeline } }); await sharedSpaces.refresh(); };
   const setLibraryTimeline = async (libraryId: string, showInTimeline: boolean) => { await sdk.updateMyTimeline({ id: libraryId, libraryTimelineDto: { showInTimeline } }); await sharedSpaces.refresh(); };
   onMount(async () => {
     await sharedSpaces.ensureLoaded();

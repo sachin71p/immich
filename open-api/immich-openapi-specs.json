@@ -15610,7 +15610,7 @@
     },
     "/shared-spaces/{id}/members/me": {
       "patch": {
-        "operationId": "updateMyTimeline",
+        "operationId": "updateMySpaceTimeline",
         "parameters": [
           {
             "name": "id",

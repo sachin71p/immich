@@ -58,7 +58,7 @@
   <section class="mx-auto max-w-5xl px-4 pt-6">
     {#if editing}<div class="flex max-w-xl flex-col gap-3"><Field label={$t('name')}><Input bind:value={name} /></Field><Field label={$t('description')}><Input bind:value={description} /></Field><div><Button size="small" onclick={save}>{$t('save')}</Button></div></div>
     {:else}<h1 class="text-2xl font-semibold">{space.name}</h1><p class="mt-1 text-gray-500">{space.description}</p>{/if}
-    <div class="mt-3 flex items-center gap-3"><label class="text-sm"><input type="checkbox" checked={space.showInTimeline} onchange={async (event) => { const showInTimeline = event.currentTarget.checked; await sdk.updateMyTimeline2({ id: space.id, sharedSpaceTimelineDto: { showInTimeline } }); space = { ...space, showInTimeline }; sharedSpaces.upsert(space); }} /> {$t('show_in_timeline')}</label>
+    <div class="mt-3 flex items-center gap-3"><label class="text-sm"><input type="checkbox" checked={space.showInTimeline} onchange={async (event) => { const showInTimeline = event.currentTarget.checked; await sdk.updateMySpaceTimeline({ id: space.id, sharedSpaceTimelineDto: { showInTimeline } }); space = { ...space, showInTimeline }; sharedSpaces.upsert(space); }} /> {$t('show_in_timeline')}</label>
       <ContextMenuButton aria-label={$t('menu')} icon={mdiDotsVertical} items={[{ title: $t('edit'), icon: mdiPencilOutline, onAction: () => (editing = true) }, ...(isOwner ? [{ title: $t('delete_shared_library'), icon: mdiDeleteOutline, onAction: remove }] : [{ title: $t('leave_shared_library'), icon: mdiLogout, onAction: leave }])]} />
     </div>
   </section>

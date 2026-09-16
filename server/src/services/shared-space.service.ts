@@ -148,7 +148,7 @@ export class SharedSpaceService {
     await this.sharedSpaceRepository.transferOwner(id, auth.user.id, dto.userId);
   }
 
-  async updateMyTimeline(auth: AuthDto, id: string, dto: SharedSpaceTimelineDto): Promise<void> {
+  async updateMySpaceTimeline(auth: AuthDto, id: string, dto: SharedSpaceTimelineDto): Promise<void> {
     await this.require(auth, Permission.SharedSpaceMemberUpdate, id);
     await this.sharedSpaceRepository.updateMember(id, auth.user.id, dto);
   }

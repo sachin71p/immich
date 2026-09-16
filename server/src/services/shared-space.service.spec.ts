@@ -220,7 +220,7 @@ describe(SharedSpaceService.name, () => {
       const auth = AuthFactory.create();
       access.space.checkMemberAccess.mockResolvedValue(new Set([space.id]));
 
-      await sut.updateMyTimeline(auth, space.id, { showInTimeline: false });
+      await sut.updateMySpaceTimeline(auth, space.id, { showInTimeline: false });
 
       expect(sharedSpaceMock.updateMember).toHaveBeenCalledWith(space.id, auth.user.id, { showInTimeline: false });
     });

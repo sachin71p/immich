@@ -97,11 +97,11 @@ export class SharedSpaceController {
   @Authenticated({ permission: Permission.SharedSpaceMemberUpdate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({ summary: 'Update my shared-space settings', history: new HistoryBuilder().added('v3') })
-  updateMyTimeline(
+  updateMySpaceTimeline(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
     @Body() dto: SharedSpaceTimelineDto,
   ): Promise<void> {
-    return this.service.updateMyTimeline(auth, id, dto);
+    return this.service.updateMySpaceTimeline(auth, id, dto);
   }
 }

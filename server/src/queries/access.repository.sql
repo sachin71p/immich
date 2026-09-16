@@ -131,7 +131,11 @@ where
   "asset"."id" in ($1)
   and "asset"."ownerId" = $2
   and (
-    "asset"."spaceId" is null
+    (
+      "asset"."ownerId" = $3
+      and "asset"."spaceId" is null
+      and "asset"."libraryId" is null
+    )
     or exists (
       select
         "shared_space_member"."spaceId"
@@ -139,10 +143,24 @@ where
         "shared_space_member"
       where
         "shared_space_member"."spaceId" = "asset"."spaceId"
-        and "shared_space_member"."userId" = $3
+        and "shared_space_member"."userId" = $4
+    )
+    or exists (
+      select
+        "library"."id"
+      from
+        "library"
+        left join "library_member" on "library_member"."libraryId" = "library"."id"
+        and "library_member"."userId" = $5
+      where
+        "library"."id" = "asset"."libraryId"
+        and (
+          "library"."ownerId" = $6
+          or "library_member"."userId" = $7
+        )
     )
   )
-  and "asset"."visibility" != $4
+  and "asset"."visibility" != $8
 
 -- AccessRepository.asset.checkPartnerAccess
 select
@@ -159,6 +177,8 @@ where
     "asset"."visibility" = 'timeline'
     or "asset"."visibility" = 'hidden'
   )
+  and "asset"."spaceId" is null
+  and "asset"."libraryId" is null
   and "asset"."id" in ($2)
 
 -- AccessRepository.asset.checkSharedLinkAccess
@@ -195,7 +215,37 @@ from
 where
   "asset"."visibility" != $1
   and "asset"."ownerId" = $2
-  and "asset_file"."id" in ($3)
+  and (
+    (
+      "asset"."ownerId" = $3
+      and "asset"."spaceId" is null
+      and "asset"."libraryId" is null
+    )
+    or exists (
+      select
+        "shared_space_member"."spaceId"
+      from
+        "shared_space_member"
+      where
+        "shared_space_member"."spaceId" = "asset"."spaceId"
+        and "shared_space_member"."userId" = $4
+    )
+    or exists (
+      select
+        "library"."id"
+      from
+        "library"
+        left join "library_member" on "library_member"."libraryId" = "library"."id"
+        and "library_member"."userId" = $5
+      where
+        "library"."id" = "asset"."libraryId"
+        and (
+          "library"."ownerId" = $6
+          or "library_member"."userId" = $7
+        )
+    )
+  )
+  and "asset_file"."id" in ($8)
 
 -- AccessRepository.assetFile.checkSpaceAccess
 select
@@ -326,7 +376,20 @@ from
   "person"
 where
   "person"."personGroupId" in ($1)
-  and "person"."ownerId" = $2
+  and (
+    (
+      "person"."ownerId" = $2
+      and "person"."spaceId" is null
+    )
+    or "person"."spaceId" in (
+      select
+        "shared_space_member"."spaceId"
+      from
+        "shared_space_member"
+      where
+        "shared_space_member"."userId" = $3
+    )
+  )
 
 -- AccessRepository.person.checkFaceOwnerAccess
 select
@@ -337,7 +400,39 @@ from
   and "asset"."deletedAt" is null
 where
   "asset_face"."id" in ($1)
-  and "asset"."ownerId" = $2
+  and (
+    (
+      "asset"."ownerId" = $2
+      and "asset"."spaceId" is null
+      and "asset"."libraryId" is null
+    )
+    or "asset"."spaceId" in (
+      select
+        "shared_space_member"."spaceId"
+      from
+        "shared_space_member"
+      where
+        "shared_space_member"."userId" = $3
+    )
+    or (
+      "asset"."ownerId" = $4
+      and "asset"."libraryId" is not null
+      and exists (
+        select
+          "library"."id"
+        from
+          "library"
+          left join "library_member" on "library_member"."libraryId" = "library"."id"
+          and "library_member"."userId" = $5
+        where
+          "library"."id" = "asset"."libraryId"
+          and (
+            "library"."ownerId" = $6
+            or "library_member"."userId" = $7
+          )
+      )
+    )
+  )
 
 -- AccessRepository.partner.checkUpdateAccess
 select

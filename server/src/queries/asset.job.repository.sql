@@ -315,6 +315,7 @@ select
   "asset"."isExternal",
   "asset"."visibility",
   "asset"."libraryId",
+  "asset"."spaceId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
   "asset"."originalFileName",

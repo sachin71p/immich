@@ -60,6 +60,14 @@ where
     where
       "user"."clusterGroupId" = "cluster_group"."id"
   )
+  and not exists (
+    select
+      "shared_space"."id"
+    from
+      "shared_space"
+    where
+      "shared_space"."clusterGroupId" = "cluster_group"."id"
+  )
 
 -- PersonRepository.getAllFaces
 select
@@ -94,7 +102,16 @@ from
   "person"
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
-  and "asset"."ownerId" = "person"."ownerId"
+  and (
+    (
+      "person"."spaceId" is null
+      and "asset"."ownerId" = "person"."ownerId"
+    )
+    or (
+      "person"."spaceId" is not null
+      and "asset"."spaceId" = "person"."spaceId"
+    )
+  )
   and "asset"."visibility" = 'timeline'
   and "asset"."deletedAt" is null
 where
@@ -165,15 +182,29 @@ select
           "person"
         where
           "person"."personGroupId" = "asset_face"."personGroupId"
-          and "person"."ownerId" = $1
+          and (
+            "person"."ownerId" = $1
+            or "person"."spaceId" in (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."userId" = $2
+            )
+          )
+        order by
+          person."ownerId" = $3 desc
+        limit
+          $4
       ) as obj
   ) as "person"
 from
   "asset_face"
 where
-  "asset_face"."assetId" = $2
+  "asset_face"."assetId" = $5
   and "asset_face"."deletedAt" is null
-  and "asset_face"."isVisible" = $3
+  and "asset_face"."isVisible" = $6
 order by
   "asset_face"."boundingBoxX1" asc
 
@@ -191,13 +222,27 @@ select
           "person"
         where
           "person"."personGroupId" = "asset_face"."personGroupId"
-          and "person"."ownerId" = $1
+          and (
+            "person"."ownerId" = $1
+            or "person"."spaceId" in (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."userId" = $2
+            )
+          )
+        order by
+          person."ownerId" = $3 desc
+        limit
+          $4
       ) as obj
   ) as "person"
 from
   "asset_face"
 where
-  "asset_face"."id" = $2
+  "asset_face"."id" = $5
   and "asset_face"."deletedAt" is null
 
 -- PersonRepository.getFaceForFacialRecognitionJob
@@ -214,6 +259,7 @@ select
           "asset"."ownerId",
           "asset"."visibility",
           "asset"."fileCreatedAt",
+          "asset"."spaceId",
           "user"."clusterGroupId"
         from
           "asset"
@@ -289,6 +335,48 @@ where
   "person"."personGroupId" = $1
   and "person"."ownerId" = $2
 
+-- PersonRepository.getByGroupIdForUser
+select
+  "person".*
+from
+  "person"
+where
+  "person"."personGroupId" = $1
+  and "person"."ownerId" = $2
+select
+  "person".*
+from
+  "person"
+where
+  "person"."personGroupId" = $1
+  and "person"."spaceId" is not null
+  and "person"."spaceId" in (
+    select
+      "shared_space_member"."spaceId"
+    from
+      "shared_space_member"
+    where
+      "shared_space_member"."userId" = $2
+  )
+
+-- PersonRepository.getMemberSpaceIds
+select
+  "shared_space_member"."spaceId",
+  "shared_space_member"."showInTimeline"
+from
+  "shared_space_member"
+where
+  "shared_space_member"."userId" = $1
+
+-- PersonRepository.getSpacePerson
+select
+  "person".*
+from
+  "person"
+where
+  "person"."spaceId" = $1
+  and "person"."personGroupId" = $2
+
 -- PersonRepository.getByName
 with
   "similarity_threshold" as (
@@ -315,10 +403,8 @@ select distinct
 from
   "person"
 where
-  (
-    "person"."ownerId" = $1
-    and "person"."name" != $2
-  )
+  "person"."name" != $1
+  and "person"."ownerId" = $2
 
 -- PersonRepository.getStatistics
 select
@@ -568,14 +654,28 @@ select
           "person"
         where
           "person"."personGroupId" = "asset_face"."personGroupId"
-          and "person"."ownerId" = $1
+          and (
+            "person"."ownerId" = $1
+            or "person"."spaceId" in (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."userId" = $2
+            )
+          )
+        order by
+          person."ownerId" = $3 desc
+        limit
+          $4
       ) as obj
   ) as "person"
 from
   "asset_face"
 where
-  "asset_face"."assetId" in ($2)
-  and "asset_face"."personGroupId" in ($3)
+  "asset_face"."assetId" in ($5)
+  and "asset_face"."personGroupId" in ($6)
   and "asset_face"."deletedAt" is null
 
 -- PersonRepository.getRandomFace

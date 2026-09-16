@@ -229,27 +229,19 @@ with
       inner join "asset" on "asset"."id" = "asset_face"."assetId"
       inner join "face_search" on "face_search"."faceId" = "asset_face"."id"
     where
-      "asset"."ownerId" in (
-        select
-          "user"."id"
-        from
-          "user"
-        where
-          "user"."clusterGroupId" = $2
-      )
-      and "asset"."deletedAt" is null
+      "asset"."deletedAt" is null
     order by
       "distance"
     limit
-      $3
+      $2
   )
 select
   *
 from
   "cte"
 where
-  "cte"."distance" <= $4
-rollback
+  "cte"."distance" <= $3
+commit
 
 -- SearchRepository.searchPlaces
 select
@@ -372,45 +364,6 @@ where
   and "deletedAt" is null
   and "state" is not null
   and "state" != $3
-
--- SearchRepository.getCities
-select distinct
-  on ("city") "city"
-from
-  "asset_exif"
-  inner join "asset" on "asset"."id" = "asset_exif"."assetId"
-where
-  "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
-  and "deletedAt" is null
-  and "city" is not null
-  and "city" != $3
-
--- SearchRepository.getCameraMakes
-select distinct
-  on ("make") "make"
-from
-  "asset_exif"
-  inner join "asset" on "asset"."id" = "asset_exif"."assetId"
-where
-  "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
-  and "deletedAt" is null
-  and "make" is not null
-  and "make" != $3
-
--- SearchRepository.getCameraModels
-select distinct
-  on ("model") "model"
-from
-  "asset_exif"
-  inner join "asset" on "asset"."id" = "asset_exif"."assetId"
-where
-  "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
-  and "deletedAt" is null
-  and "model" is not null
-  and "model" != $3
 
 -- SearchRepository.getCameraLensModels
 select distinct

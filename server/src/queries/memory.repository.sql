@@ -42,16 +42,46 @@ select
           "memory_asset"."memoriesId" = "memory"."id"
           and "asset"."visibility" = 'timeline'
           and "asset"."deletedAt" is null
+          and (
+            (
+              "asset"."ownerId" = $1
+              and "asset"."spaceId" is null
+              and "asset"."libraryId" is null
+            )
+            or exists (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."spaceId" = "asset"."spaceId"
+                and "shared_space_member"."userId" = $2
+            )
+            or exists (
+              select
+                "library"."id"
+              from
+                "library"
+                left join "library_member" on "library_member"."libraryId" = "library"."id"
+                and "library_member"."userId" = $3
+              where
+                "library"."id" = "asset"."libraryId"
+                and (
+                  "library"."ownerId" = $4
+                  or "library_member"."userId" = $5
+                )
+            )
+          )
           and not exists (
             select
-              $1 as "one"
+              $6 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $7
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -62,7 +92,7 @@ from
   "memory"
 where
   "deletedAt" is null
-  and "ownerId" = $3
+  and "ownerId" = $8
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -83,16 +113,46 @@ select
           "memory_asset"."memoriesId" = "memory"."id"
           and "asset"."visibility" = 'timeline'
           and "asset"."deletedAt" is null
+          and (
+            (
+              "asset"."ownerId" = $1
+              and "asset"."spaceId" is null
+              and "asset"."libraryId" is null
+            )
+            or exists (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."spaceId" = "asset"."spaceId"
+                and "shared_space_member"."userId" = $2
+            )
+            or exists (
+              select
+                "library"."id"
+              from
+                "library"
+                left join "library_member" on "library_member"."libraryId" = "library"."id"
+                and "library_member"."userId" = $3
+              where
+                "library"."id" = "asset"."libraryId"
+                and (
+                  "library"."ownerId" = $4
+                  or "library_member"."userId" = $5
+                )
+            )
+          )
           and not exists (
             select
-              $1 as "one"
+              $6 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $7
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -104,14 +164,14 @@ from
 where
   (
     "showAt" is null
-    or "showAt" <= $3
+    or "showAt" <= $8
   )
   and (
     "hideAt" is null
-    or "hideAt" >= $4
+    or "hideAt" >= $9
   )
   and "deletedAt" is null
-  and "ownerId" = $5
+  and "ownerId" = $10
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -132,16 +192,46 @@ select
           "memory_asset"."memoriesId" = "memory"."id"
           and "asset"."visibility" = 'timeline'
           and "asset"."deletedAt" is null
+          and (
+            (
+              "asset"."ownerId" = $1
+              and "asset"."spaceId" is null
+              and "asset"."libraryId" is null
+            )
+            or exists (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."spaceId" = "asset"."spaceId"
+                and "shared_space_member"."userId" = $2
+            )
+            or exists (
+              select
+                "library"."id"
+              from
+                "library"
+                left join "library_member" on "library_member"."libraryId" = "library"."id"
+                and "library_member"."userId" = $3
+              where
+                "library"."id" = "asset"."libraryId"
+                and (
+                  "library"."ownerId" = $4
+                  or "library_member"."userId" = $5
+                )
+            )
+          )
           and not exists (
             select
-              $1 as "one"
+              $6 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $7
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -151,9 +241,9 @@ select
 from
   "memory"
 where
-  "showAt" > $3
+  "showAt" > $8
   and "deletedAt" is null
-  and "ownerId" = $4
+  and "ownerId" = $9
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -174,16 +264,46 @@ select
           "memory_asset"."memoriesId" = "memory"."id"
           and "asset"."visibility" = 'timeline'
           and "asset"."deletedAt" is null
+          and (
+            (
+              "asset"."ownerId" = $1
+              and "asset"."spaceId" is null
+              and "asset"."libraryId" is null
+            )
+            or exists (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."spaceId" = "asset"."spaceId"
+                and "shared_space_member"."userId" = $2
+            )
+            or exists (
+              select
+                "library"."id"
+              from
+                "library"
+                left join "library_member" on "library_member"."libraryId" = "library"."id"
+                and "library_member"."userId" = $3
+              where
+                "library"."id" = "asset"."libraryId"
+                and (
+                  "library"."ownerId" = $4
+                  or "library_member"."userId" = $5
+                )
+            )
+          )
           and not exists (
             select
-              $1 as "one"
+              $6 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $7
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -195,10 +315,10 @@ from
 where
   (
     "showAt" is null
-    or "showAt" <= $3
+    or "showAt" <= $8
   )
   and "deletedAt" is null
-  and "ownerId" = $4
+  and "ownerId" = $9
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -220,6 +340,36 @@ select
           "memory_asset"."memoriesId" = "memory"."id"
           and "asset"."visibility" = 'timeline'
           and "asset"."deletedAt" is null
+          and (
+            (
+              "asset"."ownerId" = "memory"."ownerId"
+              and "asset"."spaceId" is null
+              and "asset"."libraryId" is null
+            )
+            or exists (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."spaceId" = "asset"."spaceId"
+                and "shared_space_member"."userId" = "memory"."ownerId"
+            )
+            or exists (
+              select
+                "library"."id"
+              from
+                "library"
+                left join "library_member" on "library_member"."libraryId" = "library"."id"
+                and "library_member"."userId" = "memory"."ownerId"
+              where
+                "library"."id" = "asset"."libraryId"
+                and (
+                  "library"."ownerId" = "memory"."ownerId"
+                  or "library_member"."userId" = "memory"."ownerId"
+                )
+            )
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -253,6 +403,36 @@ select
           "memory_asset"."memoriesId" = "memory"."id"
           and "asset"."visibility" = 'timeline'
           and "asset"."deletedAt" is null
+          and (
+            (
+              "asset"."ownerId" = "memory"."ownerId"
+              and "asset"."spaceId" is null
+              and "asset"."libraryId" is null
+            )
+            or exists (
+              select
+                "shared_space_member"."spaceId"
+              from
+                "shared_space_member"
+              where
+                "shared_space_member"."spaceId" = "asset"."spaceId"
+                and "shared_space_member"."userId" = "memory"."ownerId"
+            )
+            or exists (
+              select
+                "library"."id"
+              from
+                "library"
+                left join "library_member" on "library_member"."libraryId" = "library"."id"
+                and "library_member"."userId" = "memory"."ownerId"
+              where
+                "library"."id" = "asset"."libraryId"
+                and (
+                  "library"."ownerId" = "memory"."ownerId"
+                  or "library_member"."userId" = "memory"."ownerId"
+                )
+            )
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg

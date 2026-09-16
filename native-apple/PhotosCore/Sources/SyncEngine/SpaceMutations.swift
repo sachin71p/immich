@@ -65,9 +65,9 @@ public struct SpaceMutations: Sendable {
   /// `space_member.showInTimeline`). The app layer's management sheet calls this, then re-resolves
   /// `Rules.TimelineScope` so the grid updates immediately.
   public func setShowInTimeline(spaceId: String, show: Bool) async throws {
-    let input = Operations.updateMyTimeline.Input(
+    let input = Operations.updateMySpaceTimeline.Input(
       path: .init(id: spaceId), body: .json(.init(showInTimeline: show)))
-    _ = try await connection.client.updateMyTimeline(input)
+    _ = try await connection.client.updateMySpaceTimeline(input)
     let userId = try await connection.currentUserId()
     try await localStore.setSpaceShowInTimeline(spaceId: spaceId, userId: userId, show: show)
   }
