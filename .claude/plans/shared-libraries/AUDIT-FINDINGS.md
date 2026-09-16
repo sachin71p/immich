@@ -2,17 +2,24 @@
 
 ## Verdict
 
-**Do not deploy this fork to a live family photo server.** Confirmed authorization paths can expose shared-space or external-library assets to a partner or to a contributor after their membership has been removed; a memory can also return linked container assets without checking present membership. Relocation has multiple confirmed paths that can mark work complete while files are missing or duplicated. This was a static audit only: no tests, build, linter, Docker, or migration was run, and the outstanding host coverage leaves several lifecycle and sync claims unproven.
+**Do not deploy this fork to a live family photo server — unchanged after remediation.**
+Every P0/P1/P2 finding now has a fix with a named regression test (see the Outcome columns),
+and the sandbox-verifiable tiers are green (server + e2e typecheck, full non-controller unit
+2190+ tests, all touched suites, web tsc + svelte-check). But the host-only tiers that prove
+the fixes — controller unit (sandbox EPERM), medium (new PERM-11/C3/R16/I6/I7 tests), the 5
+S2 album e2e canary specs, and the full e2e-api/medium suites over the touched engine code —
+have not run since the fixes landed. One NEEDS-DECISION (library face/person scope) and one
+DEFERRED item (OpenAPI rename → S10 regen) remain open. The verdict flips only on host runs.
 
 ## P0 — confirmed visibility and authorization gaps
 
 | Contract | Location | Finding | Outcome |
 |---|---|---|---|
-| PERM-11 | `server/src/repositories/access.repository.ts:246` | `checkOwnerAccess` treats every `spaceId IS NULL` asset as personal; it does not exclude `libraryId`, so an owner removed from a shared external library still receives direct asset access. | pending (Task 6) |
-| PERM-11 | `server/src/repositories/access.repository.ts:351` | Direct asset-file owner access has no space/library membership condition, leaving a removed contributor able to fetch files of assets they own. | pending (Task 6) |
-| PERM-01-nonmember | `server/src/utils/access.ts:119` | `AssetRead` tries partner access before container membership; the partner query lacks the required personal-container restriction and can reveal a partner's space or external-library assets. | pending (Task 6) |
-| PERM-04-nonmember | `server/src/utils/access.ts:135` | The same unscoped partner branch grants `AssetShare`, allowing a non-member partner to add a container asset to a shared link. | pending (Task 6) |
-| PERM-11 | `server/src/repositories/memory.repository.ts:73` | Memory asset expansion filters only visibility/deletion, not current container membership; a user-owned memory can return previously linked space/library assets after removal. The single-memory path repeats this at line 192. | pending (Task 6) |
+| PERM-11 | `server/src/repositories/access.repository.ts:246` | `checkOwnerAccess` treats every `spaceId IS NULL` asset as personal; it does not exclude `libraryId`, so an owner removed from a shared external library still receives direct asset access. | FIXED — owner branch routed through `withPersonalOwnershipOrCurrentContainerMembership` (commit `4337fe52a`). Evidence: medium `PERM-11 denies a removed contributor direct asset, asset-file, and memory access` (host run pending); tsc + eslint clean. |
+| PERM-11 | `server/src/repositories/access.repository.ts:351` | Direct asset-file owner access has no space/library membership condition, leaving a removed contributor able to fetch files of assets they own. | FIXED — same predicate (`4337fe52a`); covered by the same medium PERM-11 test (asserts file ids denied after removal). |
+| PERM-01-nonmember | `server/src/utils/access.ts:119` | `AssetRead` tries partner access before container membership; the partner query lacks the required personal-container restriction and can reveal a partner's space or external-library assets. | FIXED — partner query requires `spaceId IS NULL AND libraryId IS NULL` (`4337fe52a`). Evidence: medium `PERM-01-nonmember denies partner access to space and library assets` (host run pending). |
+| PERM-04-nonmember | `server/src/utils/access.ts:135` | The same unscoped partner branch grants `AssetShare`, allowing a non-member partner to add a container asset to a shared link. | FIXED — same partner-query gate as above (`4337fe52a`); same medium test asserts share-link denial. |
+| PERM-11 | `server/src/repositories/memory.repository.ts:73` | Memory asset expansion filters only visibility/deletion, not current container membership; a user-owned memory can return previously linked space/library assets after removal. The single-memory path repeats this at line 192. | FIXED — both sites routed through the predicate (`4337fe52a`). Evidence: same medium PERM-11 test asserts `memory.get`/`memory.search` return empty assets after removal (host run pending). |
 | PERM-11 | `server/src/repositories/access.repository.ts:689` (PersonAccess.checkOwnerAccess; audit w1-2:699) | A removed contributor who owns a space person passed the `ownerId = userId` OR branch with no membership gate, retaining person read/update (PersonDelete/Merge, get/update/thumbnail). | FIXED — owner branch gated to `spaceId IS NULL`; space persons require current membership (S9 member branch unchanged). Test: `PERM-11 denies a removed contributor person and face access` in `server/test/medium/specs/repositories/access.repository.spec.ts` (host run pending; SQL-shape probe in sandbox confirms the gate). S9 unit `person-space.spec` 10/10 still pass. |
 | PERM-11 | `server/src/repositories/access.repository.ts:717` (PersonAccess.checkFaceOwnerAccess; audit w1-2:727) | A removed contributor who owns an asset passed the `asset.ownerId = userId` OR branch for its space asset's faces with no membership gate, retaining FaceDelete/PersonCreate/PersonReassign. | FIXED — asset leg is now personal-ownership (`ownerId` + `spaceId`/`libraryId` NULL) OR current space membership; library assets keep upstream owner-only scope (see NEEDS-DECISION). Same test as above; S9 `person-space` 10/10 + `person.service` unit 67/67 still pass. |
 | PERM-11 | `server/src/repositories/sync.repository.ts:977` (SharedSpaceMemberSync.getDeletes; audit w1-5:977) | A removed space member cannot receive SharedSpaceMemberDeleteV1 because the stream requires a current membership row. | NOT-A-DEFECT — by design: direct member removal fires `shared_space_member_delete_audit`, which writes a user-keyed `shared_space_audit` row, so the removed member receives SharedSpaceDeleteV1 instead (verified trigger + user-keyed getDeletes). Evidence: medium `[SY-03] [SY-04]` (host PASS — leave emits the container delete) + Apple `membershipLoss` fixture test (client drops the space and its assets, keeps personal assets). |
@@ -61,6 +68,21 @@
   (`getMembers`/`addMembers`/`removeMember` shared across spaces/libraries, per the Apple config
   comment) are pre-existing and out of this pass.
 
+## Task 5 — review outcomes
+
+- **Storage-template batch `Success` after per-asset failures: INTENDED, already tested.**
+  `handleMigration` (batch) catches per-asset errors, logs them with asset id + stack
+  (`storage-template.service.ts:214-216`), continues, and reports overall `Success` (`:225`).
+  That is the upstream batch-resilience pattern (one bad asset must not abort a full-library
+  migration), and the C7 fix changed what flows into it: move failures now THROW instead of
+  completing rows silently. The per-asset job (`handleMigrationSingle`) still reports `Failed`.
+  Evidence: `should not update the database if the move fails due to incorrect newPath
+  filesize` asserts batch `Success` with no DB write on a failed move.
+- **Migration amended in place: documented.** `1789426700279-SharedLibraries.ts` gained FK
+  `RESTRICT` + both CHECKs after landing; the amended bytes never ran anywhere. Added a
+  "Migration re-run" note to `FORK.md` (fresh database only, no repair path). E2e/medium
+  always migrate from scratch, so host tiers are unaffected.
+
 ## NEEDS-DECISION
 
 1. **Library face/person scope (Task 1 boundary).** The Task 1 fix gates the *space* leg of
@@ -77,17 +99,17 @@
 
 | Severity | Contract | Location | Finding | Outcome |
 |---|---|---|---|---|
-| P1 | I3 | `server/src/services/metadata.service.ts:728` | Motion-asset creation copies `libraryId` but omits the source `spaceId`, so a live-photo pair can be split across containers. | pending (Task 6) |
-| P1 | I3 | `server/src/repositories/asset.repository.ts:818` | Live-photo matching is keyed by owner/type/CID without container predicates, allowing halves from different containers to be linked. | pending (Task 6) |
-| P1 | I6 | `server/src/services/asset-media.service.ts:179` | Uploading directly into a space writes the staged asset with `spaceId` but creates no relocation row, despite staging needing asynchronous container relocation. | pending (Task 6) |
-| P1 | I6 | `server/src/schema/migrations/1789426700279-SharedLibraries.ts:112` | The space foreign key uses `ON DELETE SET NULL`, permitting a container change without the required relocation record. | pending (Task 6) |
-| P1 | R17 | `server/src/services/library.service.ts:346` | Upload-path containment is prefix-only; a normalized path such as `/allowed/../outside` passes although it is outside the import path. | pending (Task 6) |
-| P1 | R17 | `server/src/services/storage-template.service.ts:363` | Template root validation is prefix-only, so a sibling whose name starts with the root can escape its assigned container tree. | pending (Task 6) |
-| P1 | I4 | `server/src/cores/storage.core.ts:255` | A non-EXDEV rename error is logged and returned rather than propagated, enabling callers to continue after the original file did not move. | pending (Task 6) |
-| P1 | I6 | `server/src/services/storage-template.service.ts:275` | Template relocation suppresses `moveFile` failures, allowing the relocation workflow to finish its row after a failed move. | pending (Task 6) |
+| P1 | I3 | `server/src/services/metadata.service.ts:728` | Motion-asset creation copies `libraryId` but omits the source `spaceId`, so a live-photo pair can be split across containers. | FIXED — motion creation carries `spaceId` (commit `d2f0b7de6`). Evidence: metadata unit spec green in sandbox (117 tests); medium `[I3]` container-matching tests (host run pending). |
+| P1 | I3 | `server/src/repositories/asset.repository.ts:818` | Live-photo matching is keyed by owner/type/CID without container predicates, allowing halves from different containers to be linked. | FIXED — match query container-scoped (`libraryId`/`spaceId` equality, commit `2951462e2`). Evidence: medium `[I3]` cross-container mismatch tests (host run pending). |
+| P1 | I6 | `server/src/services/asset-media.service.ts:179` | Uploading directly into a space writes the staged asset with `spaceId` but creates no relocation row, despite staging needing asynchronous container relocation. | FIXED — space uploads and sidecar-carrying personal uploads create a relocation row before metadata extraction (commit `d2f0b7de6`). Evidence: `[I6]`/`[R17-01]` upload unit tests green in sandbox (asset-media 139 tests). |
+| P1 | I6 | `server/src/schema/migrations/1789426700279-SharedLibraries.ts:112` | The space foreign key uses `ON DELETE SET NULL`, permitting a container change without the required relocation record. | FIXED — FK amended to `RESTRICT` (+ table mirror, commit `654e37c9f`; fresh-DB-only, see FORK.md). Evidence: medium `[I6] refuses to delete a space that still holds assets` (host run pending). |
+| P1 | R17 | `server/src/services/library.service.ts:346` | Upload-path containment is prefix-only; a normalized path such as `/allowed/../outside` passes although it is outside the import path. | FIXED — containment via resolved realpath checks (`isResolvedPathInside`, commit `d2f0b7de6`). Evidence: library unit spec green in sandbox (73 tests); path/rules unit specs green. |
+| P1 | R17 | `server/src/services/storage-template.service.ts:363` | Template root validation is prefix-only, so a sibling whose name starts with the root can escape its assigned container tree. | FIXED — boundary-checked containment (commit `c0e236b76`). Evidence: storage-template unit spec green in sandbox (33 tests). |
+| P1 | I4 | `server/src/cores/storage.core.ts:255` | A non-EXDEV rename error is logged and returned rather than propagated, enabling callers to continue after the original file did not move. | FIXED — `moveFile` throws on rename/size/unlink failures (commit `c0e236b76`). Evidence: `[I4]` propagation test green in sandbox. |
+| P1 | I6 | `server/src/services/storage-template.service.ts:275` | Template relocation suppresses `moveFile` failures, allowing the relocation workflow to finish its row after a failed move. | FIXED — failures propagate; the batch job logs-and-continues per asset by design (see Task 5 review; commit `c0e236b76`). Evidence: filesize-mismatch batch test asserts `Success` with no DB write. |
 | P1 | I7 | `web/src/lib/components/asset-viewer/AssetViewerNavBar.svelte:203` | Space/library members are offered the Locked visibility action for container assets, contrary to the invariant (server rejection was not rechecked in this client-only review). | FIXED — server rejects with a clean 400 (`BadRequestException('Shared assets cannot be locked')` in both `update` and `updateAll`; DB CHECK `asset_container_not_locked` backstops), and the UI no longer offers the toggle on container assets (new `isPersonalAsset` gate). Tests: `[I7]` update/updateAll rejections in `asset.service.spec` (78/78 pass); `isPersonalAsset` in `asset-permissions.spec` (11/11 pass). Web tsc + svelte-check clean; web eslint environmentally crashed (pre-existing tscompat/TS6 issue, reproduces on untouched files). |
-| P2 | I4 | `server/src/cores/storage.core.ts:274` | After copy-and-verify on EXDEV, failure to unlink the old file is only logged; the new path and move record are finalized, leaving an unmanaged original outside the container tree. | pending (Task 6) |
-| P2 | I4 | `server/src/cores/storage.core.ts:290` | Destination-only crash recovery stats the missing old path before using known asset data, preventing recovery of a completed copy after a crash. | pending (Task 6) |
+| P2 | I4 | `server/src/cores/storage.core.ts:274` | After copy-and-verify on EXDEV, failure to unlink the old file is only logged; the new path and move record are finalized, leaving an unmanaged original outside the container tree. | FIXED — unlink failure throws (commit `c0e236b76`). Evidence: storage-template crash-recovery unit tests green in sandbox. |
+| P2 | I4 | `server/src/cores/storage.core.ts:290` | Destination-only crash recovery stats the missing old path before using known asset data, preventing recovery of a completed copy after a crash. | FIXED — recovery prefers known asset data (`oldStat` skipped when `assetInfo` present, commit `c0e236b76`). Evidence: recovery unit tests green in sandbox. |
 
 ## Coverage gaps
 
@@ -98,11 +120,11 @@
 
 ## Remaining work — deployment order
 
-1. Fix and regression-test every P0 access path, including read, file download, sharing, memory, partner, and post-removal cases.
-2. Prove membership-removal sync behavior end to end. `shared_space_member` deletion is filtered by current membership in `server/src/repositories/sync.repository.ts:977`; the targeted review could not establish a reliable compensating `SharedSpaceDeleteV1`. Library removal may have a separate member-audit route and needs the same end-to-end proof.
-3. Fix relocation error propagation, EXDEV cleanup/recovery, containment checks, live-photo container propagation, and every I6 relocation-row bypass; exercise crash and filesystem-failure cases on a host.
-4. Complete T1 and the coverage gate, then run the required host Docker tiers and upgrade gate. Do not use sandbox-only checks as release evidence.
-5. Regenerate and review OpenAPI/SDK/SQL artifacts after the pending S10 work; the client review also found duplicate OpenAPI operation identity for `updateMyTimeline` at `open-api/immich-openapi-specs.json:14930`.
+1. ~~Fix and regression-test every P0 access path~~ — DONE in remediation (P0 table Outcomes; commits `4337fe52a`, `7b77c2860`, `914d25258`, `2951462e2`). Host runs still pending.
+2. ~~Prove membership-removal sync behavior end to end~~ — DONE (member-removal compensation verified via SY-03/04/05 + Apple fixture; container-deletion tombstones added with [LC-01]/[C3] tests, commit `d93fc777d`). Host medium run still pending.
+3. ~~Fix relocation error propagation, EXDEV cleanup/recovery, containment checks, live-photo container propagation, and I6 relocation-row bypasses~~ — DONE (P1–P2 table Outcomes; commits `c0e236b76`, `d2f0b7de6`, `654e37c9f`). Crash/filesystem cases still need a host (brief C7 explicitly requires non-mock exercise).
+4. Complete T1 and the coverage gate, then run the required host Docker tiers and upgrade gate. Do not use sandbox-only checks as release evidence. — STILL OPEN (host-owned).
+5. Regenerate and review OpenAPI/SDK/SQL artifacts after the pending S10 work — STILL OPEN (S10-owned); the regen must carry the `updateMyTimeline`→`updateMySpaceTimeline` rename (remediation DEFERRED, see Task 4).
 
 ## Re-verification (Task 0 baseline, 2026-09-15 sandbox run + host-deferred tiers)
 
@@ -155,8 +177,37 @@ decision, not a drive-by fix.
 - No host tiers have run since the remediation pile landed, so C1/C2/C4–C7 stay
   "code looks correct", and the C3 audit path stays unverified, until the host runs.
 
+## Re-verification (session close, 16-Sep, sandbox + 13 commits)
+
+Session commits (oldest first): `670202347` (Task 0 baseline), `4337fe52a` (pile C1/C2),
+`7b77c2860` (Task 1 person/face), `d93fc777d` (Task 2 tombstones), `441294e6c` (Task 3
+Locked UI), `914d25258` (P3+R11 access), `373859597` (R11 service+e2e), `2951462e2` (R16
+favorites), `c0e236b76` (G1 engine), `d2f0b7de6` (G2 guards), `654e37c9f` (schema
+amendment), `aa7923248` (e2e harness), `f3455c46a` (C5 integrity spec). The host also
+committed `8c9a00a38` (e2e fixes) mid-session; the branch is shared and moving — verify
+`git log` before host runs.
+
+Final sandbox state: server `tsc` clean, e2e `tsc`+`lint` clean, web `tsc` + `svelte-check`
+(0 errors) clean, full non-controller unit **80 files / 2197 passed / 0 failed** (Task-0
+baseline was 2190; +2 are the new `[I7]` asset tests, +5 unattributed across untouched
+suites — zero failures in both runs, all touched suites individually re-verified). The 226
+controller failures remain pure sandbox `listen EPERM`. Server full lint still shows the 22
+pre-existing errors (byte-identical to HEAD — owner decision needed); web lint crashes on the
+pre-existing tscompat/TS6 incompatibility (reproduces on untouched files). `pnpm` wrapper
+commands intermittently trip a no-TTY modules-purge self-check in this sandbox (host-side
+`node_modules` drift suspected); direct `node_modules/.bin` binaries work and no collateral
+was left (lockfiles untouched).
+
+Host backlog (nothing below has run since the fixes landed): controller unit (any host),
+`run.sh medium` (new PERM-11/C3/R16/I6/I7 tests + re-runs for S3/S4/S6/S9 engine areas),
+`run.sh e2e-api` (5 S2 canary specs + full fork suite), coverage gate (R13-04/W-01/W-02/W-09
+still T1-owned), S10 regen carrying the opId rename, real crash/filesystem exercise (C7
+brief demand). New-test tags `[R16]`/`[C3]`/`[I6]`/`[I7]`/unbracketed `PERM-11` are
+intentionally invisible to the coverage gate (matrix has no such sub-cases); `[LC-01]` and
+`[R16-04]`-adjacent tags ride existing IDs.
+
 ## Contradictions in plan documentation
 
-- `STATUS.md` describes the S0 base as v3.1.0, while this audit brief describes upstream base `e55ac299a` as v3.2.0 plus 98 commits.
-- `TESTING.md` §8 says phases with server-behavior tiers not run must remain awaiting a host run, but `STATUS.md` marks several such phases complete while their verifier records say those tiers were blocked or not run.
-- `STATUS.md` records S10 as pending OpenAPI/SQL regeneration, while the checked-in OpenAPI spec already has an operation-ID collision; the plan gives no single artifact-regeneration state that reconciles those facts.
+- ~~`STATUS.md` describes the S0 base as v3.1.0, while this audit brief describes upstream base `e55ac299a` as v3.2.0 plus 98 commits.~~ — RESOLVED 16-Sep: `git describe` gives `v3.1.0-379-ge55ac299a`; S0 row corrected to the describe output (package 3.2.0 is the dev version, not a tag).
+- `TESTING.md` §8 says phases with server-behavior tiers not run must remain awaiting a host run, but `STATUS.md` marks several such phases complete while their verifier records say those tiers were blocked or not run. — ACKNOWLEDGED, not re-marked: remediation appended explicit host re-run notes to the S2/S3/S4/S5/S6/S9/T0 rows it touches (the fixes invalidate prior host greens for those areas) and leaves phase-status decisions to the host owner.
+- ~~`STATUS.md` records S10 as pending OpenAPI/SQL regeneration, while the checked-in OpenAPI spec already has an operation-ID collision; the plan gives no single artifact-regeneration state that reconciles those facts.~~ — RESOLVED 16-Sep: collision recorded as DEFERRED with a rename prescription (see Task 4); S10 row now notes the regen must carry it.

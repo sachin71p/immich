@@ -120,8 +120,13 @@ run_upstream() {
 }
 
 run_upgrade() {
-  echo "upgrade tier: implemented by S10 (UP-01 + INV-02 scripts)" | tee -a "$REPORT"
-  record upgrade SKIP "owned by S10"
+  # fork: shared-libraries (S10) - UP-01 base-tag upgrade gate plus the INV-02
+  # OpenAPI compatibility gate. Both run in an isolated compose project and
+  # never touch the e2e stack volumes.
+  local keep=()
+  [[ "$KEEP_STACK" == 1 ]] && keep=(--keep-stack)
+  "$ROOT/scripts/fork-test/upgrade.sh" "${keep[@]}" && record upgrade PASS "" || record upgrade FAIL "see output"
+  "$ROOT/scripts/fork-test/openapi-diff.sh" && record openapi-diff PASS "" || record openapi-diff FAIL "see output"
 }
 
 # No tsx in the repo: compile fork TS scripts with the server tsc, then node.

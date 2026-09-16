@@ -10,6 +10,16 @@ for the full product/design spec.
 - Upstream tag: `v3.1.0`
 - Base sha: `e55ac299a4ec7cb372e35dbf2c6c05ee9ce77f6c`
 
+## Migration re-run (remediation, Sep-2026)
+
+Migration `1789426700279-SharedLibraries.ts` was amended in place after first landing
+(`asset.spaceId` FK `SET NULL` → `RESTRICT`, plus a new `asset_container_not_locked`
+CHECK; the `asset_space_library_exclusive` CHECK pre-existed). The amended bytes have
+never run anywhere: any fork database migrated with the old bytes carries the old FK and
+no `not_locked` CHECK. Re-running the migration from scratch (fresh database) is the only
+supported path — there is no down-migration or repair job for the old shape. The table
+definition (`asset.table.ts`: `RESTRICT` + matching `@Check`) mirrors the amendment.
+
 ## Merge procedure
 
 1. `git fetch upstream --tags`.
@@ -35,6 +45,37 @@ for the full product/design spec.
 Merge every upstream minor release (approximately monthly); apply security releases
 immediately.
 
+## Conflict hotspots (S10)
+Files with the most `fork: shared-libraries` hooks need re-application review on
+every merge (counts from 16-Sep-2026; see the rehearsal record below):
+1. `server/src/schema/index.ts` (23) — space/library tables, audit tables.
+2. `server/src/utils/access.ts` (19) — R11 viewer add/remove, AssetFavorite/Move.
+3. `server/src/repositories/person.repository.ts` (18) — space people scope.
+4. `web/.../search-bar/SearchFilters.svelte` (17), `search-bar-utils.ts` (9).
+5. `server/src/enum.ts` (16) — space/library roles, permissions, fork jobs.
+6. `server/src/repositories/access.repository.ts` (14) — container membership checks.
+7. `server/src/services/person.service.ts`, `server/src/repositories/sync.repository.ts`,
+   `server/src/repositories/asset.repository.ts` (13 each).
+8. `server/src/services/{sync,asset}.service.ts` (10 each).
+Rule: never resolve a hotspot by accepting upstream (`theirs`) blindly — every
+`fork:` marker in these files is load-bearing. Resolve `pnpm-lock.yaml`,
+`uv.lock`, `package.json` versions, and `open-api/immich-openapi-specs.json`
+by accepting upstream, then regenerate (see merge procedure).
+
+## Merge rehearsal (S10, 16-Sep-2026, throwaway worktree — never committed)
+- Merged upstream tag `v3.2.2` (58 commits past the `e55ac299` base) into a
+  detached worktree at `ad4c7ae28`; 64 files changed in `server/src`+`web/src`.
+- 26 conflicted paths: 15 mechanical (5 `package.json`, `pnpm-lock.yaml`,
+  `uv.lock`, `pyproject.toml`, mobile fastlane/pubspec/people-picker,
+  `Info.plist` (auto-merged), `open-api` spec (regenerate), `mappers.ts`,
+  `response.ts`, `e2e/package.json`) and 11 fork-logic
+  (`person.repository.ts`, `person.service.ts`, `sync.service.ts` + spec,
+  `metadata.service.ts`, `asset-job.repository.ts`, `fetch-client.ts`,
+  `search-bar-utils.ts` + spec, medium `person.service.spec.ts`).
+- The merge itself takes minutes. Resolution estimate: ~30 min mechanical
+  (accept upstream, reinstall, regen SQL/OpenAPI/SDK) + ~half a day fork-logic
+  (re-apply markers in the hotspot files above, rerun medium + e2e-api).
+
 ## Patch list
 
 | upstream file | change | reason | phase |
@@ -49,6 +90,7 @@ immediately.
 | `server/test/{factories/asset.factory,small.factory}.ts` | adapts asset fixtures for container fields | shared schema support | S1 |
 | `server/src/{enum.ts,utils/access.ts,repositories/access.repository.ts}` | grants container-aware asset and shared-space access | shared access control | S2 |
 | `server/src/services/{asset.service.ts,album.service.ts}` | protects shared favorites, roles, and Locked visibility | shared access control | S2 |
+| `server/src/utils/access.ts` (`AlbumAssetCreate`/`Delete` → Viewer), `server/src/services/album.service.ts` (`canAlwaysRemove` → `AlbumAssetDelete`), `e2e/.../album.e2e-spec.ts` (3 tests) | R11: every album member of any role may add/remove any asset — intentional upstream behavior change, see hotspots | album allow-rules | B1 |
 | `server/src/cores/storage.core.ts` | namespaces generated files by shared-space storage key | shared storage relocation | S3 |
 | `server/src/services/asset-relocation.service.ts` | resumes and performs crash-safe asset file relocations | shared storage relocation | S3 |
 | `server/src/{repositories/asset.repository.ts,services/library.service.ts}` | guards external scans/watchers while moves are pending | shared storage relocation | S3 |
@@ -81,3 +123,6 @@ immediately.
 | `web/src/lib/{components/shared-components/search-bar/search-bar-utils.ts,managers/search-manager.svelte.ts,types.ts}` | filter<->URL query mapping | R13 | S8c |
 | `packages/sdk/src/fetch-client.ts` | hand-added AssetFullExifResponseDto/getAssetFullExif + rich search fields (SDK hunks ride with the S8b commit) | R12/R13 | S8c |
 | `server/src/schema (person.spaceId, person_audit.spaceId, shared_space.clusterGroupId, migration 1789426700280), dtos, repositories, services (person/asset/search/metadata)` | space-scoped people, space recognition, move detach, member sync | S9 sketch §11 | S9 |
+| `native-apple/` (fork-only tree; `Heirloom` apps, bundle IDs `com.immich.heirloom.*`) | iOS/macOS companion apps over the fork API | Apple track | A0–A9 |
+| `server/src/{enum.ts (ContainerPathsAudit jobs),types.ts,services/job.service.ts,services/asset-relocation.service.ts,repositories/asset.repository.ts}` | `container-paths-audit` manual/admin job: report-only §7 placement audit | integrity | S10 |
+| `scripts/fork-test/{upgrade.sh,openapi-diff.sh}`, `scripts/fork-test/run.sh` (`upgrade` tier) | UP-01 base-tag upgrade gate; INV-02 OpenAPI additions-only gate | upgrade gate | S10 |
