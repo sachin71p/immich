@@ -84,12 +84,6 @@ struct SettingsView: View {
               value: Self.formatBytes(cacheUsage[tier] ?? 0))
           }
         }
-        Section("About") {
-          LabeledContent("Heirloom", value: "iOS · shared-libraries fork")
-          Text("Follow Apple Photos interaction patterns; never Apple artwork or the Photos name.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
         if let error {
           Section { Text(error).foregroundStyle(.red).font(.caption) }
         }
@@ -228,21 +222,21 @@ struct TimelineSourcesSheet: View {
                 set: { new in setSpaceToggle(space.id, show: new) }))
           }
         }
-        Section("External Libraries") {
-          ForEach(session.libraries) { library in
-            HStack {
-              Toggle(
-                library.name,
-                isOn: Binding(
-                  get: { libraryToggles[library.id] ?? true },
-                  set: { _ in }))
-                .disabled(true)
-              Spacer()
+        // L18: the developer placeholder is gone; the section only shows when it has content.
+        if !session.libraries.isEmpty {
+          Section("External Libraries") {
+            ForEach(session.libraries) { library in
+              HStack {
+                Toggle(
+                  library.name,
+                  isOn: Binding(
+                    get: { libraryToggles[library.id] ?? true },
+                    set: { _ in }))
+                  .disabled(true)
+                Spacer()
+              }
             }
           }
-          Text("Library timeline toggles need a wired library-member endpoint (open issue).")
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         if let error {
           Section { Text(error).foregroundStyle(.red).font(.caption) }
