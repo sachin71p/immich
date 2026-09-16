@@ -27,7 +27,7 @@ struct ConnectView: View {
         try await connection.ping()
         let token = try await connection.login(email: email, password: password)
         SharedTokenStore.saveBestEffort(token)
-        SharedContainer.sharedDefaults.set(url.absoluteString, forKey: SharedContainer.serverURLKey)
+        SharedContainer.setServerURLString(url.absoluteString)
         status = "Connected"
       } catch {
         status = "Could not connect: \(error.localizedDescription)"

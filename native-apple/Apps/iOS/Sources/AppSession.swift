@@ -74,7 +74,7 @@ final class AppSession: ObservableObject {
     }
     do {
       guard let token = SharedTokenStore.loadBestEffort(), !token.isEmpty,
-        let urlString = SharedContainer.sharedDefaults.string(forKey: SharedContainer.serverURLKey),
+        let urlString = SharedContainer.serverURLString(),
         let url = URL(string: urlString)
       else {
         signedIn = false
@@ -223,7 +223,7 @@ final class AppSession: ObservableObject {
 
   func signOut() {
     SharedTokenStore.deleteAll()
-    SharedContainer.sharedDefaults.removeObject(forKey: SharedContainer.serverURLKey)
+    SharedContainer.clearServerURLString()
     connection = nil
     store = nil
     pipeline = nil

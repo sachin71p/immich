@@ -49,17 +49,49 @@ public enum SharedContainer {
   /// Group suite when present, else standard (server URL, import destination, agent flag —
   /// all non-secret cross-process settings live here).
   ///
+  /// Decided once per process (S4): re-probing on every access could return the group suite on
+  /// one call and `.standard` on another, so a server URL written through this accessor would
+  /// later read back as missing.
+  ///
   /// `UserDefaults(suiteName:)` practically never returns nil, even when the process's code
   /// signature can't actually use the group suite (ad-hoc signing) — it hands back an instance
   /// backed by a domain the process can't persist to. A plain set-then-read probe would still
   /// report success (the in-memory cache echoes it back regardless), so force a real disk write
   /// via `synchronize()` — the same probe pattern as `groupURL()`, just at the plist layer.
-  public static var sharedDefaults: UserDefaults {
+  public static let sharedDefaults: UserDefaults = resolveSharedDefaults()
+
+  private static func resolveSharedDefaults() -> UserDefaults {
     guard let suite = UserDefaults(suiteName: groupIdentifier) else { return .standard }
     suite.set(UUID().uuidString, forKey: ".heirloom-access-probe")
     guard suite.synchronize() else { return .standard }
     suite.removeObject(forKey: ".heirloom-access-probe")
     return suite
+  }
+
+  /// Reads the server URL through the shared suite. `ConnectView` used to write it into
+  /// `.standard` while readers consulted the group suite (S4) — when the chosen suite has no
+  /// value but `.standard` does, the value is migrated into the chosen suite. Pure in
+  /// `chosen`/`fallback` so the logic stays unit-testable without an app host.
+  public static func resolveServerURLString(chosen: UserDefaults, fallback: UserDefaults) -> String? {
+    if let current = chosen.string(forKey: serverURLKey), !current.isEmpty { return current }
+    guard fallback !== chosen else { return nil }
+    guard let migrated = fallback.string(forKey: serverURLKey), !migrated.isEmpty else { return nil }
+    chosen.set(migrated, forKey: serverURLKey)
+    return migrated
+  }
+
+  /// Every read/write of the server URL goes through here so writers and readers can never
+  /// disagree on the suite again (S4).
+  public static func serverURLString() -> String? {
+    resolveServerURLString(chosen: sharedDefaults, fallback: .standard)
+  }
+
+  public static func setServerURLString(_ value: String) {
+    sharedDefaults.set(value, forKey: serverURLKey)
+  }
+
+  public static func clearServerURLString() {
+    sharedDefaults.removeObject(forKey: serverURLKey)
   }
 }
 
