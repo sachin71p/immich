@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobOf } from 'src/types.js';
@@ -9,6 +9,7 @@ import {
   AssetFileType,
   AssetPathType,
   BootstrapEventPriority,
+  ChecksumAlgorithm,
   ImageFormat,
   ImmichWorker,
   JobName,
@@ -19,15 +20,19 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { getAssetFile } from 'src/utils/asset.util.js';
+import { isPathInside } from 'src/utils/path.js';
 
 type RelocationTransaction = import('kysely').Kysely<DB>;
 type QueueAfterCommit = () => Promise<void>;
 
-/** True only when candidate is inside root on a directory boundary. */
-export const isPathInside = (candidate: string, root: string) => {
-  const path = relative(resolve(root), resolve(candidate));
-  return path !== '' && !path.startsWith('..') && !isAbsolute(path);
-};
+export { isPathInside } from 'src/utils/path.js';
+
+export interface ContainerPathFinding {
+  assetId: string;
+  kind: 'original' | 'sidecar' | 'derived';
+  actual: string;
+  expected: string;
+}
 
 @Injectable()
 export class AssetRelocationService extends BaseService {
@@ -85,6 +90,86 @@ export class AssetRelocationService extends BaseService {
     for (const id of assetIds) await this.relocate(id);
   }
 
+  // fork: shared-libraries (S10) - report-only §7 audit ("Verify container paths").
+  // Originals follow the same branches as relocate(): exact nested paths when the
+  // storage template is off, container-root containment when it is on (date-prefix
+  // rendering is upstream's business), and import-root containment for
+  // external-library assets (scanned files stay where found). Sidecars must sit next
+  // to the actual original (`<original>.xmp`, as the move worker writes them);
+  // derived files are exact, via the same computation the move worker uses.
+  async auditContainerPaths(): Promise<ContainerPathFinding[]> {
+    const { storageTemplate } = await this.getConfig({ withCache: true });
+    const findings: ContainerPathFinding[] = [];
+    for (const id of await this.assetRepository.getAuditIds()) {
+      const asset = await this.assetRepository.getForRelocation(id);
+      if (!asset) {
+        continue;
+      }
+      if (asset.libraryId) {
+        const roots = [...(asset.importPaths ?? []), ...(asset.uploadPath ? [asset.uploadPath] : [])];
+        if (roots.every((root) => !isPathInside(asset.originalPath, root))) {
+          findings.push({
+            assetId: asset.id,
+            kind: 'original',
+            actual: asset.originalPath,
+            expected: asset.uploadPath ?? roots[0] ?? '(library import root)',
+          });
+        }
+      } else if (storageTemplate.enabled) {
+        const root = asset.spaceId
+          ? StorageCore.getLibraryFolder({ id: `shared/${asset.spaceStorageLabel}`, storageLabel: null })
+          : StorageCore.getLibraryFolder({ id: asset.ownerId, storageLabel: asset.ownerStorageLabel ?? null });
+        if (!isPathInside(asset.originalPath, root)) {
+          findings.push({ assetId: asset.id, kind: 'original', actual: asset.originalPath, expected: root });
+        }
+      } else {
+        const target = StorageCore.getNestedPath(
+          StorageFolder.Upload,
+          StorageCore.getStorageKey(asset),
+          basename(asset.originalPath),
+        );
+        if (target !== asset.originalPath) {
+          findings.push({ assetId: asset.id, kind: 'original', actual: asset.originalPath, expected: target });
+        }
+      }
+      const sidecar = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false });
+      if (sidecar && sidecar.path !== `${asset.originalPath}.xmp`) {
+        findings.push({
+          assetId: asset.id,
+          kind: 'sidecar',
+          actual: sidecar.path,
+          expected: `${asset.originalPath}.xmp`,
+        });
+      }
+      for (const file of asset.files) {
+        if (file.type === AssetFileType.Sidecar) {
+          continue;
+        }
+        const target = this.getDerivedTarget(asset, file);
+        if (target !== file.path) {
+          findings.push({ assetId: asset.id, kind: 'derived', actual: file.path, expected: target });
+        }
+      }
+    }
+    return findings;
+  }
+
+  @OnJob({ name: JobName.ContainerPathsAudit, queue: QueueName.IntegrityCheck })
+  async handleContainerPathsAudit(): Promise<JobStatus> {
+    const findings = await this.auditContainerPaths();
+    if (findings.length === 0) {
+      this.logger.log('Container paths audit: every file is at its §7 path');
+    } else {
+      this.logger.warn(`Container paths audit: ${findings.length} misplaced file(s)`);
+      for (const finding of findings.slice(0, 50)) {
+        this.logger.warn(
+          `Misplaced ${finding.kind} for asset ${finding.assetId}: ${finding.actual} (expected ${finding.expected})`,
+        );
+      }
+    }
+    return JobStatus.Success;
+  }
+
   private async relocate(id: string, depth = 0): Promise<void> {
     const asset = await this.assetRepository.getForRelocation(id);
     if (!asset) return;
@@ -92,26 +177,60 @@ export class AssetRelocationService extends BaseService {
     const { storageTemplate } = await this.getConfig({ withCache: true });
     if (asset.libraryId) {
       await this.moveExternalOriginal(asset);
-    } else if (storageTemplate.enabled) {
-      await StorageTemplateService.getInstance().moveAssetToTemplatePath(asset.id);
     } else {
-      await this.moveUntemplatedOriginal(asset);
+      // fork: shared-libraries (R10-02) - an asset that left its library still lives
+      // under an import root. Adopt a content checksum first: scan-created assets carry
+      // a path-derived checksum (sha1-path) that cross-device verification would reject.
+      if ((asset.importPaths ?? []).some((importPath) => isPathInside(asset.originalPath, importPath))) {
+        await this.adoptContentChecksum(asset);
+      }
+      if (storageTemplate.enabled) {
+        await StorageTemplateService.getInstance().moveAssetToTemplatePath(asset.id);
+      } else {
+        await this.moveUntemplatedOriginal(asset);
+      }
     }
 
+    // fork: shared-libraries (R17-01) - one bad derived file must not strand the rest;
+    // the first failure is rethrown below so the relocation row stays pending.
+    let derivedError: unknown;
     for (const file of asset.files) {
       if (file.type === AssetFileType.Sidecar) continue;
       const target = this.getDerivedTarget(asset, file);
       if (target !== file.path) {
-        await this.storageCore.moveFile({
-          entityId: asset.id,
-          pathType: file.type,
-          oldPath: file.path,
-          newPath: target,
-        });
+        try {
+          await this.storageCore.moveFile({
+            entityId: asset.id,
+            pathType: file.type,
+            oldPath: file.path,
+            newPath: target,
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Unable to relocate derived file for asset ${asset.id}: ${file.path} => ${target}: ${error}`,
+          );
+          derivedError ??= error;
+        }
       }
+    }
+    if (derivedError) {
+      throw derivedError;
     }
 
     if (depth === 0 && asset.livePhotoVideoId) await this.relocate(asset.livePhotoVideoId, 1);
+  }
+
+  // fork: shared-libraries (R10-02) - promote a scan-created (sha1-path) asset to a
+  // content checksum as its bytes leave the library for managed storage.
+  private async adoptContentChecksum(
+    asset: NonNullable<Awaited<ReturnType<typeof this.assetRepository.getForRelocation>>>,
+  ): Promise<void> {
+    if (asset.checksumAlgorithm !== ChecksumAlgorithm.sha1Path) {
+      return;
+    }
+    const checksum = await this.cryptoRepository.hashFile(asset.originalPath);
+    await this.assetRepository.update({ id: asset.id, checksum, checksumAlgorithm: ChecksumAlgorithm.sha1File });
+    asset.checksum = checksum;
   }
 
   private async moveUntemplatedOriginal(asset: Awaited<ReturnType<typeof this.assetRepository.getForRelocation>>) {
@@ -121,8 +240,22 @@ export class AssetRelocationService extends BaseService {
       StorageCore.getStorageKey(asset),
       basename(asset.originalPath),
     );
-    if (target === asset.originalPath) return;
-    await this.moveOriginalAndSidecar(asset, target);
+    if (target !== asset.originalPath) {
+      await this.moveOriginalAndSidecar(asset, target);
+      return;
+    }
+    // fork: shared-libraries (R17-01) - the original is already placed (a personal upload
+    // with the template off); still co-locate a staging sidecar next to it (§7 invariant).
+    const sidecar = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false });
+    const sidecarTarget = `${asset.originalPath}.xmp`;
+    if (sidecar && sidecar.path !== sidecarTarget) {
+      await this.storageCore.moveFile({
+        entityId: asset.id,
+        pathType: AssetFileType.Sidecar,
+        oldPath: sidecar.path,
+        newPath: sidecarTarget,
+      });
+    }
   }
 
   private async moveExternalOriginal(

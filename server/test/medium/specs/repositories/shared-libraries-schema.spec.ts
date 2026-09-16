@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { AssetType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -35,6 +36,58 @@ beforeAll(async () => {
 });
 
 describe('shared-libraries schema (S1)', () => {
+  describe('live-photo container matching', () => {
+    it('[I3] does not match a live-photo half in another shared space', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const sourceSpace = await newSharedSpace(ctx.database);
+      const otherSpace = await newSharedSpace(ctx.database);
+      const { asset: still } = await ctx.newAsset({ ownerId: user.id, spaceId: sourceSpace.id });
+      const { asset: motion } = await ctx.newAsset({
+        ownerId: user.id,
+        spaceId: otherSpace.id,
+        type: AssetType.Video,
+      });
+      await ctx.newExif({ assetId: motion.id, livePhotoCID: 'shared-cid' });
+
+      await expect(
+        sut.findLivePhotoMatch({
+          ownerId: user.id,
+          otherAssetId: still.id,
+          livePhotoCID: 'shared-cid',
+          type: AssetType.Video,
+          libraryId: null,
+          spaceId: sourceSpace.id,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('[I3] does not match a live-photo half in an external library', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const library = await ctx.get(LibraryRepository).create({
+        ownerId: user.id,
+        name: 'Library',
+        importPaths: [],
+        exclusionPatterns: [],
+      });
+      const { asset: still } = await ctx.newAsset({ ownerId: user.id, libraryId: library.id });
+      const { asset: motion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+      await ctx.newExif({ assetId: motion.id, livePhotoCID: 'library-cid' });
+
+      await expect(
+        sut.findLivePhotoMatch({
+          ownerId: user.id,
+          otherAssetId: still.id,
+          livePhotoCID: 'library-cid',
+          type: AssetType.Video,
+          libraryId: library.id,
+          spaceId: null,
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe('asset_space_library_exclusive check', () => {
     it('[INV-01] rejects an asset with both spaceId and libraryId set', async () => {
       const { ctx } = setup();

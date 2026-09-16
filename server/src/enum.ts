@@ -476,6 +476,8 @@ export enum ManualJobName {
   IntegrityChecksumFilesRefresh = `integrity-checksum-mismatch-refresh`,
   IntegrityMissingFilesDeleteAll = `integrity-missing-files-delete-all`,
   IntegrityUntrackedFilesDeleteAll = `integrity-untracked-files-delete-all`,
+  // fork: shared-libraries (S10) - report-only §7 container-paths audit.
+  ContainerPathsAudit = `container-paths-audit`,
   IntegrityChecksumFilesDeleteAll = `integrity-checksum-mismatch-delete-all`,
 }
 
@@ -945,6 +947,8 @@ export enum JobName {
   // fork: shared-libraries
   AssetRelocateQueueAll = 'AssetRelocateQueueAll',
   AssetRelocate = 'AssetRelocate',
+  // fork: shared-libraries (S10) - report-only §7 container-paths audit.
+  ContainerPathsAudit = 'ContainerPathsAudit',
 
   TagCleanup = 'TagCleanup',
 

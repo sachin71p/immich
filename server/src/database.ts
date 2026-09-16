@@ -117,6 +117,7 @@ export type Asset = {
   isExternal: boolean;
   visibility: AssetVisibility;
   libraryId: string | null;
+  spaceId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
   originalFileName: string;
@@ -299,6 +300,7 @@ export const columns = {
     'asset.isExternal',
     'asset.visibility',
     'asset.libraryId',
+    'asset.spaceId',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
     'asset.originalFileName',

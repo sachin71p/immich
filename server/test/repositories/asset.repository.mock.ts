@@ -47,6 +47,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     isRelocationPath: vitest.fn(),
     getForRelocation: vitest.fn(),
     getPendingRelocationIds: vitest.fn(),
+    getAuditIds: vitest.fn(),
     createRelocations: vitest.fn(),
     completeRelocation: vitest.fn(),
     failRelocation: vitest.fn(),

@@ -155,6 +155,7 @@ export const getForMetadataExtraction = (
   isExternal: asset.isExternal,
   visibility: asset.visibility,
   libraryId: asset.libraryId,
+  spaceId: asset.spaceId,
   livePhotoVideoId: asset.livePhotoVideoId,
   localDateTime: asset.localDateTime,
   originalFileName: asset.originalFileName,

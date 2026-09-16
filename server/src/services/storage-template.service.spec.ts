@@ -24,6 +24,9 @@ describe(StorageTemplateService.name, () => {
     ({ sut, mocks } = newTestService(StorageTemplateService));
 
     mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: true } });
+    mocks.move.create.mockImplementation(({ entityId, pathType, oldPath, newPath }) =>
+      Promise.resolve({ id: 'move-default', entityId, pathType, oldPath, newPath }),
+    );
 
     sut.onConfigInit({ newConfig: defaults });
   });
@@ -421,7 +424,7 @@ describe(StorageTemplateService.name, () => {
       });
     });
 
-    it('should migrate previously failed move from previous new path when old path no longer exists, should validate file size still matches before moving', async () => {
+    it('[I4] recovers a destination-only move without statting its missing old path', async () => {
       const user = UserFactory.create();
       const asset = AssetFactory.from({
         fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
@@ -459,6 +462,7 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.assetJob.getForStorageTemplateJob).toHaveBeenCalledWith(asset.id);
       expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(3);
       expect(mocks.storage.stat).toHaveBeenCalledWith(previousFailedNewPath);
+      expect(mocks.storage.stat).not.toHaveBeenCalledWith(asset.originalPath);
       expect(mocks.storage.rename).toHaveBeenCalledWith(previousFailedNewPath, newPath);
       expect(mocks.storage.copyFile).not.toHaveBeenCalled();
       expect(mocks.move.update).toHaveBeenCalledWith('123', { id: '123', oldPath: previousFailedNewPath, newPath });
@@ -489,7 +493,9 @@ describe(StorageTemplateService.name, () => {
         newPath,
       });
 
-      await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleMigrationSingle({ id: asset.id })).rejects.toThrow(
+        'Copied file does not match the expected contents',
+      );
 
       expect(mocks.assetJob.getForStorageTemplateJob).toHaveBeenCalledWith(asset.id);
       expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(1);
@@ -539,7 +545,9 @@ describe(StorageTemplateService.name, () => {
           newPath,
         });
 
-        await expect(sut.handleMigrationSingle({ id: testAsset.id })).resolves.toBe(JobStatus.Success);
+        await expect(sut.handleMigrationSingle({ id: testAsset.id })).rejects.toThrow(
+          'Old file is missing and new file does not match the expected contents',
+        );
 
         expect(mocks.assetJob.getForStorageTemplateJob).toHaveBeenCalledWith(testAsset.id);
         expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(3);
@@ -597,7 +605,10 @@ describe(StorageTemplateService.name, () => {
     it('should skip when an asset already matches the template', async () => {
       const asset = AssetFactory.from({
         originalPath: '/data/library/user-id/2023/2023-02-23/asset-id.jpg',
+        originalFileName: 'asset-id.jpg',
+        fileCreatedAt: new Date('2023-02-23T00:00:00.000Z'),
       })
+        .owner(userStub.user1)
         .exif()
         .build();
 
@@ -616,7 +627,10 @@ describe(StorageTemplateService.name, () => {
     it('should skip when an asset is probably a duplicate', async () => {
       const asset = AssetFactory.from({
         originalPath: '/data/library/user-id/2023/2023-02-23/asset-id+1.jpg',
+        originalFileName: 'asset-id.jpg',
+        fileCreatedAt: new Date('2023-02-23T00:00:00.000Z'),
       })
+        .owner(userStub.user1)
         .exif()
         .build();
 
@@ -713,14 +727,9 @@ describe(StorageTemplateService.name, () => {
         newPath,
       });
       mocks.storage.stat.mockResolvedValueOnce({
-        atime: new Date(),
-        mtime: new Date(),
-      } as Stats);
-      mocks.storage.stat.mockResolvedValueOnce({
         size: 5000,
       } as Stats);
       mocks.storage.stat.mockResolvedValueOnce({
-        size: 5000,
         atime: new Date(),
         mtime: new Date(),
       } as Stats);
@@ -800,7 +809,7 @@ describe(StorageTemplateService.name, () => {
       });
       mocks.user.getList.mockResolvedValue([user]);
 
-      await sut.handleMigration();
+      await expect(sut.handleMigration()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
       expect(mocks.storage.rename).toHaveBeenCalledWith(
@@ -808,6 +817,17 @@ describe(StorageTemplateService.name, () => {
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/${asset.originalFileName}`),
       );
       expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('[I4] propagates a move failure from the relocation entry point', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValue(getForStorageTemplate(asset));
+      mocks.storage.rename.mockRejectedValue({ code: 'EROFS', message: 'Read only system' });
+
+      await expect(sut.moveAssetToTemplatePath(asset.id)).rejects.toThrow('Read only system');
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.move.delete).not.toHaveBeenCalled();
     });
 
     it('should migrate live photo motion video alongside the still image', async () => {

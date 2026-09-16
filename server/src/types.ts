@@ -360,6 +360,8 @@ export type JobItem =
   // fork: shared-libraries
   | { name: JobName.AssetRelocateQueueAll; data?: IBaseJob }
   | { name: JobName.AssetRelocate; data: IEntityJob }
+  // fork: shared-libraries (S10) - report-only §7 container-paths audit.
+  | { name: JobName.ContainerPathsAudit; data?: IBaseJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }

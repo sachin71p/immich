@@ -210,6 +210,10 @@ export class StorageCore {
       return;
     }
 
+    if (pathType === AssetPathType.Original && !assetInfo) {
+      throw new Error(`Unable to complete move. Missing asset info for ${entityId}`);
+    }
+
     this.ensureFolders(newPath);
 
     let move = await this.moveRepository.getByEntity(entityId, pathType);
@@ -220,8 +224,7 @@ export class StorageCore {
       const newPathCheck = isNewPathExists ? move.newPath : null;
       const actualPath = isOldPathExists ? move.oldPath : newPathCheck;
       if (!actualPath) {
-        this.logger.warn('Unable to complete move. File does not exist at either location.');
-        return;
+        throw new Error('Unable to complete move. File does not exist at either location.');
       }
 
       const isFileAtNewLocation = actualPath === move.newPath;
@@ -231,20 +234,14 @@ export class StorageCore {
         isFileAtNewLocation &&
         !(await this.verifyNewPathContentsMatchesExpected(move.oldPath, move.newPath, assetInfo))
       ) {
-        this.logger.fatal(
-          `Skipping move as file verification failed, old file is missing and new file is different to what was expected`,
+        throw new Error(
+          'Unable to complete move. Old file is missing and new file does not match the expected contents.',
         );
-        return;
       }
 
       move = await this.moveRepository.update(move.id, { id: move.id, oldPath: actualPath, newPath });
     } else {
       move = await this.moveRepository.create({ entityId, pathType, oldPath, newPath });
-    }
-
-    if (pathType === AssetPathType.Original && !assetInfo) {
-      this.logger.warn(`Unable to complete move. Missing asset info for ${entityId}`);
-      return;
     }
 
     if (move.oldPath !== newPath) {
@@ -253,28 +250,24 @@ export class StorageCore {
         await this.storageRepository.rename(move.oldPath, newPath);
       } catch (error: any) {
         if (error.code !== 'EXDEV') {
-          this.logger.warn(
-            `Unable to complete move. Error renaming file with code ${error.code} and message: ${error.message}`,
-          );
-          return;
+          throw new Error(`Unable to complete move. Error renaming file with code ${error.code}: ${error.message}`, {
+            cause: error,
+          });
         }
         this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
         await this.storageRepository.copyFile(move.oldPath, newPath);
 
         if (!(await this.verifyNewPathContentsMatchesExpected(move.oldPath, newPath, assetInfo))) {
-          this.logger.warn(`Skipping move due to file size mismatch`);
           await this.storageRepository.unlink(newPath);
-          return;
+          throw new Error('Unable to complete move. Copied file does not match the expected contents.', {
+            cause: error,
+          });
         }
 
         const { atime, mtime } = await this.storageRepository.stat(move.oldPath);
         await this.storageRepository.utimes(newPath, atime, mtime);
 
-        try {
-          await this.storageRepository.unlink(move.oldPath);
-        } catch (error: any) {
-          this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Immich: ${error.message}`);
-        }
+        await this.storageRepository.unlink(move.oldPath);
       }
     }
 
@@ -287,9 +280,9 @@ export class StorageCore {
     newPath: string,
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ) {
-    const oldStat = await this.storageRepository.stat(oldPath);
     const newStat = await this.storageRepository.stat(newPath);
-    const oldPathSize = assetInfo ? assetInfo.sizeInBytes : oldStat.size;
+    const oldStat = assetInfo ? undefined : await this.storageRepository.stat(oldPath);
+    const oldPathSize = assetInfo ? assetInfo.sizeInBytes : oldStat!.size;
     const newPathSize = newStat.size;
     this.logger.debug(`File size check: ${newPathSize} === ${oldPathSize}`);
     if (newPathSize !== oldPathSize) {

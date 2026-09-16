@@ -21,6 +21,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile } from 'src/utils/asset.util.js';
 import { getFilenameExtension, getLivePhotoMotionFilename } from 'src/utils/file.js';
+import { isResolvedPathInside } from 'src/utils/path.js';
 
 const storageTokens = {
   secondOptions: ['s', 'ss', 'SSS'],
@@ -197,17 +198,21 @@ export class StorageTemplateService extends BaseService {
       const user = users.find((user) => user.id === asset.ownerId);
       const storageLabel = asset.spaceStorageLabel || user?.storageLabel || null;
       const filename = asset.originalFileName || asset.id;
-      await this.moveAsset(asset, { storageLabel, filename });
+      try {
+        await this.moveAsset(asset, { storageLabel, filename });
 
-      // move motion part of live photo
-      if (asset.livePhotoVideoId) {
-        const livePhotoVideo = await this.assetJobRepository.getForStorageTemplateJob(asset.livePhotoVideoId, {
-          includeHidden: true,
-        });
-        if (livePhotoVideo) {
-          const motionFilename = getLivePhotoMotionFilename(filename, livePhotoVideo.originalPath);
-          await this.moveAsset(livePhotoVideo, { storageLabel, filename: motionFilename }, asset);
+        // move motion part of live photo
+        if (asset.livePhotoVideoId) {
+          const livePhotoVideo = await this.assetJobRepository.getForStorageTemplateJob(asset.livePhotoVideoId, {
+            includeHidden: true,
+          });
+          if (livePhotoVideo) {
+            const motionFilename = getLivePhotoMotionFilename(filename, livePhotoVideo.originalPath);
+            await this.moveAsset(livePhotoVideo, { storageLabel, filename: motionFilename }, asset);
+          }
         }
+      } catch (error: any) {
+        this.logger.error(`Problem applying storage template`, error?.stack, { id: asset.id });
       }
     }
 
@@ -254,26 +259,22 @@ export class StorageTemplateService extends BaseService {
         return;
       }
 
-      try {
+      await this.storageCore.moveFile({
+        entityId: id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath,
+        assetInfo: { sizeInBytes: fileSizeInByte, checksum },
+      });
+
+      const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
+      if (sidecarPath) {
         await this.storageCore.moveFile({
           entityId: id,
-          pathType: AssetPathType.Original,
-          oldPath,
-          newPath,
-          assetInfo: { sizeInBytes: fileSizeInByte, checksum },
+          pathType: AssetFileType.Sidecar,
+          oldPath: sidecarPath,
+          newPath: `${newPath}.xmp`,
         });
-
-        const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
-        if (sidecarPath) {
-          await this.storageCore.moveFile({
-            entityId: id,
-            pathType: AssetFileType.Sidecar,
-            oldPath: sidecarPath,
-            newPath: `${newPath}.xmp`,
-          });
-        }
-      } catch (error: any) {
-        this.logger.error(`Problem applying storage template`, error?.stack, { id, oldPath, newPath });
       }
     });
   }
@@ -360,7 +361,7 @@ export class StorageTemplateService extends BaseService {
       const fullPath = path.normalize(path.join(rootPath, storagePath));
       let destination = `${fullPath}.${extension}`;
 
-      if (!fullPath.startsWith(rootPath)) {
+      if (!(await isResolvedPathInside(fullPath, rootPath, this.storageRepository.realpath))) {
         this.logger.warn(`Skipped attempt to access an invalid path: ${fullPath}. Path should start with ${rootPath}`);
         return source;
       }

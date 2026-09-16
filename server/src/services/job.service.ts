@@ -70,6 +70,11 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.IntegrityDeleteReportType, data: { type: IntegrityReport.ChecksumFail } };
     }
 
+    // fork: shared-libraries (S10) - report-only §7 container-paths audit.
+    case ManualJobName.ContainerPathsAudit: {
+      return { name: JobName.ContainerPathsAudit };
+    }
+
     default: {
       throw new BadRequestException('Invalid job name');
     }
