@@ -197,6 +197,20 @@ final class PhotoGridViewController: UIViewController {
     {
       cell.imageView.image = placeholder
     }
+    // WP0 fixture visuals: deterministic generated art for `-useFixtureStore` assets. The image
+    // is painted directly and warmed into the pipeline memory cache at every tier, so album
+    // covers and the viewer (which only use `pipeline.load`) render it through the real path.
+    // Fixture ids never reach the network: skip the load below.
+    if let asset, FixtureArtwork.isFixtureAsset(asset.id),
+      let uiImage = FixtureArtwork.image(for: asset),
+      let cgImage = uiImage.cgImage
+    {
+      pipeline?.memory.store(cgImage, id: asset.id, tier: .thumbnail, edited: false)
+      pipeline?.memory.store(cgImage, id: asset.id, tier: .preview, edited: false)
+      pipeline?.memory.store(cgImage, id: asset.id, tier: .fullsize, edited: false)
+      cell.imageView.image = uiImage
+      return
+    }
     guard let asset, let pipeline else { return }
     cell.loadTask = Task { [weak cell] in
       do {

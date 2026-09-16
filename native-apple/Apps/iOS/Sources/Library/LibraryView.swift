@@ -50,7 +50,10 @@ struct LibraryView: View {
           },
           onSelectionChange: { selectedIds = $0 },
           onPrefetch: { ids in
-            Task { await session.pipeline?.prefetch(ids: ids, tier: .thumbnail) }
+            // Fixture art is served from the cell-warmed cache; never hit the network for it.
+            let real = ids.filter { !FixtureArtwork.isFixtureAsset($0) }
+            guard !real.isEmpty else { return }
+            Task { await session.pipeline?.prefetch(ids: real, tier: .thumbnail) }
           },
           onPinchColumns: { columns = $0 },
           onRefresh: { await refreshAll() },
