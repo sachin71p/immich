@@ -1170,6 +1170,12 @@ enum MacPreviewPanel {
   @MainActor
   private static var panel: NSPanel?
 
+  /// WP5 item 8: Space while the viewer is focused toggles Quick Look off.
+  @MainActor
+  static func dismiss() {
+    panel?.orderOut(nil)
+  }
+
   @MainActor
   static func show(asset: Asset, pipeline: MediaPipeline) {
     let panel: NSPanel

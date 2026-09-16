@@ -45,6 +45,7 @@
 		562C90132FF6F001D66BA495 /* MacViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D2F60BB9D91D70D4CD487A0 /* MacViewer.swift */; };
 		58B1AA572035C457EE931702 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = BE0D510CE5E532CCFC1F7E8E /* CoreModel */; };
 		593799F9CE380A58B326FA1B /* A9ExtrasUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317A308C324F67538E064057 /* A9ExtrasUITests.swift */; };
+		5A62438551EB236DB75D97F6 /* MacInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E38A2CBCEBD8DEE3685EE3 /* MacInspectorView.swift */; };
 		5A9070AF65B0D801A0589A4F /* MacDragDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */; };
 		695EF8BFB7841509B4E25CD0 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 1E53BF363D53907D6EAE51E5 /* CoreModel */; };
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
@@ -171,6 +172,7 @@
 		644C38FC2FC62B250E305F5A /* BackupSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSettings.swift; sourceTree = "<group>"; };
 		654F5B7B73E4E8F342B80457 /* ExtensionSnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSnapshotWriter.swift; sourceTree = "<group>"; };
 		65A7D706A05D55D17A8429E0 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		67E38A2CBCEBD8DEE3685EE3 /* MacInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacInspectorView.swift; sourceTree = "<group>"; };
 		6A90BA1EEC3F4C01DBF13EF8 /* Heirloom-Share.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-Share.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B8F7461D95B1F590610423C /* MacLiveVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLiveVideo.swift; sourceTree = "<group>"; };
 		6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDragDrop.swift; sourceTree = "<group>"; };
@@ -447,6 +449,7 @@
 				794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */,
 				D356BAC6A736A583AB309403 /* MacGridLoader.swift */,
 				B9F1850C4ACF8338AEB20BFB /* MacImport.swift */,
+				67E38A2CBCEBD8DEE3685EE3 /* MacInspectorView.swift */,
 				13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */,
 				B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */,
 				6B8F7461D95B1F590610423C /* MacLiveVideo.swift */,
@@ -875,6 +878,7 @@
 				C85E293F9688512B7D0D9064 /* MacGridHeaderView.swift in Sources */,
 				004DF01FEA4DFE0DDEC16ABD /* MacGridLoader.swift in Sources */,
 				FA558A030BADAA2AD8D6D1A8 /* MacImport.swift in Sources */,
+				5A62438551EB236DB75D97F6 /* MacInspectorView.swift in Sources */,
 				719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */,
 				4E9B4B0407B784944C1E5F3A /* MacLiveText.swift in Sources */,
 				9F7AC18787019882D13028A2 /* MacLiveVideo.swift in Sources */,
