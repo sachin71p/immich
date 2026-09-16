@@ -208,6 +208,9 @@ final class PhotoGridViewController: UIViewController {
   var onSelectionChange: ((Set<String>) -> Void)?
   var onPrefetch: (([String]) -> Void)?
   var onPinchColumns: ((Int) -> Void)?
+  /// S1: pull-to-refresh handler (wired to `refreshAll` by the Library screen). Runs in a `Task`;
+  /// the control always ends refreshing afterwards, even in fixture mode where sync is nil.
+  var onRefresh: (() async -> Void)?
 
   private var selectedIds = Set<String>()
   private var appliedSignature = ""
@@ -226,6 +229,14 @@ final class PhotoGridViewController: UIViewController {
     collectionView.delegate = self
     collectionView.prefetchDataSource = self
     collectionView.allowsMultipleSelection = false
+    // S1: a working pull-to-refresh — `alwaysBounceVertical` keeps the gesture available on an
+    // empty grid, where SwiftUI's `.refreshable` (List/ScrollView only) never fires.
+    collectionView.alwaysBounceVertical = true
+    let refresh = UIRefreshControl()
+    refresh.accessibilityIdentifier = "pull-to-refresh"
+    refresh.accessibilityValue = "idle"
+    refresh.addTarget(self, action: #selector(didPullToRefresh(_:)), for: .valueChanged)
+    collectionView.refreshControl = refresh
     view.addSubview(collectionView)
 
     dataSource = DataSource(collectionView: collectionView) { [weak self] cv, indexPath, id in
@@ -402,6 +413,15 @@ final class PhotoGridViewController: UIViewController {
     onSelectionChange?(selectedIds)
   }
 
+  @objc private func didPullToRefresh(_ sender: UIRefreshControl) {
+    sender.accessibilityValue = "refreshing"
+    Task { @MainActor in
+      await onRefresh?()
+      sender.accessibilityValue = "idle"
+      sender.endRefreshing()
+    }
+  }
+
   @objc private func didPinch(_ gesture: UIPinchGestureRecognizer) {
     guard gesture.state == .ended else { return }
     let steps = [2, 3, 5, 7, 10]
@@ -476,6 +496,9 @@ struct PhotoGridView: UIViewControllerRepresentable {
   var onSelectionChange: (Set<String>) -> Void
   var onPrefetch: ([String]) -> Void
   var onPinchColumns: (Int) -> Void
+  /// S1: pull-to-refresh handler. Defaulted to nil so non-Library grids (e.g. Search results)
+  /// keep compiling unchanged and get no refresh control behavior.
+  var onRefresh: (() async -> Void)? = nil
   /// Date-scrubber section index; the VC scrolls only when this value changes.
   var scrubSection: Int
 
@@ -485,6 +508,7 @@ struct PhotoGridView: UIViewControllerRepresentable {
     vc.onSelectionChange = { onSelectionChange($0) }
     vc.onPrefetch = { onPrefetch($0) }
     vc.onPinchColumns = { onPinchColumns($0) }
+    vc.onRefresh = onRefresh
     return vc
   }
 
@@ -494,6 +518,7 @@ struct PhotoGridView: UIViewControllerRepresentable {
     vc.squareCells = squareCells
     vc.editMode = editMode
     vc.pipeline = pipeline
+    vc.onRefresh = onRefresh
     vc.render()
     vc.setSelected(selectedIds)
     vc.scrollToScrubSection(scrubSection)
@@ -531,6 +556,7 @@ struct LibraryView: View {
             Task { await session.pipeline?.prefetch(ids: ids, tier: .thumbnail) }
           },
           onPinchColumns: { columns = $0 },
+          onRefresh: { await refreshAll() },
           scrubSection: scrubIndex
         )
         .accessibilityIdentifier("library-grid")
@@ -613,7 +639,6 @@ struct LibraryView: View {
         columns = new.defaultColumns
         Task { await reload() }
       }
-      .refreshable { await refreshAll() }
       .fullScreenCover(item: $viewerRequest) { request in
         ViewerView(ids: request.ids, initialId: request.initialId)
       }
