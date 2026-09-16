@@ -634,7 +634,9 @@ struct LibraryView: View {
         }
         .background(.thinMaterial)
       }
-      .task(id: sourceKey) { await reload() }
+      // S1: re-keyed on `timelineVersion` so rows appear once a sync lands, without waiting
+      // for a source/zoom change.
+      .task(id: "\(sourceKey)-\(session.timelineVersion)") { await reload() }
       .onChange(of: zoom) { _, new in
         columns = new.defaultColumns
         Task { await reload() }
