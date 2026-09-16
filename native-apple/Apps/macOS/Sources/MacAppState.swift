@@ -47,6 +47,12 @@ final class MacAppState {
 
   /// Snapshot backing viewer paging, in display order (set when the viewer opens).
   var viewerContext: TimelineGridSnapshot?
+  /// Toolbar-search handoff (WP6 slice C, U16): the toolbar field lives in `MacMainWindow`,
+  /// while the query executes in `MacSearchView`. Return in the toolbar stashes the trimmed
+  /// query here and navigates to `.search`; the search view consumes (applies, executes,
+  /// clears) it on appear. A plain String is safe on `@Observable` (PLAN rule 5 covers
+  /// large Equatable collections only).
+  var pendingSearchQuery: String?
   /// Bumped by `syncNow` only when the session warrants a grid reload (see
   /// `SyncCoordinator.SyncResult.shouldReloadTimeline`). The applied-changes signal is
   /// `SyncResult.appliedChanges` — true when the session called `PhotosLocalStore.apply`

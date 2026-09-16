@@ -477,7 +477,12 @@ struct MacLibraryBrowser: View {
         .textFieldStyle(.roundedBorder)
         .frame(minWidth: 160, idealWidth: 220, maxWidth: 280)
         .onSubmit {
-          guard !toolbarSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+          // WP6 slice C (U16): Return lands on Search with the query applied and executed —
+          // the query is stashed on shared state because the search view is recreated on
+          // navigation and a Notification would race its subscription.
+          let trimmed = toolbarSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !trimmed.isEmpty else { return }
+          state.pendingSearchQuery = trimmed
           selectDestination(.search)
         }
         .accessibilityIdentifier("toolbar-search")

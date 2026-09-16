@@ -47,7 +47,24 @@ struct MacSearchView: View {
     }
     .navigationTitle("Search")
     .accessibilityIdentifier("mac-search-view")
-    .task { await loadRecents() }
+    .task {
+      await loadRecents()
+      await consumePendingQuery()
+    }
+    .onChange(of: state.pendingSearchQuery) { _, newValue in
+      guard newValue != nil else { return }
+      Task { await consumePendingQuery() }
+    }
+  }
+
+  /// U16 toolbar handoff: Return in the toolbar search field stashes the query on
+  /// `state.pendingSearchQuery` and navigates here. Apply it, execute, and clear so a
+  /// later visit to Search starts clean.
+  private func consumePendingQuery() async {
+    guard let pending = state.pendingSearchQuery else { return }
+    state.pendingSearchQuery = nil
+    query = pending
+    await runSearch()
   }
 
   private var searchField: some View {
@@ -119,7 +136,9 @@ struct MacSearchView: View {
           Text("No location").tag(false as Bool?)
         }
         Button("Apply filters") { Task { await runSearch() } }
+        .accessibilityIdentifier("mac-search-apply-filters")
       }
+      .accessibilityIdentifier("mac-search-filters")
       if !recents.isEmpty {
         Section("Recent searches") {
           ForEach(Array(recents.enumerated()), id: \.offset) { _, recent in

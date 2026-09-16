@@ -263,7 +263,8 @@ struct MemoryShelfEntry: Sendable, Hashable, Identifiable {
 }
 
 /// Cover tile (albums, memories): 160-pt rounded thumbnail + title + count.
-private struct MacCoverTile: View {
+/// Internal (not private) so WP6 slice C's All Albums page reuses this exact tile.
+struct MacCoverTile: View {
   var title: String
   var subtitle: String
   var coverId: String?
