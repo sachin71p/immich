@@ -201,6 +201,26 @@ describe('library-exit relocation', () => {
     moveFile.mockRestore();
   });
 
+  it('reuses the sibling checksum when a concurrent adoption wins the race', async () => {
+    const asset = forLibraryExit({});
+    const adopted = forLibraryExit({
+      checksum: Buffer.from('sibling-hash'),
+      checksumAlgorithm: ChecksumAlgorithm.sha1File,
+    });
+    const { sut, mocks } = setupRelocate(false, asset);
+    mocks.asset.getForRelocation.mockResolvedValueOnce(asset as never).mockResolvedValue(adopted as never);
+    mocks.crypto.hashFile.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+    const moveFile = vitest.spyOn(StorageCore.prototype, 'moveFile').mockResolvedValue(undefined);
+
+    await expect(sut.handleRelocate({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+    expect(mocks.asset.update).not.toHaveBeenCalled();
+    const originalCall = moveFile.mock.calls.find(([request]) => request.pathType === AssetPathType.Original);
+    expect(originalCall?.[0].assetInfo?.checksum).toBe(adopted.checksum);
+    expect(mocks.asset.completeRelocation).toHaveBeenCalledWith(asset.id);
+    moveFile.mockRestore();
+  });
+
   it('skips checksum adoption for content-addressed assets', async () => {
     const asset = forRelocationAudit({ files: [], checksumAlgorithm: ChecksumAlgorithm.sha1File });
     const { sut, mocks } = setupRelocate(false, asset);

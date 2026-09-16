@@ -508,4 +508,19 @@ describe(AssetRepository.name, () => {
       await expect(sut.createAll([])).resolves.toStrictEqual([]);
     });
   });
+
+  // fork: shared-libraries (R17-03) - a move operates on the whole live-photo pair.
+  describe('getMoveGroup', () => {
+    it('should carry the motion child when moving the still', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: motion } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: still } = await ctx.newAsset({ ownerId: user.id, livePhotoVideoId: motion.id });
+      const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+
+      const group = await sut.getMoveGroup([still.id]);
+      expect(group.map((item) => item.id).sort()).toEqual([motion.id, still.id].sort());
+      expect(group.map((item) => item.id)).not.toContain(other.id);
+    });
+  });
 });

@@ -11,6 +11,7 @@ import { moveAssetsAs } from './as.js';
 import {
   auditDisk,
   expectFilesAt,
+  motionCompanion,
   personalLibraryPrefix,
   sharedLibraryPrefix,
   type DiskAsset,
@@ -23,7 +24,8 @@ const withSidecar = new Set(['fork-06', 'fork-07', 'fork-08', 'fork-10']);
 const toDiskAsset = async (world: World, entry: { id: string; manifestId: string; owner: string }): Promise<DiskAsset> => {
   // Placement audits read through the elevated audit sessions (locked assets
   // are unreadable on plain sessions).
-  const asset = await getAsset(await auditToken(world, entry.owner), entry.id);
+  const token = await auditToken(world, entry.owner);
+  const asset = await getAsset(token, entry.id);
   return {
     id: asset.id,
     ownerId: asset.ownerId,
@@ -32,6 +34,7 @@ const toDiskAsset = async (world: World, entry: { id: string; manifestId: string
     originalFileName: asset.originalFileName,
     originalPath: asset.originalPath,
     sidecarPath: withSidecar.has(entry.manifestId) ? `${asset.originalPath}.xmp` : null,
+    ...(await motionCompanion(getAsset, token, asset.livePhotoVideoId)),
   };
 };
 
@@ -85,6 +88,9 @@ describe.sequential.each([{ template: 'on' }, { template: 'off' }] as const)(
     }, 300_000);
 
     it('[R17-03] auditDisk() is clean after the move', async () => {
+      // Motion transcodes land on the videoConversion queue, which the shared
+      // settle does not drain: wait for them so companion expectations are stable.
+      await settle(adminToken, ['videoConversion']);
       const { orphans, missing } = await auditDisk(async () =>
         Promise.all(world.assets.map((entry) => toDiskAsset(world, entry))),
       );

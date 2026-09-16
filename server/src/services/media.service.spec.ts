@@ -408,6 +408,20 @@ describe(MediaService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalledWith();
     });
 
+    it('[R17-01] generates space asset thumbnails under the shared key', async () => {
+      const asset = AssetFactory.from({ spaceId: 'space-1' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.stringContaining('shared/space-1'),
+      );
+    });
+
     it('should delete previous preview if different path', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { thumbnail: { format: ImageFormat.Webp } } });

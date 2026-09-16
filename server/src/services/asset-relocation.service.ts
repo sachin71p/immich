@@ -178,10 +178,12 @@ export class AssetRelocationService extends BaseService {
     if (asset.libraryId) {
       await this.moveExternalOriginal(asset);
     } else {
-      // fork: shared-libraries (R10-02) - an asset that left its library still lives
-      // under an import root. Adopt a content checksum first: scan-created assets carry
-      // a path-derived checksum (sha1-path) that cross-device verification would reject.
-      if ((asset.importPaths ?? []).some((importPath) => isPathInside(asset.originalPath, importPath))) {
+      // fork: shared-libraries (R10-02) - a library exit: sha1-path is only ever assigned
+      // to scanned external assets (library.service), so a non-library asset carrying it
+      // just left its library. Adopt a content checksum first: the path-derived checksum
+      // would fail cross-device verification. (importPaths cannot detect this: the
+      // library join is already null once the container columns clear.)
+      if (!asset.libraryId && asset.checksumAlgorithm === ChecksumAlgorithm.sha1Path) {
         await this.adoptContentChecksum(asset);
       }
       if (storageTemplate.enabled) {
@@ -228,7 +230,23 @@ export class AssetRelocationService extends BaseService {
     if (asset.checksumAlgorithm !== ChecksumAlgorithm.sha1Path) {
       return;
     }
-    const checksum = await this.cryptoRepository.hashFile(asset.originalPath);
+    let checksum: Buffer;
+    try {
+      checksum = await this.cryptoRepository.hashFile(asset.originalPath);
+    } catch (error) {
+      // A move queues one relocation job per group member plus one on metadata
+      // extraction, so two workers can adopt concurrently. If a sibling already
+      // adopted (or moved), reuse its checksum instead of failing on the gone file.
+      if ((error as { code?: string })?.code !== 'ENOENT') {
+        throw error;
+      }
+      const current = await this.assetRepository.getForRelocation(asset.id);
+      if (!current || current.checksumAlgorithm === ChecksumAlgorithm.sha1Path) {
+        throw error;
+      }
+      asset.checksum = current.checksum;
+      return;
+    }
     await this.assetRepository.update({ id: asset.id, checksum, checksumAlgorithm: ChecksumAlgorithm.sha1File });
     asset.checksum = checksum;
   }

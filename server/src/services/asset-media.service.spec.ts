@@ -510,6 +510,7 @@ describe(AssetMediaService.name, () => {
       });
 
       expect(mocks.asset.createRelocations).toHaveBeenCalledWith([asset.id], authStub.user1.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetRelocate, data: { id: asset.id } });
     });
 
     it('[I7] rejects a Locked visibility upload into a shared space', async () => {

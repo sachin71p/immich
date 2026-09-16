@@ -175,6 +175,7 @@ export const getForGenerateThumbnail = (asset: ReturnType<AssetFactory['build']>
   originalFileName: asset.originalFileName,
   originalPath: asset.originalPath,
   ownerId: asset.ownerId,
+  spaceId: asset.spaceId,
   thumbhash: asset.thumbhash,
   type: asset.type,
   files: asset.files.map((file) => getDehydrated(file)),

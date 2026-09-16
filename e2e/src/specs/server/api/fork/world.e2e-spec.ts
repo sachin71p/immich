@@ -7,7 +7,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { utils } from 'src/utils.js';
-import { auditDisk, expectFilesAt, personalLibraryPrefix, sharedLibraryPrefix, type DiskAsset } from './disk.js';
+import {
+  auditDisk,
+  expectFilesAt,
+  motionCompanion,
+  personalLibraryPrefix,
+  sharedLibraryPrefix,
+  type DiskAsset,
+} from './disk.js';
+import { settle } from './jobs.js';
 import { auditToken, buildWorld, getAsset, type World } from './world.js';
 
 const withSidecar = new Set(['fork-06', 'fork-07', 'fork-08', 'fork-10']);
@@ -22,6 +30,7 @@ const toDiskAsset = async (token: string, entry: { id: string; manifestId: strin
     originalFileName: asset.originalFileName,
     originalPath: asset.originalPath,
     sidecarPath: withSidecar.has(entry.manifestId) ? `${asset.originalPath}.xmp` : null,
+    ...(await motionCompanion(getAsset, token, asset.livePhotoVideoId)),
   };
 };
 
@@ -57,11 +66,20 @@ describe.sequential.each(
   }, 300_000);
 
   it('[R17-03] auditDisk() reports zero orphans and zero missing files', async () => {
+    // Motion transcodes land on the videoConversion queue, which the shared
+    // settle does not drain: wait for them so companion expectations are stable.
+    await settle(world.users.admin.login.accessToken, ['videoConversion']);
     const { orphans, missing } = await auditDisk(async () =>
       Promise.all(
         world.assets.map(async (entry) => {
           const disk = await toDiskAsset(await tokenFor(world, entry.owner), entry);
-          return { id: disk.id, originalPath: disk.originalPath, sidecarPath: disk.sidecarPath };
+          return {
+            id: disk.id,
+            originalPath: disk.originalPath,
+            sidecarPath: disk.sidecarPath,
+            companionIds: disk.companionIds,
+            companionPaths: disk.companionPaths,
+          };
         }),
       ),
     );

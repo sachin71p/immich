@@ -124,6 +124,9 @@ export class AssetJobRepository {
         'asset.originalFileName',
         'asset.originalPath',
         'asset.ownerId',
+        // fork: shared-libraries (R17-01) - thumbnails of space assets must generate
+        // under the shared key, not the owner key.
+        'asset.spaceId',
         'asset.thumbhash',
         'asset.type',
       ])

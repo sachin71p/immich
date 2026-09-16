@@ -92,6 +92,8 @@ export interface DiskAsset {
   originalFileName: string;
   originalPath: string;
   sidecarPath?: string | null;
+  companionIds?: string[];
+  companionPaths?: string[];
 }
 
 export interface ExpectFilesAtOptions {
@@ -149,7 +151,36 @@ export interface DbFileEntry {
   id: string;
   originalPath: string;
   sidecarPath?: string | null;
+  /** Motion-companion ids: exempt from the orphan rule, never expected as primaries. */
+  companionIds?: string[];
+  /** Motion-companion container paths (original + transcode): expected on disk. */
+  companionPaths?: string[];
 }
+
+/**
+ * Motion-companion files for a live-photo still (R17-03): the companion's own
+ * original (`<id>-MP.mp4`) plus its transcode (`<id>.mp4`), both expected under
+ * the companion's current container key. Returns empty lists when the asset has
+ * no motion part. The companion id exempts its thumbnails from the orphan rule.
+ */
+export const motionCompanion = async (
+  getAssetInfo: (
+    token: string,
+    id: string,
+  ) => Promise<{ id: string; ownerId: string; spaceId?: string | null; originalPath: string }>,
+  token: string,
+  livePhotoVideoId: string | null | undefined,
+): Promise<{ companionIds: string[]; companionPaths: string[] }> => {
+  if (!livePhotoVideoId) {
+    return { companionIds: [], companionPaths: [] };
+  }
+  const motion = await getAssetInfo(token, livePhotoVideoId);
+  const key = storageKey(motion);
+  return {
+    companionIds: [motion.id],
+    companionPaths: [motion.originalPath, nested(join(containerMediaRoot, 'encoded-video'), key, `${motion.id}.mp4`)],
+  };
+};
 
 const walkFiles = (dir: string): string[] => {
   const out: string[] = [];
@@ -171,6 +202,7 @@ const walkFiles = (dir: string): string[] => {
 export const auditDisk = async (listDbFiles: () => Promise<DbFileEntry[]>): Promise<{ orphans: string[]; missing: string[] }> => {
   const entries = await listDbFiles();
   const ids = new Set(entries.map((e) => e.id));
+  const knownIds = new Set([...ids, ...entries.flatMap((e) => e.companionIds ?? [])]);
   const referenced = new Set<string>();
   const missing: string[] = [];
   const collectPath = (containerPath: string | null | undefined) => {
@@ -189,16 +221,20 @@ export const auditDisk = async (listDbFiles: () => Promise<DbFileEntry[]>): Prom
   for (const entry of entries) {
     collectPath(entry.originalPath);
     collectPath(entry.sidecarPath);
+    for (const companion of entry.companionPaths ?? []) {
+      collectPath(companion);
+    }
   }
   const orphans: string[] = [];
   // Derived filenames embed the asset id (<id>_<type>.<ext>); sidecars
-  // sit next to their original.
+  // sit next to their original. Motion companions are known by id even though
+  // they are not primaries.
   const isOrphan = (file: string): boolean => {
     if (referenced.has(file)) {
       return false;
     }
     const base = basename(file);
-    return !ids.has(base.split('_', 1)[0]) && [...ids].every((id) => !base.includes(id));
+    return !knownIds.has(base.split('_', 1)[0]) && [...knownIds].every((id) => !base.includes(id));
   };
   for (const folder of ['library', 'upload', 'thumbs', 'encoded-video']) {
     for (const file of walkFiles(join(forkDataDir, folder))) {

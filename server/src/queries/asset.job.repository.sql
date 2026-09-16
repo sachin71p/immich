@@ -204,6 +204,7 @@ select
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."ownerId",
+  "asset"."spaceId",
   "asset"."thumbhash",
   "asset"."type",
   (

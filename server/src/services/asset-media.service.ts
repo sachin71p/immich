@@ -203,9 +203,7 @@ export class AssetMediaService extends BaseService {
 
       // fork: shared-libraries - the container column changes at insert time, so record the
       // pending physical move immediately rather than waiting for metadata extraction.
-      // Personal uploads carrying sidecars also relocate: with the template off nothing
-      // else moves the staging sidecar next to the original (R17-01).
-      if (spaceId || sidecarFile) {
+      if (spaceId) {
         await this.assetRepository.createRelocations([asset.id], auth.user.id);
       }
 
@@ -220,6 +218,14 @@ export class AssetMediaService extends BaseService {
           type: AssetFileType.Sidecar,
         });
         await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
+        // fork: shared-libraries (R17-01) - personal uploads carrying sidecars must
+        // relocate too: with the template off nothing else moves the staging sidecar
+        // next to the original. Queued after the sidecar row exists (and only for
+        // personal uploads: space uploads re-queue on metadata extraction instead).
+        if (!spaceId) {
+          await this.assetRepository.createRelocations([asset.id], auth.user.id);
+          await this.jobRepository.queue({ name: JobName.AssetRelocate, data: { id: asset.id } });
+        }
       }
       await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
       await this.assetRepository.upsertExif({
