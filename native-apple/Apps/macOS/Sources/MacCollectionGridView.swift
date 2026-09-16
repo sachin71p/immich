@@ -610,13 +610,10 @@ struct MacCollectionGridView: NSViewRepresentable {
         withTitle: (firstFavorite ?? false) ? "Unfavorite" : "Favorite",
         action: #selector(menuFavorite(_:)), keyEquivalent: "")
         .target = self
-      // Rotate is disabled: the pane's `gridActions.rotate` is an empty closure
-      // (WP4 owns rotate persistence), so invoking it would silently do nothing.
-      // Flagged in WP3-REPORT for the WP4 merge review.
+      // Rotate persists via the WP4 path (`gridActions.rotate` → `rotate(ids:)`).
       let rotateItem = NSMenuItem(
         title: "Rotate Clockwise", action: #selector(menuRotate(_:)), keyEquivalent: "")
       rotateItem.target = self
-      rotateItem.isEnabled = false
       menu.addItem(rotateItem)
       menu.addItem(withTitle: "Add to Album…", action: #selector(menuAddToAlbum(_:)), keyEquivalent: "")
         .target = self
