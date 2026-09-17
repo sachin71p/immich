@@ -9,9 +9,9 @@ import UniformTypeIdentifiers
 
 /// Deterministic fixture world for UI tests and previews (WP-T, TEST-PLAN T0).
 ///
-/// Two launch arguments select it (in addition to the legacy `--fixture-seed` flag,
-/// which the app shell still requires and which keeps meaning "seeded in-memory
-/// world with no server"):
+/// Two launch arguments select it (in addition to `-fixture-seed`, which the app
+/// shell still requires and which keeps meaning "seeded in-memory world with no
+/// server"; the legacy `--fixture-seed` spelling is still accepted):
 /// - `-HeirloomFixture small|large`: `small` seeds ~2,000 asset rows, `large` ~102k.
 ///   Without the flag the fixture is the small curated base set only, so the
 ///   pre-existing UI tests keep their exact world.
@@ -43,11 +43,19 @@ enum FixtureSeed {
     case large
   }
 
-  /// Reads `-HeirloomFixture <small|large>` (two separate launch arguments).
+  /// Reads `-HeirloomFixture=<small|large>` (one self-contained token). The legacy
+  /// two-token form (`-HeirloomFixture small`) is still accepted, but tests must
+  /// not pass it: a bare value token reaches AppKit as an open-documents event
+  /// that suppresses SwiftUI's initial scene (zero windows).
   static var launchSize: FixtureSize? {
     let args = CommandLine.arguments
-    if let i = args.firstIndex(of: "-HeirloomFixture"), i + 1 < args.endIndex {
-      return FixtureSize(rawValue: args[i + 1])
+    for (i, arg) in args.enumerated() {
+      if arg.hasPrefix("-HeirloomFixture=") {
+        return FixtureSize(rawValue: String(arg.dropFirst("-HeirloomFixture=".count)))
+      }
+      if arg == "-HeirloomFixture", i + 1 < args.endIndex {
+        return FixtureSize(rawValue: args[i + 1])
+      }
     }
     return nil
   }
@@ -403,6 +411,19 @@ enum FixtureSeed {
 enum HeirloomUITestFlags {
   static var animationsDisabled: Bool {
     CommandLine.arguments.contains("-HeirloomUITestNoAnimation")
+  }
+}
+
+/// Raw-argv launch-mode checks (WP-T T0). Test booleans must be SINGLE-DASH
+/// (`-fixture-seed`, `-ui-testing`): a `--double-dash` flag swallows the following
+/// argv token during system argument parsing, and the stranded token arrives as a
+/// bare open-documents event that suppresses SwiftUI's initial scene — the app runs
+/// foreground with menus but zero windows. Guarded by
+/// `testLaunchMakesMainWindowAccessible`.
+enum HeirloomLaunchFlag {
+  static func isPresent(_ singleDash: String, legacy doubleDash: String) -> Bool {
+    let args = CommandLine.arguments
+    return args.contains(singleDash) || args.contains(doubleDash)
   }
 }
 

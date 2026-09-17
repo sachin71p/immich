@@ -17,8 +17,10 @@ final class HeirloomPerfTests: XCTestCase {
     super.setUp()
     continueAfterFailure = false
     app = XCUIApplication()
+    // Booleans are SINGLE-DASH (see MacSmokeTests): a `--` flag swallows the
+    // next argv token and the stranded token kills the initial scene.
     app.launchArguments = [
-      "--fixture-seed", "-HeirloomFixture", "large",
+      "-fixture-seed", "-HeirloomFixture=large",
       "-ApplePersistenceIgnoreState", "YES",
     ]
   }

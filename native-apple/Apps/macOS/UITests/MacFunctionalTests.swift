@@ -16,10 +16,13 @@ final class MacFunctionalTests: XCTestCase {
     // Same fresh-state guard as MacSmokeTests: a previous run's restored window races
     // the fixture-seeded content on repeat launches within one test session.
     // T0: the sized small fixture (~2k rows) + no-animation contract flag.
-    // "--ui-testing" enables the test-only AppKit foreground presenter (299a76c73).
+    // Booleans are SINGLE-DASH and values ride `-Key=Value`: a bare value token
+    // reaches AppKit as an open-documents event that kills the initial scene
+    // (zero windows); `-ui-testing` also enables the test-only AppKit foreground
+    // presenter (299a76c73).
     app.launchArguments = [
-      "--fixture-seed", "-HeirloomFixture", "small", "-HeirloomUITestNoAnimation",
-      "--ui-testing", "-ApplePersistenceIgnoreState", "YES",
+      "-fixture-seed", "-HeirloomFixture=small", "-HeirloomUITestNoAnimation",
+      "-ui-testing", "-ApplePersistenceIgnoreState", "YES",
     ]
   }
 
