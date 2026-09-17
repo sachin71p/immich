@@ -157,3 +157,30 @@ Each gate run exactly once, no re-runs, no new probes
    probes: 87x87 in a 440 grid). Separately, pinch/zoom tests persist
    `heirloom.libraryColumns` on the simulator across runs; wipe the app
    container before gate screenshots if columns look off.
+
+## Post-commit notes (implementer close-out — READ before re-verify)
+
+- **Uncommitted collaborator rework (theirs — do not attribute, do not
+  revert):** `LibraryFilterMenu.swift` + `LibraryChromeUITests.swift` carry
+  uncommitted edits rebuilding the menu as nested drill-in submenus
+  (Sort/Filter top-level; Media Types / Library View / View Options as
+  `Menu`-in-`Menu` with `submenu-*` ids) plus a `submenuFor` parent-tap step
+  in `tapMenuItem`, keeping every leaf identifier. The drill-in claim (tap
+  parent, wait, tap leaf) is plausible — my original "never opens" reading
+  may have been element-type matching (`buttons` vs type-agnostic), since
+  fixed. Coherent, additive, references resolve — but UNVERIFIED (see below).
+- **Final verification blocked on host OOM, not on code.** After the crop
+  fix: scoped class runs degenerated run-over-run (menu containers absent
+  for whole runs, `menus=0`; then setUp grid timeouts), and `xcodebuild`
+  itself was Killed:9 (exit 137) at ~62 MB free with parallel sessions
+  (incl. a sibling WP3 sim session) running. The filter-button-absent runs
+  coincide exactly with this window — treated as environmental starvation,
+  not a product regression, but UNCONFIRMED. The toolbar code as committed
+  is structurally sound (verified by reading).
+- **Re-verify on a quiet host, in order:** `make build-ios`; scoped
+  `LibraryChromeUITests` class (expect 6/6 with the submenu rework);
+  `ScreenshotTour` (fresh WP2 screenshots — expect correct 408x180 year
+  cards and 3-column day cards after the crop fix); full `verify.sh ios`.
+  Each test normalizes persisted zoom to All in `setUp`/`tourLibrary`/A3,
+  and terminates leftover app residue — no manual container wipes needed
+  except for gate screenshots (columns note above).
