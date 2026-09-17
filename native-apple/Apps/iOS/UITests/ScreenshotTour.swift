@@ -95,6 +95,28 @@ final class ScreenshotTourUITests: XCTestCase {
     return false
   }
 
+  /// Bidirectional variant for the WP4 Collections tour: sections above the
+  /// current offset are missed by swipe-up-only scrolling, so sweep up first
+  /// (content below) then down (content above), tapping when hittable.
+  @discardableResult
+  func tapScrollingEither(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+    for _ in 0..<3 {
+      if element.waitForExistence(timeout: timeout), element.isHittable {
+        element.tap()
+        return true
+      }
+      app.swipeUp()
+    }
+    for _ in 0..<8 {
+      if element.waitForExistence(timeout: 2), element.isHittable {
+        element.tap()
+        return true
+      }
+      app.swipeDown()
+    }
+    return false
+  }
+
   /// The viewer's Close button. The search field's clear (x) button also carries the
   /// label "Close", so scope by excluding its `xmark.circle.fill` identifier.
   @discardableResult
@@ -240,7 +262,7 @@ final class ScreenshotTourUITests: XCTestCase {
       "recentDays", "mediaTypes", "utilities", "places",
     ] {
       XCTAssertTrue(
-        tapScrolling(
+        tapScrollingEither(
           app.descendants(matching: .any)["collections-section-\(section)"]),
         "collections section \(section) should render")
     }
@@ -251,7 +273,7 @@ final class ScreenshotTourUITests: XCTestCase {
     shot("11-collections")
 
     // Memories page (fixture has no saved memories: empty state + tour shot).
-    if tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Memories'")).firstMatch, timeout: 10) {
+    if tapScrollingEither(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Memories'")).firstMatch) {
       XCTAssertTrue(
         app.descendants(matching: .any)["memories"].waitForExistence(timeout: 10),
         "memories page should open")
@@ -261,7 +283,7 @@ final class ScreenshotTourUITests: XCTestCase {
     }
 
     // Albums › page: Personal/Shared segments, then the fixture album.
-    if tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Albums'")).firstMatch, timeout: 10) {
+    if tapScrollingEither(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Albums'")).firstMatch) {
       XCTAssertTrue(
         app.descendants(matching: .any)["albums-list"].waitForExistence(timeout: 10),
         "albums list should open")
@@ -285,7 +307,7 @@ final class ScreenshotTourUITests: XCTestCase {
     }
 
     // People › page (fixture person "Bob") + person detail.
-    if tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'People'")).firstMatch, timeout: 10) {
+    if tapScrollingEither(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'People'")).firstMatch) {
       XCTAssertTrue(
         app.descendants(matching: .any)["people-list"].waitForExistence(timeout: 10),
         "people list should open")
@@ -314,7 +336,7 @@ final class ScreenshotTourUITests: XCTestCase {
       ("utility-Captured by Me", "17e-collections-captured"),
       ("utility-Archive", "17f-collections-archive"),
     ] {
-      if tapScrolling(app.descendants(matching: .any)[pill]) {
+      if tapScrollingEither(app.descendants(matching: .any)[pill]) {
         if app.descendants(matching: .any)["detail-grid"].waitForExistence(timeout: 10) {
           sleep(1)
           shot(shotName)
@@ -325,7 +347,7 @@ final class ScreenshotTourUITests: XCTestCase {
 
     // Locked: simulator has no enrolled biometrics, so auth fails fast into the
     // denied view (or a system prompt appears — cancel it and move on).
-    if tapScrolling(app.descendants(matching: .any)["utility-Locked"]) {
+    if tapScrollingEither(app.descendants(matching: .any)["utility-Locked"]) {
       sleep(2)
       if app.alerts.firstMatch.waitForExistence(timeout: 3) {
         app.alerts.firstMatch.buttons.firstMatch.tap()
@@ -335,14 +357,14 @@ final class ScreenshotTourUITests: XCTestCase {
     }
 
     // Duplicates (server-backed; fixture mode shows unavailable/empty — still a stop).
-    if tapScrolling(app.descendants(matching: .any)["utility-Duplicates"]) {
+    if tapScrollingEither(app.descendants(matching: .any)["utility-Duplicates"]) {
       sleep(1)
       shot("17h-collections-duplicates")
       back()
     }
 
     // Space detail (fixture space "Family", grid sorted date desc).
-    if tapScrolling(app.descendants(matching: .any)["space-Family"]) {
+    if tapScrollingEither(app.descendants(matching: .any)["space-Family"]) {
       XCTAssertTrue(
         app.descendants(matching: .any)["detail-grid"].waitForExistence(timeout: 10),
         "space grid should open")
@@ -352,7 +374,7 @@ final class ScreenshotTourUITests: XCTestCase {
     }
 
     // Map (Places).
-    if tapScrolling(app.descendants(matching: .any)["places-tile"]) {
+    if tapScrollingEither(app.descendants(matching: .any)["places-tile"]) {
       sleep(1)
       shot("19-collections-places")
       back()
@@ -361,17 +383,17 @@ final class ScreenshotTourUITests: XCTestCase {
     // Collapse toggle: hiding Shared Albums removes its tiles.
     goTab("Library", expect: app.descendants(matching: .any)["library-grid"])
     goTab("Collections", expect: app.descendants(matching: .any)["collections"])
-    if tapScrolling(app.descendants(matching: .any)["collections-collapse-sharedAlbums"]) {
+    if tapScrollingEither(app.descendants(matching: .any)["collections-collapse-sharedAlbums"]) {
       sleep(1)
       XCTAssertFalse(
         app.descendants(matching: .any)["album-Trip"].exists,
         "collapsing Shared Albums should hide its tiles")
       shot("20-collections-collapsed")
-      tapScrolling(app.descendants(matching: .any)["collections-collapse-sharedAlbums"])
+      tapScrollingEither(app.descendants(matching: .any)["collections-collapse-sharedAlbums"])
     }
 
     // Reorder sheet.
-    if tapScrolling(app.descendants(matching: .any)["collections-reorder"]) {
+    if tapScrollingEither(app.descendants(matching: .any)["collections-reorder"]) {
       sleep(1)
       shot("21-collections-reorder")
       tap(app.buttons["Done"], timeout: 5)
