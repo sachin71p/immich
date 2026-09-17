@@ -21,7 +21,9 @@ struct SearchView: View {
   @State private var favoritesOnly = false
   @State private var hasLocation: Bool? = nil
   @State private var mediaType: AssetKind? = nil
-  @State private var model2 = LibraryGridModel()
+  @State private var resultIds: [String] = []
+  @State private var resultColumns = 3
+  @State private var searchToken = 0
   @State private var isSearching = false
   @State private var searchError: String?
   @State private var hasSearched = false
@@ -178,21 +180,23 @@ struct SearchView: View {
     ZStack {
       if isSearching {
         ProgressView().accessibilityIdentifier("search-loading")
-      } else if model2.allRowIds.isEmpty {
+      } else if resultIds.isEmpty {
         ContentUnavailableView(
           "No results", systemImage: "magnifyingglass",
           description: Text(searchError ?? "Try a different query or widen the scope."))
       } else {
-        PhotoGridView(
-          model: model2, columns: 3, squareCells: false, editMode: false,
-          selectedIds: [], pipeline: session.pipeline,
-          onTap: { id in
-            viewerRequest = ViewerRequest(ids: model2.allRowIds, initialId: id)
+        // WP5 moves search onto its own screen; until then results reuse AssetGridView
+        // with an explicit id list (server relevance order preserved).
+        AssetGridView(
+          source: .ids(resultIds),
+          store: session.store,
+          pipeline: session.pipeline,
+          columns: $resultColumns,
+          onOpen: { route in
+            viewerRequest = ViewerRequest(ids: route.resolveIds(), initialId: route.startId)
           },
-          onSelectionChange: { _ in },
-          onPrefetch: { _ in },
-          onPinchColumns: { _ in },
-          scrubSection: 0
+          showsSectionHeaders: false,
+          reloadToken: searchToken
         )
         .accessibilityIdentifier("search-results")
       }
@@ -231,17 +235,15 @@ struct SearchView: View {
           tokenProvider: { @Sendable in await tokenStore?.get() })
         do {
           let ids = try await service.searchIds(filter: filter)
-          let assets = try await store.assets(ids: ids)
-          // Server order is relevance order — intersect with the mirror via assetsById.
-          let ordered = ids.compactMap { id in assets.first { $0.id == id } }
-          setResults(ordered)
+          // Server order is relevance order — the grid pages rows itself via assetsLite.
+          setIds(ids)
         } catch {
           // Server failed (offline, 4xx): fall back to the local rows already computed.
-          await setRows(localRows, store: store)
+          setIds(localRows.map(\.id))
           searchError = "Server search unavailable — showing offline results."
         }
       } else {
-        await setRows(localRows, store: store)
+        setIds(localRows.map(\.id))
       }
       hasSearched = true
       try? await RecentSearchStore(store: store, userId: session.userId).record(filter)
@@ -252,25 +254,10 @@ struct SearchView: View {
     }
   }
 
-  private func setRows(_ rows: [TimelineRow], store: PhotosLocalStore) async {
-    let assets = (try? await store.assets(ids: rows.map(\.id))) ?? []
-    setResults(assets)
-  }
-
-  private func setResults(_ assets: [Asset]) {
-    let bucket = TimelineBucket(key: "results", count: assets.count)
-    var rowsById: [String: TimelineRow] = [:]
-    for asset in assets {
-      rowsById[asset.id] = TimelineRow(
-        id: asset.id, thumbhash: asset.thumbhash, aspectRatio: 1, mediaKind: .photo,
-        isFavorite: asset.isFavorite, isTrashed: false, isArchived: asset.visibility == .archive,
-        localDateTime: asset.localDateTime)
-    }
-    model2 = LibraryGridModel(
-      buckets: assets.isEmpty ? [] : [bucket],
-      rowIdsByBucket: ["results": assets.map(\.id)],
-      rowsById: rowsById,
-      assetsById: Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) }))
+  @MainActor
+  private func setIds(_ ids: [String]) {
+    resultIds = ids
+    searchToken += 1
   }
 
   // MARK: - suggestions + recents

@@ -72,8 +72,13 @@ final class ScreenshotTourUITests: XCTestCase {
   /// taps land on keys instead of switching. Return re-submits the (unchanged) query,
   /// which is idempotent, and resigns the single-line field.
   func dismissKeyboard() {
-    guard app.keyboards.firstMatch.exists else { return }
-    app.keyboards.buttons["return"].tap()
+    // Gate on hittability: tapping mid-animation raises kAXErrorFailure
+    // ("failed to scroll to visible"), which fails the tour outright.
+    let keyboard = app.keyboards.firstMatch
+    guard keyboard.waitForExistence(timeout: 3) else { return }
+    let ret = keyboard.buttons["return"]
+    guard ret.waitForExistence(timeout: 3), ret.isHittable else { return }
+    ret.tap()
     sleep(1)
   }
 
@@ -143,8 +148,8 @@ final class ScreenshotTourUITests: XCTestCase {
       }
     }
 
-    // Zoom levels (segmented picker buttons).
-    for level in ["Years", "Months", "Days", "All Photos"] {
+    // Zoom levels (segmented picker buttons; Days was removed in WP1).
+    for level in ["Years", "Months", "All Photos"] {
       if tap(app.buttons[level], timeout: 5) {
         sleep(1)
         shot("03-library-zoom-\(level.lowercased().replacingOccurrences(of: " ", with: "-"))")
