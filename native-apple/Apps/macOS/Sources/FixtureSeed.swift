@@ -23,7 +23,10 @@ import UniformTypeIdentifiers
 ///
 /// Base-asset dates are all >= 2022 while generated rows span 2011-2021, so the curated
 /// assets sort above the generated bulk and stay visible on first paint (the smoke and
-/// functional tests address them by identifier without scrolling).
+/// functional tests address them by identifier without scrolling). The grid virtualizes
+/// (~7 cells in the 1400×900 test window), so the cells the suite addresses —
+/// personal-1, personal-2, space-video, space-shot, library-1 — must stay within the
+/// newest 7 base rows: keep their dates clustered just below space-video (2024-06-02).
 enum FixtureSeed {
   static let userId = "user-alice"
   static let bobId = "user-bob"
@@ -183,14 +186,14 @@ enum FixtureSeed {
       .albumUser(AlbumMember(albumId: sharedAlbumId, userId: userId, role: .editor)),
       .albumUser(AlbumMember(albumId: sharedAlbumId, userId: bobId, role: .viewer)),
       .asset(asset("asset-personal-1", owner: userId, name: "IMG_0001.HEIC", dateISO: "2024-06-01T12:00:00Z", favorite: true)),
-      .asset(asset("asset-personal-2", owner: userId, name: "IMG_0002.JPG", dateISO: "2023-01-15T12:00:00Z")),
+      .asset(asset("asset-personal-2", owner: userId, name: "IMG_0002.JPG", dateISO: "2024-05-23T12:00:00Z")),
       .assetExif(AssetExif(
         assetId: "asset-personal-2", latitude: 37.7749, longitude: -122.4194,
         city: "San Francisco", state: "California", country: "United States", make: "SeedCam")),
       .asset(asset("asset-space-video", owner: userId, name: "VID_0003.MOV", dateISO: "2024-06-02T12:00:00Z", type: .video, space: spaceId)),
-      .asset(asset("asset-space-shot", owner: bobId, name: "IMG_0004.JPG", dateISO: "2022-11-20T12:00:00Z", space: spaceId)),
+      .asset(asset("asset-space-shot", owner: bobId, name: "IMG_0004.JPG", dateISO: "2024-05-21T12:00:00Z", space: spaceId)),
       .assetExif(AssetExif(assetId: "asset-space-shot", description: "beach day with cousins")),
-      .asset(asset("asset-library-1", owner: userId, name: "IMG_0005.DNG", dateISO: "2023-05-10T12:00:00Z", library: libraryId)),
+      .asset(asset("asset-library-1", owner: userId, name: "IMG_0005.DNG", dateISO: "2024-05-22T12:00:00Z", library: libraryId)),
       .asset(asset("asset-trashed", owner: userId, name: "IMG_0006.JPG", dateISO: "2024-01-01T12:00:00Z", trashed: true)),
       .asset(asset("asset-archived", owner: userId, name: "IMG_0007.JPG", dateISO: "2023-08-08T12:00:00Z", visibility: .archive)),
       .asset(asset(
@@ -424,6 +427,18 @@ enum HeirloomLaunchFlag {
   static func isPresent(_ singleDash: String, legacy doubleDash: String) -> Bool {
     let args = CommandLine.arguments
     return args.contains(singleDash) || args.contains(doubleDash)
+  }
+
+  /// `-HeirloomTerminateAfter=<seconds>`: the harness quits the fixture app on a
+  /// timer via the real `NSApp.terminate` path (single self-contained token, so it
+  /// is scene-safe). XCUITest cannot drive ⌘Q or menu-Quit with a sheet open —
+  /// synthetic keys never reach key-equivalent dispatch and AX Quit activation is
+  /// swallowed — so the quit-with-sheet test uses this instead. Fixture-only.
+  static var terminateAfter: Double? {
+    for arg in CommandLine.arguments where arg.hasPrefix("-HeirloomTerminateAfter=") {
+      if let n = Double(arg.dropFirst("-HeirloomTerminateAfter=".count)), n > 0 { return n }
+    }
+    return nil
   }
 }
 

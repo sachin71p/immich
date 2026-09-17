@@ -23,6 +23,7 @@
 		14CDB706D27794F0208C0FD4 /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = ACEAEBD2D2F23F355BD5277F /* SyncEngine */; };
 		151779599FCCABAC1EA2282C /* Collections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52ADF313E45A57DF68AB044B /* Collections.swift */; };
 		16F0E0F883170E8E91E22C3B /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 86E16C72C57ACEC871DF72AC /* Upload */; };
+		1728134BDAC57250D594772C /* SeedSmokePathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */; };
 		1A928DD22CF697C8B5937F13 /* MacSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5418423DA37D1695A127DE89 /* MacSmokeTests.swift */; };
 		1C9836F65D14AA874521CB5C /* testFixtureThumbnailView.dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 37C1AA5AFABE263B09FC2BF3 /* testFixtureThumbnailView.dark.png */; };
 		1DEF534C241A37CDAD61CF01 /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 6708CA2AEC0807474C198792 /* SyncEngine */; };
@@ -260,6 +261,7 @@
 		BD8350F00918404C2A0D5D3E /* MacPeopleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPeopleView.swift; sourceTree = "<group>"; };
 		BFE2BCF0B71A5320D0EE96B4 /* Spaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spaces.swift; sourceTree = "<group>"; };
 		C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXIDs.swift; sourceTree = "<group>"; };
+		C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedSmokePathTests.swift; sourceTree = "<group>"; };
 		C2BF8940E9DEBCC98AEE5BC9 /* MacCollectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCollectionsView.swift; sourceTree = "<group>"; };
 		C3A5B35B2CB970AB4F4990AD /* GestureInputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureInputs.swift; sourceTree = "<group>"; };
 		C4809432DCC4D04479898A85 /* MacEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditView.swift; sourceTree = "<group>"; };
@@ -552,6 +554,7 @@
 				A723E1EC0CE8F83F81CA597F /* FixtureSnapshotTests.swift */,
 				1CA119048529A71E42CB383D /* FixtureStubTests.swift */,
 				938939017F03BF2906B018DD /* GestureInputTests.swift */,
+				C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */,
 				CCAB1BF69EB0A0B9A89A2048 /* __Snapshots__ */,
 				F821A37526B1924D59BF997F /* Support */,
 			);
@@ -930,37 +933,37 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					0D85D641350A0972877BA40F = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					1687D3DFBCC71FF95AB63C24 = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 						TestTargetID = E6E2BF7C79DF5ABC1FF5CACA;
 					};
 					22A3362055562D724946234D = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 						TestTargetID = 5AA476FDB0B8F81FFFEB1022;
 					};
 					278B2FEA8D40D4B9AC7EBC7C = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					5AA476FDB0B8F81FFFEB1022 = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					684DE8B8868C09C81C09DDF0 = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					9B35EFA422FCFD3E02A23CCE = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					BC47A3776A4147CF189475AB = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					BEFA62EBF592CE1BEC3D2747 = {
@@ -968,11 +971,11 @@
 						ProvisioningStyle = Automatic;
 					};
 					D84723B5E7BCA06F495A86D2 = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 					E6E2BF7C79DF5ABC1FF5CACA = {
-						DevelopmentTeam = 599Z443923;
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1157,6 +1160,7 @@
 				12AF7E15015BE8A9DFEAA02D /* FixtureStubTests.swift in Sources */,
 				D201E688DF00302A733FDC25 /* GestureInputTests.swift in Sources */,
 				F7B1EBB04F2816C02BA5DE41 /* GestureInputs.swift in Sources */,
+				1728134BDAC57250D594772C /* SeedSmokePathTests.swift in Sources */,
 				7B20DEECFEAD303A8949BC9D /* SyntheticEvents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1304,7 +1308,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 599Z443923;
+				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1371,7 +1375,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 599Z443923;
+				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
