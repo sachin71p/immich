@@ -90,6 +90,15 @@ struct LocalStoreCountsTests {
     #expect(try await store.lockedCount(userId: "user-alice") == 0)
   }
 
+  @Test("dayAssetIds mirrors the day bucket predicate, date desc")
+  func recentDayIds() async throws {
+    let store = try PhotosLocalStore(inMemory: true)
+    try await Self.seed(into: store)
+    #expect(try await store.dayAssetIds(scope: Self.scope(), dayKey: "2024-06-01") == ["a-photo"])
+    #expect(try await store.dayAssetIds(scope: Self.scope(), dayKey: "2024-06-02") == ["a-video"])
+    #expect(try await store.dayAssetIds(scope: Self.scope(), dayKey: "2024-01-01") == [])
+  }
+
   // MARK: - C1a (WP4): why person counts read 0 with empty names
 
   /// Verifies the C1a hypothesis on fixture-shaped data: the person↔asset link is

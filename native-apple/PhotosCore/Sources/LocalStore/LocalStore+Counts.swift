@@ -141,6 +141,23 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Asset ids for one Recent-Days tile (`dayKey` is `yyyy-MM-dd`, the same bucket
+  /// expression `bucketSummaries(.day)` uses), date desc. Same predicate as the
+  /// timeline index, so a tile count of N means N items in the grid.
+  public func dayAssetIds(scope: ContainerScope, dayKey: String, limit: Int = 10_000) async throws -> [String] {
+    let (whereSQL, args) = Self.scopeWhere(scope)
+    let sql = """
+      SELECT asset.id FROM asset
+      WHERE \(Self.indexWhereSQL) AND \(whereSQL)
+        AND strftime('%Y-%m-%d', asset.localDateTime) = ?
+      ORDER BY asset.localDateTime DESC
+      LIMIT ?
+      """
+    return try await dbQueue.read { db in
+      try String.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [dayKey, limit]))
+    }
+  }
+
   /// One `COUNT(*)` over `asset` with the caller's scope. The `visibleAsset` join is
   /// intentionally omitted (unlike the media-kind query): favorites/recents/hidden/
   /// trash predicates match their row queries, which don't filter live-photo members.
