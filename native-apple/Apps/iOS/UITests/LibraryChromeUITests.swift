@@ -63,8 +63,43 @@ final class LibraryChromeUITests: XCTestCase {
       thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.3)))
   }
 
+  /// Parent drill-in submenu row for a leaf item id, if any. Sort and Filter
+  /// rows sit top-level; Media Types / Library View / View Options live inside
+  /// nested `Menu` drill-in rows (stable `submenu-*` identifiers).
+  func submenuFor(_ id: String) -> String? {
+    if id.hasPrefix("mediatype-") { return "submenu-media-types" }
+    if id.hasPrefix("libraryview-") { return "submenu-library-view" }
+    if id.hasPrefix("viewoptions-") { return "submenu-view-options" }
+    return nil
+  }
+
+  /// Visible label of a submenu leaf. Rows inside a drilled-in submenu lose
+  /// their accessibility identifiers on iOS 27 (verified by AX dump: the
+  /// submenu header and leaves expose labels only), so drilled-in leaves are
+  /// located by these stable labels. Every id keeps its identifier in code.
+  func submenuItemLabel(_ id: String) -> String? {
+    switch id {
+    case "viewoptions-zoom-in": return "Zoom In"
+    case "viewoptions-zoom-out": return "Zoom Out"
+    case "viewoptions-aspect-fit": return "Aspect Ratio Grid"
+    case "viewoptions-show-screenshots": return "Show Screenshots"
+    case "viewoptions-show-shared": return "Show Shared with You"
+    case "mediatype-videos": return "Videos"
+    case "mediatype-livePhotos": return "Live Photos"
+    case "mediatype-screenshots": return "Screenshots"
+    case "mediatype-panoramas": return "Panoramas"
+    case "libraryview-both": return "Both Libraries"
+    case "libraryview-personal": return "Personal Library"
+    case "libraryview-show-in-timeline": return "Show in Timeline\u{2026}"
+    default: return nil
+    }
+  }
+
   @discardableResult
   func tapMenuItem(_ id: String, timeout: TimeInterval = 5) -> Bool {
+    if submenuFor(id) != nil {
+      return tapSubmenuLeaf(id, timeout: timeout)
+    }
     let item = app.descendants(matching: .any)[id]
     for _ in 0..<3 {
       // Already open from a previous round: take it.
@@ -81,6 +116,41 @@ final class LibraryChromeUITests: XCTestCase {
         lastMenuDiag = "item=\(id) found=false"
         scrollMenuUp()
       }
+    }
+    return false
+  }
+
+  /// Opens the filter menu, drills into the parent submenu row (waiting for
+  /// existence first: the submenu opens asynchronously and tapping early is
+  /// flaky), then taps the leaf by its visible label. Each round first
+  /// re-checks the leaf in case a previous round already drilled in (menu taps
+  /// dismiss, so every call reopens first when nothing is showing).
+  @discardableResult
+  func tapSubmenuLeaf(_ id: String, timeout: TimeInterval = 5) -> Bool {
+    guard let parent = submenuFor(id) else { return false }
+    guard let label = submenuItemLabel(id) else {
+      lastMenuDiag = "item=\(id) has no label mapping"
+      return false
+    }
+    let leafQuery = app.descendants(matching: .button).matching(
+      NSPredicate(format: "label == %@", label))
+    for _ in 0..<3 {
+      if leafQuery.firstMatch.waitForExistence(timeout: 2) {
+        leafQuery.firstMatch.tap()
+        return true
+      }
+      openFilterMenu()
+      let parentRow = app.descendants(matching: .any)[parent]
+      guard parentRow.waitForExistence(timeout: timeout) else {
+        lastMenuDiag = "item=\(id) parent=\(parent) found=false"
+        continue
+      }
+      parentRow.tap()
+      if leafQuery.firstMatch.waitForExistence(timeout: timeout) {
+        leafQuery.firstMatch.tap()
+        return true
+      }
+      lastMenuDiag = "item=\(id) label=\(label) found=false"
     }
     return false
   }

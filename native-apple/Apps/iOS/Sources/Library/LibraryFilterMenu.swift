@@ -20,21 +20,31 @@ struct LibraryFilterMenu: View {
   var onZoomOut: () -> Void
   var onShowSources: () -> Void
 
-  // Flat groups, not nested submenus: a `Menu`-in-`Menu` drill-in row is not
-  // exposed to XCUITest (the submenu never opens under test), and `Section`
-  // content is not exposed either — so every item sits one level deep as a
-  // plain `Button`, separated by dividers (see WP2 report).
+  // Nested drill-in submenus (spec native-06/07/08): Sort and Filter stay
+  // top-level (most-used), while Media Types / Library View / View Options are
+  // `Menu`-in-`Menu` drill-in rows. The flat ~20-row menu overflowed the
+  // visible area on small phones and iOS menus don't scroll for XCUITest, so
+  // bottom items (e.g. Show Screenshots) were unreachable. Submenu drill-in
+  // rows ARE tappable in XCUITest — tap the parent row, wait, then tap the
+  // item. Every leaf row keeps its stable identifier.
   var body: some View {
     Menu {
       sortSection
       Divider()
       filterSection
       Divider()
-      mediaTypesSection
-      Divider()
-      libraryViewSection
-      Divider()
-      viewOptionsSection
+      Menu("Media Types") {
+        mediaTypesSection
+      }
+      .accessibilityIdentifier("submenu-media-types")
+      Menu("Library View") {
+        libraryViewSection
+      }
+      .accessibilityIdentifier("submenu-library-view")
+      Menu("View Options") {
+        viewOptionsSection
+      }
+      .accessibilityIdentifier("submenu-view-options")
     } label: {
       Label("Filter", systemImage: "line.3.horizontal.decrease")
     }
