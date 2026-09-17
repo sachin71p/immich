@@ -1,22 +1,29 @@
 import Rules
 import SwiftUI
 
-// MARK: - library screen (grid + switcher + zoom + scrubber + selection)
+// MARK: - library screen (grid + switcher + zoom + selection)
 
 struct LibraryView: View {
   @EnvironmentObject var session: AppSession
-  @StateObject private var loader = LibraryGridLoader()
+  @StateObject private var selection = GridSelectionModel()
   @State private var source: LibrarySource = .all
   @State private var zoom: LibraryZoomLevel = .months
   @State private var columns: Int = 3
-  @State private var squareCells = false
-  @State private var editMode = false
-  @State private var selectedIds = Set<String>()
-  @State private var scrubIndex = 0
+  @State private var gridSource: AssetGridSource?
+  @State private var visibleFirst: Date?
+  @State private var visibleLast: Date?
   @State private var viewerRequest: ViewerRequest?
   @State private var showMoveSheet = false
   @State private var showSourcesSheet = false
   @State private var actionError: String?
+
+  /// Shared subtitle formatter — built once (the per-call `DateFormatter` here was
+  /// 13.8% of main-thread time in the baseline trace).
+  private static let subtitleFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d, yyyy"
+    return formatter
+  }()
 
   var body: some View {
     NavigationStack {
@@ -41,36 +48,31 @@ struct LibraryView: View {
         .background(.yellow.opacity(0.15))
         .accessibilityIdentifier("sync-error-banner")
       }
-      ZStack(alignment: .trailing) {
-        PhotoGridView(
-          model: loader.model, columns: columns, squareCells: squareCells, editMode: editMode,
-          selectedIds: selectedIds, pipeline: session.pipeline,
-          onTap: { id in
-            viewerRequest = ViewerRequest(ids: loader.model.allRowIds, initialId: id)
-          },
-          onSelectionChange: { selectedIds = $0 },
-          onPrefetch: { ids in
-            // Fixture art is served from the cell-warmed cache; never hit the network for it.
-            let real = ids.filter { !FixtureArtwork.isFixtureAsset($0) }
-            guard !real.isEmpty else { return }
-            Task { await session.pipeline?.prefetch(ids: real, tier: .thumbnail) }
-          },
-          onPinchColumns: { columns = $0 },
-          onRefresh: { await refreshAll() },
-          scrubSection: scrubIndex
-        )
-        .accessibilityIdentifier("library-grid")
-        .ignoresSafeArea(edges: .bottom)
-        // Date scrubber (brief task 1).
-        if loader.model.buckets.count > 1 {
-          Slider(value: Binding(
-            get: { Double(scrubIndex) },
-            set: { scrubIndex = Int($0) }
-          ), in: 0...Double(max(0, loader.model.buckets.count - 1)), step: 1)
-          .rotationEffect(.degrees(-90))
-          .frame(width: 160)
-          .offset(x: 56)
-          .accessibilityIdentifier("date-scrubber")
+      Group {
+        if let gridSource {
+          AssetGridView(
+            source: gridSource,
+            store: session.store,
+            pipeline: session.pipeline,
+            columns: $columns,
+            aspectFit: false,
+            selection: selection,
+            onOpen: { route in
+              viewerRequest = ViewerRequest(
+                ids: route.resolveIds(), initialId: route.startId)
+            },
+            onRefresh: { await refreshAll() },
+            onVisibleRange: { first, last in
+              visibleFirst = first
+              visibleLast = last
+            },
+            showsSectionHeaders: zoom != .all,
+            reloadToken: session.timelineVersion
+          )
+          .accessibilityIdentifier("library-grid")
+        } else {
+          ProgressView()
+            .accessibilityIdentifier("library-grid")
         }
       }
       .navigationTitle("")
@@ -102,21 +104,21 @@ struct LibraryView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
           HStack(spacing: 10) {
-            Button { columns = max(2, columns - 1) } label: { Image(systemName: "minus") }
-            Button { columns = min(10, columns + 1) } label: { Image(systemName: "plus") }
-            Button(editMode ? "Done" : "Select") {
-              editMode.toggle()
-              if !editMode { selectedIds = [] }
+            Button { columns = max(1, columns - 1) } label: { Image(systemName: "minus") }
+            Button { columns = min(13, columns + 1) } label: { Image(systemName: "plus") }
+            Button(selection.isSelecting ? "Done" : "Select") {
+              selection.isSelecting.toggle()
+              if !selection.isSelecting { selection.clear() }
             }
           }
         }
       }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 4) {
-          if editMode {
+          if selection.isSelecting {
             SelectionActionBar(
-              selectedIds: selectedIds,
-              onClear: { selectedIds = [] },
+              selectedIds: selection.ids,
+              onClear: { selection.clear() },
               onMove: { showMoveSheet = true },
               onError: { if !$0.isCancellationMessage { actionError = $0 } }
             )
@@ -128,26 +130,24 @@ struct LibraryView: View {
           }
           .pickerStyle(.segmented)
           .padding(.horizontal)
-          Toggle("Square", isOn: $squareCells)
-            .font(.caption)
-            .padding(.horizontal)
         }
         .background(.thinMaterial)
       }
-      // S1: re-keyed on `timelineVersion` so rows appear once a sync lands, without waiting
-      // for a source/zoom change.
-      .task(id: "\(sourceKey)-\(session.timelineVersion)") { await reload() }
+      // S1: re-keyed on source, zoom and `timelineVersion` so rows appear once a sync
+      // lands, without waiting for a source/zoom change.
+      .task(id: "\(sourceKey)-\(zoom.rawValue)-\(session.timelineVersion)") {
+        await resolveSource()
+      }
       .onChange(of: zoom) { _, new in
         columns = new.defaultColumns
-        Task { await reload() }
       }
       .fullScreenCover(item: $viewerRequest) { request in
         ViewerView(ids: request.ids, initialId: request.initialId)
       }
       .sheet(isPresented: $showMoveSheet) {
-        MoveSheet(selectedIds: Array(selectedIds)) {
-          selectedIds = []
-          editMode = false
+        MoveSheet(selectedIds: Array(selection.ids)) {
+          selection.clear()
+          selection.isSelecting = false
           Task { await refreshAll() }
         }
         .environmentObject(session)
@@ -187,28 +187,28 @@ struct LibraryView: View {
   private var librarySubtitle: String {
     // S2: sync progress is visible — indeterminate state only (the coordinator exposes no counts).
     if session.isSyncing { return "Syncing…" }
-    let dates = loader.model.rowsById.values.compactMap(\.localDateTime).sorted()
-    guard let first = dates.first, let last = dates.last
+    guard let first = visibleFirst, let last = visibleLast
     else { return "No Photos · Pull down to sync" }
-    let formatter = DateFormatter()
-    formatter.dateFormat = "MMM d, yyyy"
-    return "\(formatter.string(from: first)) – \(formatter.string(from: last))"
+    return
+      "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last))"
   }
 
   private func pickSource(_ new: LibrarySource) {
     source = new
-    selectedIds = []
-    editMode = false
-    scrubIndex = 0
+    selection.clear()
+    selection.isSelecting = false
   }
 
-  private func reload() async {
+  private func resolveSource() async {
     guard let store = session.store else { return }
     // L2: a stale cancellation banner from a previous launch never survives a fresh load.
     await ErrorFilter.clearStaleCancellation(in: session)
     do {
       let scope = try await session.timelineScope(explicit: source.filter)
-      await loader.load(scope: scope, granularity: zoom.granularity, store: store)
+      // The store is unused here beyond the nil check — the grid resolves the timeline
+      // itself — but without a store there is nothing to show.
+      _ = store
+      gridSource = .timeline(scope: scope, granularity: zoom.granularity)
     } catch {
       // L2: `.task(id:)` restarts cancel in-flight loads — cancellation is not an error.
       if !error.isCancellation { session.lastError = error.localizedDescription }
@@ -217,11 +217,12 @@ struct LibraryView: View {
 
   func refreshAll() async {
     await session.syncNow()
-    await reload()
+    await resolveSource()
   }
 }
 
-/// Viewer launch request (full-screen cover item).
+/// Viewer launch request (full-screen cover item). WP3 replaces the array with a pager
+/// driven directly by `ViewerRoute`.
 struct ViewerRequest: Identifiable {
   var ids: [String]
   var initialId: String?

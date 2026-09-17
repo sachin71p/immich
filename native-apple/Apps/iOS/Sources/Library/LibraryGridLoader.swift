@@ -9,23 +9,25 @@ import Rules
 /// Apple-style grid zoom: Years → Months → Days → All Photos. Each level maps to a bucket
 /// granularity (backed by `PhotosLocalStore.timelineBuckets`) and a default column count; pinch
 /// moves between column counts within and across levels.
+/// Zoom levels (WP2 owns the Years/Months views; Days is removed — All is the flat
+/// grid, Months/Years are separate views driven by `bucketSummaries`).
 enum LibraryZoomLevel: String, CaseIterable, Identifiable {
-  case years, months, days, all
+  case years, months, all
 
   var id: String { rawValue }
   var title: String {
     switch self {
     case .years: return "Years"
     case .months: return "Months"
-    case .days: return "Days"
     case .all: return "All Photos"
     }
   }
 
   var granularity: PhotosLocalStore.Granularity {
     switch self {
-    case .years, .months: return .month
-    case .days, .all: return .day
+    case .years: return .year
+    case .months: return .month
+    case .all: return .day
     }
   }
 
@@ -33,8 +35,7 @@ enum LibraryZoomLevel: String, CaseIterable, Identifiable {
     switch self {
     case .years: return 2
     case .months: return 3
-    case .days: return 5
-    case .all: return 7
+    case .all: return 5
     }
   }
 }
@@ -68,19 +69,6 @@ enum GridDataRequest: Sendable, Hashable {
   case ids([String])
 }
 
-// MARK: - interim model (removed in step 9)
-
-/// Pre-WP1 hydrated model. Kept until LibraryView/SearchView move onto `AssetGridView`;
-/// filled from the single-transaction `timelineRows` query (no per-bucket fan-out).
-struct LibraryGridModel {
-  var buckets: [TimelineBucket] = []
-  var rowIdsByBucket: [String: [String]] = [:]
-  var rowsById: [String: TimelineRow] = [:]
-  var assetsById: [String: Asset] = [:]
-
-  var allRowIds: [String] { buckets.flatMap { rowIdsByBucket[$0.key] ?? [] } }
-}
-
 // MARK: - loader
 
 /// WP1 §3: the grid's data owner (a `@MainActor` `ObservableObject`) publishing only an
@@ -97,8 +85,6 @@ struct LibraryGridModel {
 final class LibraryGridLoader: ObservableObject {
   @Published private(set) var snapshot = GridSnapshot.empty
   @Published private(set) var isLoading = false
-  /// Interim pre-WP1 model (removed in step 9).
-  @Published var model = LibraryGridModel()
 
   /// Full rows behind the visible window (thumbhash, favorite, duration) for badges and
   /// placeholders. Read synchronously from the VC's cell configuration (O(1) lookup).
@@ -125,47 +111,6 @@ final class LibraryGridLoader: ObservableObject {
 
   func row(for id: String) -> TimelineRow? { rowsById[id] }
   func flags(for id: String) -> PhotosLocalStore.TimelineIndexFlags { flagsById[id] ?? [] }
-
-  /// Interim pre-WP1 entry point (LibraryView/SearchView until step 9). One
-  /// `timelineRows` transaction grouped client-side — no per-bucket fan-out, no `assets`
-  /// hydration (badges read the row projection).
-  func load(
-    scope: ContainerScope, granularity: PhotosLocalStore.Granularity, store: PhotosLocalStore
-  ) async {
-    isLoading = true
-    defer { isLoading = false }
-    do {
-      var calendar = Calendar(identifier: .gregorian)
-      calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
-      let rows = try await store.timelineRows(scope: scope, granularity: granularity)
-      var order: [String] = []
-      var grouped: [String: [TimelineRow]] = [:]
-      for row in rows {
-        let key = GridSnapshot.bucketKey(
-          for: row.localDateTime, granularity: granularity, calendar: calendar)
-        if grouped[key] == nil {
-          grouped[key] = []
-          order.append(key)
-        }
-        grouped[key]?.append(row)
-      }
-      var rowIdsByBucket: [String: [String]] = [:]
-      var rowsById: [String: TimelineRow] = [:]
-      for key in order {
-        let members = grouped[key] ?? []
-        rowIdsByBucket[key] = members.map(\.id)
-        for row in members { rowsById[row.id] = row }
-      }
-      // Newest bucket first (rows arrive newest-first, so first-seen order is desc).
-      let buckets = order.map { TimelineBucket(key: $0, count: rowIdsByBucket[$0]?.count ?? 0) }
-      self.rowsById = rowsById
-      // Interim model carries no assets; badges fall back to rows.
-      model = LibraryGridModel(
-        buckets: buckets, rowIdsByBucket: rowIdsByBucket, rowsById: rowsById, assetsById: [:])
-    } catch {
-      model = LibraryGridModel()
-    }
-  }
 
   /// Loads one pass for `request`, replacing any in-flight load. Empty `.ids` publishes an
   /// empty snapshot immediately (search with no results never spins).
@@ -229,7 +174,7 @@ final class LibraryGridLoader: ObservableObject {
         }
         let flags = index.entries.map { ($0.id, $0.flags) }
         let buildStart = Date()
-        let built = await HeirloomSignpost.interval(HeirloomSignpost.snapshotBuild) {
+        let built = HeirloomSignpost.interval(HeirloomSignpost.snapshotBuild) {
           GridSnapshot.build(entries: index.entries, granularity: granularity, generation: current)
         }
         return (built, flags, Date().timeIntervalSince(buildStart) * 1000)
@@ -253,10 +198,12 @@ final class LibraryGridLoader: ObservableObject {
     // Publish a new generation only when membership or order changed — identical sync
     // re-queries leave the published instance (and the collection view) untouched.
     if snapshot.allIds != self.snapshot.allIds || self.snapshot.generation == 0 {
-      self.snapshot = snapshot
+      // Stamp first-paint BEFORE publishing: the bridge's synchronous subscriber reads
+      // these timings during the assignment itself (before the next line would run).
       if firstPaint {
         lastFirstPaintMs = Date().timeIntervalSince(loadStart) * 1000
       }
+      self.snapshot = snapshot
     }
     // Page the first window for badges/placeholders even when the snapshot was unchanged.
     await ensureRows(ids: Array(snapshot.allIds.prefix(300)), store: store)
