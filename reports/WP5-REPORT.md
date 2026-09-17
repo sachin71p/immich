@@ -91,7 +91,7 @@ unaffected (code-side registration exists).
   distress is visible inside the runs (later screenshot attachments are dropped
   from the xcresult). One run reached the WP5 steps: account sheet opened, name
   asserted, shot 23 taken. Two tour-script issues found there are fixed in
-  `0be2b28` (sign-out scrolled into view; `.searchable` moved onto the
+  `e6a77a1` (sign-out scrolled into view; `.searchable` moved onto the
   `NavigationStack` per the search-tab pattern after `searchFields` timed out
   once under the same distress). Re-run when the box is quiet:
   `xcodebuild -project native-apple/Heirloom.xcodeproj -scheme Heirloom-iOS
