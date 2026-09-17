@@ -126,6 +126,12 @@ final class MacGridLoader {
         // above when it did), so a failed refresh never blanks a good grid.
       }
     }
+    // `load()` is awaited by the view before it reads `snapshot`/`indexById` (selection
+    // trim, ordered ids for menus/sheets): without this the fire-and-forget task above
+    // lets the caller run on the stale snapshot — empty `orderedIds` (dead menu
+    // actions) and a selection trim against the pre-load index. Superseded loads keep
+    // the current snapshot per the policy above; awaiting here only serializes.
+    await loadTask?.value
   }
 
   // MARK: - presentation
