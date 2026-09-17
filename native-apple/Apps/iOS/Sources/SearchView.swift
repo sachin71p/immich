@@ -6,10 +6,11 @@ import Search
 import SwiftUI
 import UIKit
 
-/// Search screen (A7 task 2): smart query + metadata filters + library scope selector, suggestion
-/// chips, recent searches, and a results grid reusing the A3 `PhotoGridView` (same view that
-/// backs the library, fed a single "Results" bucket). Offline instant results come from the
-/// LocalStore exif mirror; a text query (or tags) also fans out to server smart/metadata search.
+/// Search screen (WP5 S1–S4, spec `device-native-22`): a search-role tab with the
+/// system search field, Recents image cards + suggestion pills when the query is empty,
+/// and debounced results in the WP1 `AssetGridView`. Offline instant results come from
+/// the LocalStore exif mirror; a text query also fans out to server smart/metadata
+/// search. Scope and Filters live in the toolbar, not in rows.
 struct SearchView: View {
   @EnvironmentObject var session: AppSession
 
@@ -24,137 +25,279 @@ struct SearchView: View {
   @State private var resultIds: [String] = []
   @State private var resultColumns = 3
   @State private var searchToken = 0
+  @State private var searchGeneration = 0
   @State private var isSearching = false
   @State private var searchError: String?
-  @State private var hasSearched = false
   @State private var recents: [SearchFilter] = []
-  @State private var chip: SuggestionKind? = nil
-  @State private var suggestions: [String] = []
-  @State private var viewerRequest: ViewerRequest?
+  @State private var recentTopIds: [Int: String] = [:]
+  @State private var showAllRecents = false
+  @State private var suggestions: [SuggestionKind: [String]] = [:]
+  @State private var peopleByName: [String: String] = [:]
+  @State private var viewerIds: [String] = []
+  @State private var viewerStart: String?
+  @State private var showViewer = false
+  @State private var showFilters = false
+  @State private var searchTask: Task<Void, Never>?
+
+  private static let monthFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM yyyy"
+    return formatter
+  }()
+
+  /// Results show for a typed query or an active metadata filter; otherwise Recents + pills.
+  private var hasActiveFilters: Bool {
+    !make.isEmpty || !model.isEmpty || !lens.isEmpty || favoritesOnly || hasLocation != nil
+      || mediaType != nil
+  }
+
+  private var isShowingResults: Bool {
+    !query.trimmingCharacters(in: .whitespaces).isEmpty || hasActiveFilters
+  }
 
   var body: some View {
     NavigationStack {
-      VStack(spacing: 0) {
-        searchField
-        scopePicker
-        if !hasSearched {
-          idleContent
-        } else {
+      Group {
+        if isShowingResults {
           resultsContent
+        } else {
+          idleContent
         }
       }
       .navigationTitle("Search")
-      .fullScreenCover(item: $viewerRequest) { request in
-        ViewerView(ids: request.ids, initialId: request.initialId)
+      .toolbar {
+        ToolbarItem(placement: .primaryAction) {
+          HStack(spacing: 4) {
+            scopeMenu
+            Button {
+              showFilters = true
+            } label: {
+              Label("Filters", systemImage: "line.3.horizontal.decrease")
+            }
+            .accessibilityIdentifier("search-filters-button")
+            AccountButton()
+          }
+        }
       }
-      .task { await loadRecents() }
+      .sheet(isPresented: $showFilters) {
+        NavigationStack {
+          filtersForm
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) {
+                Button("Apply") {
+                  showFilters = false
+                  triggerSearch()
+                }
+                .accessibilityIdentifier("search-apply-filters")
+              }
+            }
+        }
+      }
+      .fullScreenCover(isPresented: $showViewer) {
+        ViewerView(ids: viewerIds, initialId: viewerStart)
+          .environmentObject(session)
+      }
+      .task(id: query) {
+        guard isShowingResults else { return }
+        // 300 ms debounce; a newer keystroke cancels this task, so stale
+        // queries never overwrite fresher results.
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard !Task.isCancelled else { return }
+        await runSearch()
+      }
+      .task {
+        await loadIdle()
+      }
     }
+    // On the stack itself (the search-tab pattern): the search-role tab renders
+    // this as the floating bottom field (plus mic where the system offers one);
+    // typing debounces into `runSearch` above.
+    .searchable(text: $query, placement: .automatic, prompt: "Search photos")
     .accessibilityIdentifier("search-view")
   }
 
-  // MARK: - search field + scope
+  // MARK: - toolbar: scope menu (the "All → Library View" filter, as a menu)
 
-  private var searchField: some View {
-    HStack {
-      Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-      TextField("Search photos", text: $query)
-        .textInputAutocapitalization(.never)
-        .accessibilityIdentifier("search-field")
-        .onSubmit { Task { await runSearch() } }
-      if !query.isEmpty {
-        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-          .foregroundStyle(.secondary)
+  private var scopeMenu: some View {
+    Menu {
+      Picker("Scope", selection: $scope) {
+        Text("All").tag(SearchScope.all)
+        Text("Personal").tag(SearchScope.personal)
+        ForEach(session.spaces, id: \.id) { space in
+          Text(space.name).tag(SearchScope.space(space.id))
+        }
+        ForEach(session.libraries, id: \.id) { library in
+          Text(library.name).tag(SearchScope.library(library.id))
+        }
       }
-      Button("Search") { Task { await runSearch() } }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("search-submit")
+    } label: {
+      Label(scopeTitle, systemImage: "folder")
     }
-    .padding(.horizontal)
-    .padding(.top, 8)
-  }
-
-  private var scopePicker: some View {
-    Picker("Scope", selection: $scope) {
-      Text("All").tag(SearchScope.all)
-      Text("Personal").tag(SearchScope.personal)
-      ForEach(session.spaces, id: \.id) { space in
-        Text(space.name).tag(SearchScope.space(space.id))
-      }
-      ForEach(session.libraries, id: \.id) { library in
-        Text(library.name).tag(SearchScope.library(library.id))
-      }
-    }
-    .pickerStyle(.menu)
-    .padding(.horizontal)
-    .padding(.vertical, 8)
     .accessibilityIdentifier("search-scope")
     .onChange(of: scope) { _, _ in
-      if hasSearched { Task { await runSearch() } }
+      if isShowingResults { triggerSearch() }
     }
   }
 
-  // MARK: - idle: chips, suggestions, recents, filters
+  private var scopeTitle: String {
+    switch scope {
+    case .all: return "All"
+    case .personal: return "Personal"
+    case .space(let id): return session.spaces.first { $0.id == id }?.name ?? "Space"
+    case .library(let id): return session.libraries.first { $0.id == id }?.name ?? "Library"
+    }
+  }
+
+  /// Manual trigger (scope/filter/apply changes): cancels the in-flight search so a
+  /// slow query cannot overwrite the newer one; `searchGeneration` drops stragglers
+  /// that already passed their last suspension point.
+  private func triggerSearch() {
+    searchTask?.cancel()
+    searchTask = Task { await runSearch() }
+  }
+
+  // MARK: - idle: Recents image cards + suggestion pills (spec native-22)
 
   private var idleContent: some View {
-    List {
-      Section("Suggestions") {
-        chipRow
-        if chip != nil {
-          if suggestions.isEmpty {
-            Text("No suggestions").font(.caption).foregroundStyle(.secondary)
-          } else {
-            ForEach(suggestions, id: \.self) { suggestion in
-              Button { applySuggestion(suggestion) } label: {
-                HStack {
-                  Text(suggestion)
-                  Spacer()
-                  Image(systemName: "arrow.up.left").foregroundStyle(.secondary)
+    ScrollView {
+      VStack(alignment: .leading, spacing: 24) {
+        recentsSection
+        suggestionsSection
+      }
+      .padding()
+    }
+  }
+
+  private var visibleRecents: Array<(offset: Int, element: SearchFilter)>.SubSequence {
+    let all = Array(recents.enumerated())
+    return showAllRecents ? all[...] : all.prefix(6)
+  }
+
+  private var recentsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text("Recents").font(.headline)
+        Spacer()
+        if !recents.isEmpty {
+          Button("Clear", role: .destructive) {
+            Task {
+              guard let store = session.store else { return }
+              try? await RecentSearchStore(store: store, userId: session.userId).clear()
+              await loadIdle()
+            }
+          }
+          .font(.subheadline)
+          Button {
+            showAllRecents.toggle()
+          } label: {
+            Image(systemName: showAllRecents ? "chevron.up" : "chevron.right")
+          }
+          .accessibilityIdentifier("search-recents-expand")
+        }
+      }
+      if recents.isEmpty {
+        Text("Recent searches show here with a preview of the top result.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(alignment: .top, spacing: 12) {
+            ForEach(visibleRecents, id: \.offset) { offset, recent in
+              Button { applyRecent(recent) } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                  RecentCardThumb(assetId: recentTopIds[offset])
+                    .frame(width: 96, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                  Text(recentLabel(recent))
+                    .font(.caption)
+                    .lineLimit(2)
+                    .frame(width: 96, alignment: .leading)
                 }
+              }
+              .buttonStyle(.plain)
+            }
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("search-recents")
+  }
+
+  private var suggestionsSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      pillGroup(title: "People", pills: suggestions[.people] ?? [], kind: .people)
+      pillGroup(title: "Places", pills: suggestions[.places] ?? [], kind: .places)
+      pillGroup(title: "Camera", pills: suggestions[.camera] ?? [], kind: .camera)
+      pillGroup(title: "Lens", pills: suggestions[.lens] ?? [], kind: .lens)
+      pillGroup(
+        title: "File type",
+        pills: (suggestions[.fileType] ?? []).map { $0.uppercased() },
+        kind: .fileType)
+      Text("More").font(.headline)
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack {
+          Button("Videos") {
+            var filter = currentFilter()
+            filter.query = ""
+            filter.local.mediaType = .video
+            Task { await applyAndSearch(filter) }
+          }
+          .buttonStyle(.bordered)
+          ForEach(Self.recentMonthRanges(), id: \.label) { month in
+            Button(month.label) {
+              var filter = currentFilter()
+              filter.query = ""
+              filter.local.takenAfter = month.start
+              filter.local.takenBefore = month.end
+              Task { await applyAndSearch(filter) }
+            }
+            .buttonStyle(.bordered)
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("search-suggestions")
+  }
+
+  private func pillGroup(title: String, pills: [String], kind: SuggestionKind) -> some View {
+    Group {
+      if !pills.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(title).font(.headline)
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack {
+              ForEach(pills.prefix(12), id: \.self) { pill in
+                Button(pill) { applySuggestion(pill, kind: kind) }
+                  .buttonStyle(.bordered)
               }
             }
           }
         }
       }
-      filtersSection
-      if !recents.isEmpty {
-        Section("Recent searches") {
-          ForEach(Array(recents.enumerated()), id: \.offset) { _, recent in
-            Button { applyRecent(recent) } label: {
-              Text(recentLabel(recent)).lineLimit(1)
-            }
-          }
-          Button("Clear", role: .destructive) {
-            Task {
-              guard let store = session.store else { return }
-              try? await RecentSearchStore(store: store, userId: session.userId).clear()
-              await loadRecents()
-            }
-          }
-        }
-      }
-    }
-    .listStyle(.insetGrouped)
-  }
-
-  private var chipRow: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack {
-        ForEach(SuggestionKind.allCases, id: \.self) { kind in
-          Button {
-            chip = (chip == kind) ? nil : kind
-            Task { await loadSuggestions() }
-          } label: {
-            Label(kind.title, systemImage: kind.systemImage)
-          }
-          .buttonStyle(.bordered)
-          .tint(chip == kind ? .accentColor : .secondary)
-        }
-      }
     }
   }
 
-  private var filtersSection: some View {
-    DisclosureGroup("Filters") {
+  /// Month ranges for the "recent months" pills, newest first.
+  private static func recentMonthRanges(count: Int = 4) -> [(label: String, start: Date, end: Date)] {
+    let calendar = Calendar.current
+    let now = Date()
+    guard
+      let thisMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now))
+    else { return [] }
+    return (0..<count).compactMap { back in
+      guard let start = calendar.date(byAdding: .month, value: -back, to: thisMonth),
+        let end = calendar.date(byAdding: .month, value: 1, to: start)
+      else { return nil }
+      return (monthFormatter.string(from: start), start, end)
+    }
+  }
+
+  // MARK: - filters (toolbar sheet now, same fields as before)
+
+  private var filtersForm: some View {
+    Form {
       TextField("Camera make", text: $make).textInputAutocapitalization(.never)
       TextField("Camera model", text: $model).textInputAutocapitalization(.never)
       TextField("Lens", text: $lens).textInputAutocapitalization(.never)
@@ -169,8 +312,16 @@ struct SearchView: View {
         Text("Has location").tag(true as Bool?)
         Text("No location").tag(false as Bool?)
       }
-      Button("Apply filters") { Task { await runSearch() } }
-        .accessibilityIdentifier("search-apply-filters")
+      if hasActiveFilters {
+        Button("Reset", role: .destructive) {
+          make = ""
+          model = ""
+          lens = ""
+          favoritesOnly = false
+          hasLocation = nil
+          mediaType = nil
+        }
+      }
     }
   }
 
@@ -185,15 +336,19 @@ struct SearchView: View {
           "No results", systemImage: "magnifyingglass",
           description: Text(searchError ?? "Try a different query or widen the scope."))
       } else {
-        // WP5 moves search onto its own screen; until then results reuse AssetGridView
-        // with an explicit id list (server relevance order preserved).
+        // Results reuse the WP1 `AssetGridView` with an explicit id list (server
+        // relevance order preserved). `ViewerRoute` hands the viewer the loader's
+        // current order; the full-screen presentation matches the old behavior
+        // until WP3's lazy pager lands.
         AssetGridView(
           source: .ids(resultIds),
           store: session.store,
           pipeline: session.pipeline,
           columns: $resultColumns,
           onOpen: { route in
-            viewerRequest = ViewerRequest(ids: route.resolveIds(), initialId: route.startId)
+            viewerIds = route.resolveIds()
+            viewerStart = route.startId
+            showViewer = true
           },
           showsSectionHeaders: false,
           reloadToken: searchToken
@@ -218,6 +373,8 @@ struct SearchView: View {
 
   private func runSearch() async {
     guard let store = session.store else { return }
+    searchGeneration += 1
+    let generation = searchGeneration
     let filter = currentFilter()
     isSearching = true
     searchError = nil
@@ -228,6 +385,7 @@ struct SearchView: View {
       let resolved = filter.scope.resolve(local: base, context: context)
       // Offline instant results first — the grid paints from the mirror even with no network.
       let localRows = try await store.filterAssets(filter.local, scope: resolved)
+      guard generation == searchGeneration else { return }
       if filter.wantsServerSearch, !session.isFixture, let serverURL = session.serverURL {
         let tokenStore = session.connection?.tokenStore
         let service = SearchService(
@@ -236,21 +394,22 @@ struct SearchView: View {
         do {
           let ids = try await service.searchIds(filter: filter)
           // Server order is relevance order — the grid pages rows itself via assetsLite.
+          guard generation == searchGeneration else { return }
           setIds(ids)
         } catch {
           // Server failed (offline, 4xx): fall back to the local rows already computed.
+          guard generation == searchGeneration else { return }
           setIds(localRows.map(\.id))
           searchError = "Server search unavailable — showing offline results."
         }
       } else {
         setIds(localRows.map(\.id))
       }
-      hasSearched = true
       try? await RecentSearchStore(store: store, userId: session.userId).record(filter)
-      await loadRecents()
+      await loadIdle()
     } catch {
+      guard generation == searchGeneration else { return }
       searchError = error.localizedDescription
-      hasSearched = true
     }
   }
 
@@ -262,54 +421,62 @@ struct SearchView: View {
 
   // MARK: - suggestions + recents
 
-  private func loadSuggestions() async {
-    guard let kind = chip, let store = session.store else {
-      suggestions = []
-      return
+  /// Idle data: recents (+ each recent's top-result thumbnail id), the person
+  /// id lookup, and all five suggestion kinds via the local-first loader.
+  private func loadIdle() async {
+    guard let store = session.store else { return }
+    recents = (try? await RecentSearchStore(store: store, userId: session.userId).recents()) ?? []
+    suggestions = await SearchSuggestionLoader.allSuggestions(session: session, uiScope: scope)
+    if let store = session.store {
+      let named = (try? await store.namedPeople(forOwner: session.userId)) ?? []
+      peopleByName = Dictionary(uniqueKeysWithValues: named.map { ($0.name, $0.id) })
     }
-    if kind.serverType == nil {
-      // People: no server suggestion variant — serve names from the local mirror.
-      let mine = (try? await store.peopleForOwner(session.userId)) ?? []
-      suggestions = mine.map(\.name).sorted()
-      return
-    }
-    guard !session.isFixture, let serverURL = session.serverURL else {
-      suggestions = []
-      return
-    }
-    let tokenStore = session.connection?.tokenStore
-    let service = SearchService(
-      baseURL: serverURL, tokenProvider: { @Sendable in await tokenStore?.get() })
-    suggestions = (try? await service.suggestions(kind: kind, scope: scope)) ?? []
+    await loadRecentTopIds()
   }
 
-  private func applySuggestion(_ suggestion: String) {
-    guard let kind = chip else { return }
+  /// Top-result asset id per visible recent, for the Recents image cards.
+  private func loadRecentTopIds() async {
+    guard let store = session.store else { return }
+    var tops: [Int: String] = [:]
+    do {
+      let base = try await session.timelineScope()
+      let context = try await store.timelineContext(for: session.userId)
+      for (offset, recent) in recents.enumerated().prefix(12) {
+        let resolved = recent.scope.resolve(local: base, context: context)
+        if let top = try? await store.filterAssets(recent.local, scope: resolved, limit: 1).first {
+          tops[offset] = top.id
+        }
+      }
+    } catch {
+      // Thumbnails are decorative; the labels still work.
+    }
+    recentTopIds = tops
+  }
+
+  private func applySuggestion(_ suggestion: String, kind: SuggestionKind) {
     switch kind {
     case .people:
-      Task {
-        guard let store = session.store else { return }
-        let mine = (try? await store.peopleForOwner(session.userId)) ?? []
-        if let person = mine.first(where: { $0.name == suggestion }) {
-          var filter = currentFilter()
-          filter.local.personIds = [person.id]
-          await applyAndSearch(filter)
-        }
+      if let id = peopleByName[suggestion] {
+        var filter = currentFilter()
+        filter.query = ""
+        filter.local.personIds = [id]
+        Task { await applyAndSearch(filter) }
       }
     case .places:
       var filter = currentFilter()
+      filter.query = ""
       filter.local.city = suggestion
-      query = ""
       Task { await applyAndSearch(filter) }
     case .camera:
       make = suggestion
-      Task { await runSearch() }
+      triggerSearch()
     case .lens:
       lens = suggestion
-      Task { await runSearch() }
+      triggerSearch()
     case .fileType:
       var filter = currentFilter()
-      filter.local.fileExtensions = [suggestion]
+      filter.query = ""
+      filter.local.fileExtensions = [suggestion.lowercased()]
       Task { await applyAndSearch(filter) }
     }
   }
@@ -336,10 +503,37 @@ struct SearchView: View {
     if let city = filter.local.city { return "Place: \(city)" }
     return "Filtered search"
   }
+}
 
-  private func loadRecents() async {
-    guard let store = session.store else { return }
-    recents = (try? await RecentSearchStore(store: store, userId: session.userId).recents()) ?? []
+// MARK: - recent-card thumbnail (WP5 S1)
+
+/// Small pipeline-backed thumbnail for a Recents card. Decorative: a gray fill when
+/// the asset is gone or still loading.
+struct RecentCardThumb: View {
+  @EnvironmentObject var session: AppSession
+  var assetId: String?
+  @State private var image: UIImage?
+
+  var body: some View {
+    Group {
+      if let image {
+        Image(uiImage: image)
+          .resizable()
+          .aspectRatio(contentMode: .fill)
+      } else {
+        Rectangle().fill(.gray.opacity(0.3))
+      }
+    }
+    .task(id: assetId) {
+      guard let assetId, let store = session.store, let pipeline = session.pipeline,
+        let asset = try? await store.asset(id: assetId),
+        let loaded = try? await pipeline.load(asset: asset, tier: .thumbnail)
+      else { return }
+      switch loaded.content {
+      case .placeholder(let img): image = img
+      case .tier(_, let img, _): image = img
+      }
+    }
   }
 }
 

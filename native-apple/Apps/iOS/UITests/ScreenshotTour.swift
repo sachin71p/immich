@@ -28,8 +28,7 @@ final class ScreenshotTourUITests: XCTestCase {
     tourViewer()
     tourCollections()
     tourSearch()
-    tourShared()
-    tourSettings()
+    tourAccount()
   }
 
   // MARK: - helpers
@@ -295,12 +294,15 @@ final class ScreenshotTourUITests: XCTestCase {
       app.descendants(matching: .any)["search-view"].waitForExistence(timeout: 10))
     shot("18-search")
 
-    // Query the fixture filenames, submit, and open the first hit in the viewer.
-    if tap(app.textFields["search-field"], timeout: 10) {
-      app.textFields["search-field"].typeText("IMG")
+    // Type into the system search field (300 ms debounce, no submit button) and
+    // open the first hit in the viewer.
+    let field = app.searchFields.firstMatch
+    if tap(field, timeout: 10) {
+      field.typeText("IMG")
+      sleep(3)
       shot("19-search-typed")
-      tap(app.buttons["search-submit"], timeout: 10)
-      sleep(2)
+      XCTAssertTrue(
+        app.descendants(matching: .any)["search-results"].waitForExistence(timeout: 10))
       shot("20-search-results")
       if app.collectionViews.cells.firstMatch.waitForExistence(timeout: 5) {
         app.collectionViews.cells.firstMatch.tap()
@@ -309,58 +311,47 @@ final class ScreenshotTourUITests: XCTestCase {
           closeViewer()
         }
       }
+      // Clearing the query returns to idle, where the just-recorded "IMG"
+      // recent appears as an image card.
+      if field.buttons["Clear text"].waitForExistence(timeout: 5) {
+        field.buttons["Clear text"].tap()
+        sleep(2)
+        XCTAssertTrue(
+          app.descendants(matching: .any)["search-recents"].staticTexts["IMG"]
+            .waitForExistence(timeout: 10),
+          "the just-run query should appear as a Recents card")
+        shot("22-search-recents")
+      }
       dismissKeyboard()
     }
   }
 
-  // MARK: - Shared tab
+  // MARK: - Account sheet (WP5; reached from the Search toolbar until WP4 wires
+  // the Collections avatar)
 
-  func tourShared() {
-    goTab("Shared", expect: app.buttons["Family"])
-    sleep(1)
-    shot("22-shared")
-
-    // Space detail (fixture space "Family").
-    if tapScrolling(app.buttons["Family"]) {
-      sleep(1)
-      shot("23-shared-space-detail")
-      back()
-    }
-
-    // New Shared Library sheet (cancel it — creation needs a server).
-    if tapScrolling(app.buttons.matching(NSPredicate(format: "label CONTAINS 'New Shared'")).firstMatch) {
-      sleep(1)
-      shot("24-shared-create-sheet")
-      if !tap(app.buttons["Cancel"], timeout: 5) {
-        app.swipeDown()
-      }
-    }
-  }
-
-  // MARK: - Settings tab
-
-  func tourSettings() {
-    goTab("Settings", expect: app.descendants(matching: .any)["settings"])
+  func tourAccount() {
+    goTab("Search", expect: app.descendants(matching: .any)["search-view"])
     XCTAssertTrue(
-      app.descendants(matching: .any)["settings"].waitForExistence(timeout: 10))
-    shot("25-settings")
+      tap(app.buttons["account-button"], timeout: 10),
+      "account button should be in the Search toolbar")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["account-sheet"].waitForExistence(timeout: 10))
 
-    // Timeline Sources sheet.
-    if tapScrolling(app.buttons["Timeline Sources…"]) {
-      XCTAssertTrue(
-        app.descendants(matching: .any)["timeline-sources"].waitForExistence(timeout: 10))
-      shot("26-settings-timeline-sources")
-      tap(app.buttons["Done"], timeout: 10)
-    }
+    // A name, never the raw user id.
+    let name = app.descendants(matching: .any)["account-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    XCTAssertFalse(name.label.isEmpty, "account sheet should show a name")
+    XCTAssertNotEqual(name.label, "u1", "account sheet must not show the raw user id")
+    shot("23-account-sheet")
 
-    // Free Up Space.
-    if tapScrolling(app.descendants(matching: .any)["settings-freeup"]) {
-      sleep(1)
-      shot("27-settings-free-up-space")
-      back()
-    }
-
-    // Sign Out is intentionally not tapped: the current build signs out without a
-    // confirmation alert, which would end the session mid-tour.
+    // Sign Out shows its confirmation; cancel it so the tour keeps its session.
+    // The button sits at the bottom of the sheet list — scroll to it.
+    XCTAssertTrue(tapScrolling(app.buttons["account-signout"]))
+    XCTAssertTrue(
+      app.alerts.firstMatch.waitForExistence(timeout: 5),
+      "sign out should ask for confirmation")
+    shot("24-account-signout-confirm")
+    app.alerts.buttons["Cancel"].tap()
+    tap(app.buttons["Done"], timeout: 10)
   }
 }

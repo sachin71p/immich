@@ -139,11 +139,30 @@ public struct ImmichConnection: Sendable {
   /// The signed-in user's id — `SyncEngine` needs this to tell "I lost access" apart from "someone else
   /// did" (DECISIONS §8) and to build `Rules.AccessContext`/`TimelineContext`.
   public func currentUserId() async throws -> String {
+    try await currentUser().id
+  }
+
+  /// The signed-in user's id, name and email (WP5 account sheet). Name/email come from
+  /// the same `getMyUser` payload as the id above — never the raw UUID in UI.
+  public func currentUser() async throws -> CurrentUserProfile {
     let output = try await client.getMyUser(.init())
     guard case let .ok(response) = output, case let .json(body) = response.body else {
       throw ConnectionError.unexpectedCurrentUserResponse
     }
-    return body.id
+    return CurrentUserProfile(id: body.id, name: body.name, email: body.email)
+  }
+}
+
+/// The signed-in user's profile for account UI (WP5). `Sendable`, value-typed.
+public struct CurrentUserProfile: Sendable, Equatable {
+  public var id: String
+  public var name: String
+  public var email: String
+
+  public init(id: String, name: String, email: String) {
+    self.id = id
+    self.name = name
+    self.email = email
   }
 }
 
