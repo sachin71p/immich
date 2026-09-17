@@ -15,7 +15,9 @@ final class MacFunctionalTests: XCTestCase {
     app = XCUIApplication()
     // Same fresh-state guard as MacSmokeTests: a previous run's restored window races
     // the fixture-seeded content on repeat launches within one test session.
-    app.launchArguments = ["--fixture-seed", "--ui-testing", "-ApplePersistenceIgnoreState", "YES"]
+    // Single-dash booleans (see MacSmokeTests): a `--` flag can strand the next
+    // argv token as a bare open-documents event that kills the initial scene.
+    app.launchArguments = ["-fixture-seed", "-ui-testing", "-ApplePersistenceIgnoreState", "YES"]
   }
 
   override func tearDown() {

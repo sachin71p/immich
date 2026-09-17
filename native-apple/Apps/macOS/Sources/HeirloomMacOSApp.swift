@@ -8,7 +8,8 @@ import SwiftUI
 @MainActor
 private enum MacUITestWindowPresenter {
   static var isEnabled: Bool {
-    CommandLine.arguments.contains("--ui-testing")
+    CommandLine.arguments.contains("-ui-testing")
+      || CommandLine.arguments.contains("--ui-testing")
   }
 
   static func presentInitialWindow() {
@@ -120,7 +121,8 @@ struct HeirloomMacOSApp: App {
         state = Self.launchState()
         // The delegate only needs the store for the quit-time pending-upload recheck.
         delegate.state = state
-        if CommandLine.arguments.contains("--fixture-seed") {
+        let args = CommandLine.arguments
+        if args.contains("-fixture-seed") || args.contains("--fixture-seed") {
           try? await state?.seedForSmoke()
         } else {
           await state?.adoptKeychainSession()
@@ -143,7 +145,8 @@ struct HeirloomMacOSApp: App {
   }
 
   private static func launchState() -> MacAppState? {
-    if CommandLine.arguments.contains("--fixture-seed") {
+    let args = CommandLine.arguments
+    if args.contains("-fixture-seed") || args.contains("--fixture-seed") {
       return try? MacAppState.seeded()
     }
     // Must read the same domain `completeLogin` writes to (SharedContainer.sharedDefaults) —

@@ -792,7 +792,10 @@ struct MacLibraryBrowser: View {
   /// XCUITest launches (`--fixture-seed`, same flag `HeirloomMacOSApp` boots the seeded
   /// world on) have no server, so favorite/trash apply straight to the local store.
   /// Production path unchanged.
-  private var isFixtureSeeded: Bool { CommandLine.arguments.contains("--fixture-seed") }
+  private var isFixtureSeeded: Bool {
+    let args = CommandLine.arguments
+    return args.contains("-fixture-seed") || args.contains("--fixture-seed")
+  }
 
   private func toggleFavorite(ids: [String]) {
     guard !ids.isEmpty else { return }

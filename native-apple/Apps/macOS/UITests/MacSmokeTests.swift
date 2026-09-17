@@ -12,7 +12,9 @@ final class MacSmokeTests: XCTestCase {
     app = XCUIApplication()
     // Prevent AppKit from restoring a previous run's saved window state, which otherwise
     // races the fresh fixture-seeded content on repeat launches within one test session.
-    app.launchArguments = ["--fixture-seed", "--ui-testing", "-ApplePersistenceIgnoreState", "YES"]
+    // Single-dash booleans: a `--` flag can strand the next argv token as a bare
+    // open-documents event that kills the initial scene (zero windows).
+    app.launchArguments = ["-fixture-seed", "-ui-testing", "-ApplePersistenceIgnoreState", "YES"]
   }
 
   /// Sidebar + grid render from the fixture DB.
