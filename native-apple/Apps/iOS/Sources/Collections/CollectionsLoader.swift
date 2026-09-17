@@ -18,6 +18,8 @@ final class CollectionsLoader: ObservableObject {
   @Published var days: [DayTileData]?
   @Published var cameras: [CameraModel]?
   @Published var onThisDayIds: [String]?
+  @Published var favoriteCoverId: String?
+  @Published var recentCoverId: String?
 
   /// Wall time of the counts stage (the "all counts" half of the perf budget).
   var countsMs: Double = 0
@@ -54,6 +56,8 @@ final class CollectionsLoader: ObservableObject {
       filled.media = media
       countsMs = Date().timeIntervalSince(start) * 1000
       counts = filled
+      favoriteCoverId = try? await store.favoriteAssets(scope: scope, limit: 1).first?.id
+      recentCoverId = try? await store.recentAssets(scope: scope, limit: 1).first?.id
 
       // Stage 2: albums with member lists, cover + count per album.
       let allAlbums = (try? await store.albumsForUser(session.userId)) ?? []

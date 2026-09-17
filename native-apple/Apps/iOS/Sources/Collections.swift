@@ -17,6 +17,8 @@ struct CollectionsView: View {
   @State private var showReorder = false
   @State private var showPinnedEdit = false
   @State private var showSpaceCreate = false
+  @State private var spaceCovers: [String: String] = [:]
+  @State private var libraryCovers: [String: String] = [:]
 
   var body: some View {
     NavigationStack {
@@ -39,7 +41,7 @@ struct CollectionsView: View {
         ToolbarItem(placement: .topBarTrailing) {
           HStack(spacing: 12) {
             Menu {
-              Button("Refresh") { Task { await loader.reload(session: session) } }
+              Button("Refresh") { Task { await loadAll() } }
             } label: {
               Image(systemName: "ellipsis")
                 .frame(width: 32, height: 32)
@@ -51,8 +53,8 @@ struct CollectionsView: View {
           }
         }
       }
-      .refreshable { await loader.reload(session: session) }
-      .task { await loader.reload(session: session) }
+      .refreshable { await loadAll() }
+      .task { await loadAll() }
       .sheet(isPresented: $showReorder) {
         SectionReorderSheet()
       }
@@ -65,6 +67,27 @@ struct CollectionsView: View {
       }
     }
     .accessibilityIdentifier("collections")
+  }
+
+  private func loadAll() async {
+    await loader.reload(session: session)
+    // Key-photo covers for the space/library tiles (containers are few; one
+    // limit-1 query each, after the counts stages so first paint never waits).
+    guard let store = session.store else { return }
+    for space in session.spaces {
+      if let scope = try? await session.timelineScope(explicit: .space(space.id)),
+        let cover = try? await store.recentAssets(scope: scope, limit: 1).first?.id
+      {
+        spaceCovers[space.id] = cover
+      }
+    }
+    for library in session.libraries {
+      if let scope = try? await session.timelineScope(explicit: .library(library.id)),
+        let cover = try? await store.recentAssets(scope: scope, limit: 1).first?.id
+      {
+        libraryCovers[library.id] = cover
+      }
+    }
   }
 
   private func isCollapsible(_ section: CollectionsSection) -> Bool {
@@ -195,7 +218,7 @@ struct CollectionsView: View {
         FavoritesDetailView().environmentObject(session)
       } label: {
         PhotoTitleTile(
-          assetId: nil, title: "Favorites",
+          assetId: loader.favoriteCoverId, title: "Favorites",
           subtitle: loader.counts.map { "\($0.favorites)" })
       }
       .buttonStyle(.plain)
@@ -205,7 +228,7 @@ struct CollectionsView: View {
         RecentsDetailView().environmentObject(session)
       } label: {
         PhotoTitleTile(
-          assetId: nil, title: "Recently Saved",
+          assetId: loader.recentCoverId, title: "Recently Saved",
           subtitle: loader.counts.map { "\($0.recents)" })
       }
       .buttonStyle(.plain)
@@ -374,7 +397,7 @@ struct CollectionsView: View {
             NavigationLink {
               SpaceDetailView(spaceId: space.id).environmentObject(session)
             } label: {
-              PhotoTitleTile(assetId: nil, title: space.name)
+              PhotoTitleTile(assetId: spaceCovers[space.id], title: space.name)
             }
             .buttonStyle(.plain)
             .frame(width: 160)
@@ -384,7 +407,7 @@ struct CollectionsView: View {
             NavigationLink {
               LibraryDetailView(library: library).environmentObject(session)
             } label: {
-              PhotoTitleTile(assetId: nil, title: library.name, subtitle: "External")
+              PhotoTitleTile(assetId: libraryCovers[library.id], title: library.name, subtitle: "External")
             }
             .buttonStyle(.plain)
             .frame(width: 160)
