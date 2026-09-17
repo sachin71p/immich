@@ -43,6 +43,7 @@ final class PhotoGridViewController: UIViewController {
   private var lastFiredRange: String = ""
   private var lastScrubSection = -1
   private var firstPaintFired = false
+  private var didApplyNonEmpty = false
   private var lastSummaryUpdate = Date.distantPast
   private var scroller: FastScroller!
   private let perfLabel = UILabel()
@@ -53,15 +54,20 @@ final class PhotoGridViewController: UIViewController {
   /// identical sync re-queries are a no-op here. Never tears the grid down.
   func applySnapshot(_ snapshot: GridSnapshot, animating: Bool = true) {
     guard snapshot.generation != appliedGeneration else { return }
+    monitor?.currentPhase = "apply"
     appliedGeneration = snapshot.generation
     currentSnapshot = snapshot
+    // Animated diffs of thousands of items wedge the main thread for minutes (the
+    // 100k first paint never finished): animate only small updates to a live grid.
+    let animated = animating && didApplyNonEmpty && snapshot.allIds.count <= 2000
     let start = Date()
     var diff = NSDiffableDataSourceSnapshot<String, String>()
     for section in snapshot.sections {
       diff.appendSections([section.key])
       diff.appendItems(section.ids, toSection: section.key)
     }
-    dataSource.apply(diff, animatingDifferences: animating)
+    dataSource.apply(diff, animatingDifferences: animated)
+    if !snapshot.isEmpty { didApplyNonEmpty = true }
     monitor?.snapshotApplyMs = Date().timeIntervalSince(start) * 1000
     restoreSelection()
     pageVisibleRows()
@@ -147,6 +153,7 @@ final class PhotoGridViewController: UIViewController {
 
   /// In-place visible-cell refresh for flag-only updates (same snapshot generation).
   func reconfigureVisibleRows() {
+    monitor?.currentPhase = "reconfigure"
     for indexPath in collectionView.indexPathsForVisibleItems {
       guard let id = dataSource.itemIdentifier(for: indexPath),
         let cell = collectionView.cellForItem(at: indexPath) as? PhotoGridCell
@@ -225,11 +232,14 @@ final class PhotoGridViewController: UIViewController {
     scroller.onScrub = { [weak self] fraction in self?.scrubToFraction(fraction) }
     view.addSubview(scroller)
 
-    // Perf-gate hook: a 1px label carrying the stall summary for the UI test.
+    // Perf-gate hook: a 1px label carrying the stall summary for the UI test. The
+    // summary goes in `text` (what XCUI `value` returns for static texts) as well as
+    // `accessibilityValue` — value-only was invisible to the test harness.
     perfLabel.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
     perfLabel.alpha = 0.01
     perfLabel.isAccessibilityElement = true
     perfLabel.accessibilityIdentifier = "grid-perf-summary"
+    perfLabel.text = "idle"
     perfLabel.accessibilityValue = "idle"
     view.addSubview(perfLabel)
     if GridStallMonitor.runsInThisProcess {
@@ -285,6 +295,7 @@ final class PhotoGridViewController: UIViewController {
   // MARK: - cells
 
   private func configure(_ cell: PhotoGridCell, id: String) {
+    monitor?.currentPhase = "configure"
     let row = rowProvider?(id)
     let flags = flagsProvider?(id) ?? []
     cell.configureBadges(row: row, flags: flags)
@@ -361,10 +372,20 @@ final class PhotoGridViewController: UIViewController {
       let firstId = dataSource.itemIdentifier(for: first),
       let lastId = dataSource.itemIdentifier(for: last)
     else { return }
-    let key = "\(firstId)->\(lastId)"
+    // Day-granularity key: the subtitle shows a date range, so per-id changes inside
+    // the same days must not invalidate SwiftUI (a fling would re-render dozens of
+    // times per second for an identical subtitle).
+    let firstDate = dateProvider?(firstId)
+    let lastDate = dateProvider?(lastId)
+    let key = "\(dayIndex(firstDate))-\(dayIndex(lastDate))"
     guard key != lastFiredRange else { return }
     lastFiredRange = key
-    onVisibleRange?(dateProvider?(firstId), dateProvider?(lastId))
+    onVisibleRange?(firstDate, lastDate)
+  }
+
+  private func dayIndex(_ date: Date?) -> Int {
+    guard let date else { return Int.min }
+    return Int(date.timeIntervalSince1970 / 86_400)
   }
 
   private func updateScroller() {
@@ -404,7 +425,17 @@ final class PhotoGridViewController: UIViewController {
     let now = Date()
     guard force || now.timeIntervalSince(lastSummaryUpdate) > 0.5 else { return }
     lastSummaryUpdate = now
-    perfLabel.accessibilityValue = monitor.summary()
+    let summary = monitor.summary()
+    perfLabel.text = summary
+    perfLabel.accessibilityValue = summary
+    // Nudge the AX tree so test reads see the new value instead of a cached one —
+    // but never mid-fling: the post makes the AX server re-snapshot a 110k-item
+    // tree against the main thread, the very stalls this hook measures. The test
+    // only reads at settle and final (quiescent), where force posts still fire.
+    // The monitor (and this hook) exist only under `-gridPerfRun`, never in production.
+    if force || (!collectionView.isDragging && !collectionView.isDecelerating) {
+      UIAccessibility.post(notification: .layoutChanged, argument: perfLabel)
+    }
   }
 
   // MARK: - actions
@@ -465,6 +496,7 @@ extension PhotoGridViewController: UICollectionViewDelegate {
   }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    monitor?.currentPhase = "scroll"
     updateScroller()
     updatePerfSummary()
     // Keep prefetch work to the visible window as it moves.
@@ -491,15 +523,26 @@ extension PhotoGridViewController: UICollectionViewDelegate {
 
 extension PhotoGridViewController: UICollectionViewDataSourcePrefetching {
   func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
-    // Priority by visibility: nearest to the viewport center first.
-    let centerY = collectionView.contentOffset.y + collectionView.bounds.height / 2
+    monitor?.currentPhase = "prefetch"
+    // Priority by visibility using index distance only — never `layoutAttributesForItem`
+    // (layout resolution per path costs milliseconds under fling volume). Fan-out is
+    // capped: the pipeline dedups and the next event re-prioritizes anyway.
+    let visible = collectionView.indexPathsForVisibleItems
+    let edge = visible.max()
     let ids = indexPaths
-      .compactMap { path -> (String, CGFloat)? in
+      .compactMap { path -> (String, Int)? in
         guard let id = dataSource.itemIdentifier(for: path) else { return nil }
-        let y = collectionView.layoutAttributesForItem(at: path)?.frame.midY ?? centerY
-        return (id, abs(y - centerY))
+        let distance: Int
+        if let edge {
+          distance =
+            abs(path.section - edge.section) * 10_000 + abs(path.item - edge.item)
+        } else {
+          distance = 0
+        }
+        return (id, distance)
       }
       .sorted { $0.1 < $1.1 }
+      .prefix(60)
       .map(\.0)
     guard !ids.isEmpty else { return }
     let missing = ids.filter { rowProvider?($0) == nil }

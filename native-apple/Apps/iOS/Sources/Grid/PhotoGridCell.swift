@@ -93,16 +93,29 @@ final class PhotoGridCell: UICollectionViewCell {
     durationLabel.frame = CGRect(x: bounds.width - 55, y: bounds.height - 20, width: 51, height: 15)
     sharedView.frame = CGRect(x: bounds.width - 21, y: 5, width: 16, height: 13)
     selectBadge.frame = CGRect(x: bounds.width - 27, y: bounds.height - 27, width: 22, height: 22)
+    // Explicit shadow paths: layer shadows without a path force an offscreen render
+    // pass per badge per frame while scrolling.
+    heartView.layer.shadowPath = CGPath(rect: heartView.bounds, transform: nil)
+    sharedView.layer.shadowPath = CGPath(rect: sharedView.bounds, transform: nil)
   }
 
   override var isSelected: Bool {
     didSet { updateSelectionVisuals() }
   }
 
-  // Shared symbol configs — built once, never per cell configuration.
+  // Shared symbol images — rasterized once, never per cell configuration. A fling
+  // materializes dozens of cells in one runloop turn; per-cell `UIImage(systemName:)`
+  // creation summed to ~105 ms main-thread bursts.
   private static let heartConfig = UIImage.SymbolConfiguration(pointSize: 13)
   private static let sharedConfig = UIImage.SymbolConfiguration(pointSize: 12)
   private static let selectConfig = UIImage.SymbolConfiguration(pointSize: 20)
+  private static let heartImage = UIImage(systemName: "heart.fill", withConfiguration: heartConfig)
+  private static let sharedImage = UIImage(
+    systemName: "person.2.fill", withConfiguration: sharedConfig)
+  private static let circleImage = UIImage(
+    systemName: "circle", withConfiguration: selectConfig)
+  private static let checkImage = UIImage(
+    systemName: "checkmark.circle.fill", withConfiguration: selectConfig)
 
   /// Edit-mode affordance: every cell shows an empty circle, selected cells a filled
   /// check plus a light dim (spec `device-native-09`).
@@ -110,9 +123,7 @@ final class PhotoGridCell: UICollectionViewCell {
     isEditingMode = editing
     if editing {
       selectBadge.isHidden = false
-      selectBadge.image = UIImage(
-        systemName: selected ? "checkmark.circle.fill" : "circle",
-        withConfiguration: Self.selectConfig)
+      selectBadge.image = selected ? Self.checkImage : Self.circleImage
     } else {
       selectBadge.isHidden = true
     }
@@ -128,9 +139,7 @@ final class PhotoGridCell: UICollectionViewCell {
     dimView.isHidden = !(isEditingMode && isSelected)
     if isEditingMode {
       selectBadge.isHidden = false
-      selectBadge.image = UIImage(
-        systemName: isSelected ? "checkmark.circle.fill" : "circle",
-        withConfiguration: Self.selectConfig)
+      selectBadge.image = isSelected ? Self.checkImage : Self.circleImage
     }
   }
 
@@ -140,7 +149,7 @@ final class PhotoGridCell: UICollectionViewCell {
   func configureBadges(row: TimelineRow?, flags: PhotosLocalStore.TimelineIndexFlags) {
     if row?.isFavorite == true {
       heartView.isHidden = false
-      heartView.image = UIImage(systemName: "heart.fill", withConfiguration: Self.heartConfig)
+      heartView.image = Self.heartImage
     } else {
       heartView.isHidden = true
       heartView.image = nil
@@ -154,8 +163,7 @@ final class PhotoGridCell: UICollectionViewCell {
     }
     if flags.contains(.sharedContainer) {
       sharedView.isHidden = false
-      sharedView.image = UIImage(
-        systemName: "person.2.fill", withConfiguration: Self.sharedConfig)
+      sharedView.image = Self.sharedImage
     } else {
       sharedView.isHidden = true
       sharedView.image = nil
@@ -175,20 +183,44 @@ final class PhotoGridCell: UICollectionViewCell {
     thumbView.image = cache.image(for: id)
     photoView.image = nil
     let stub = gridStubAsset(id: id, row: row)
-    if FixtureArtwork.isFixtureAsset(id) {
-      if let art = FixtureArtwork.image(for: stub),
-        let cgImage = art.cgImage
-      {
-        // Warm every tier through the real pipeline path (covers + viewer read these).
-        pipeline?.memory.store(cgImage, id: id, tier: .thumbnail, edited: false)
-        pipeline?.memory.store(cgImage, id: id, tier: .preview, edited: false)
-        pipeline?.memory.store(cgImage, id: id, tier: .fullsize, edited: false)
-        photoView.image = art
+    guard let pipeline else {
+      // No pipeline (previews): fixture art below needs it only for cache warming.
+      if FixtureArtwork.isFixtureAsset(id) {
+        workTask = Task { [weak self] in
+          let art = await Task.detached(priority: .userInitiated) {
+            FixtureArtwork.image(for: stub)
+          }.value
+          guard let self, self.representedId == id, !Task.isCancelled else { return }
+          self.photoView.image = art
+        }
       }
       return
     }
-    guard let pipeline else { return }
+    // `MediaMemoryCache` is NSCache-backed and thread-safe: read it here on the
+    // main thread so only the Sendable cache crosses the detached boundary below.
+    let memory = pipeline.memory
     workTask = Task { [weak self] in
+      // Fixture assets render generated art without network — off-main like every
+      // other decode (synchronous renders here stalled first-swipe by ~110 ms).
+      if FixtureArtwork.isFixtureAsset(id) {
+        let art = await Task.detached(priority: .userInitiated) {
+          FixtureArtwork.image(for: stub)
+        }.value
+        guard let self, self.representedId == id, !Task.isCancelled else { return }
+        if let art, let cgImage = art.cgImage {
+          // Warm every tier through the real pipeline path (covers + viewer read
+          // these) off the main thread: a fling lands hundreds of completions per
+          // second and the triple store showed up as steady-state scroll stalls.
+          await Task.detached(priority: .utility) {
+            memory.store(cgImage, id: id, tier: .thumbnail, edited: false)
+            memory.store(cgImage, id: id, tier: .preview, edited: false)
+            memory.store(cgImage, id: id, tier: .fullsize, edited: false)
+          }.value
+          guard self.representedId == id, !Task.isCancelled else { return }
+          self.photoView.image = art
+        }
+        return
+      }
       if self?.thumbView.image == nil {
         let thumb = await cache.decode(id: id, thumbhash: row?.thumbhash)
         guard let self, self.representedId == id, !Task.isCancelled else { return }

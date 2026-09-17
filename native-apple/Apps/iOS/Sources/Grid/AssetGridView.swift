@@ -1,3 +1,4 @@
+import Combine
 import CoreModel
 import LocalStore
 import Media
@@ -152,8 +153,27 @@ private struct GridBridge: UIViewControllerRepresentable {
   var onVisibleRange: ((Date?, Date?) -> Void)?
   var showsSectionHeaders: Bool
 
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  /// Owns the loader→VC subscription (lives with the representable, dies with it).
+  final class Coordinator {
+    var snapshotCancellable: AnyCancellable?
+  }
+
   func makeUIViewController(context: Context) -> PhotoGridViewController {
     let vc = PhotoGridViewController()
+    // First-paint delivery must not depend on SwiftUI's async update pass alone: a
+    // published snapshot whose update never ran left the 100k grid empty until the
+    // test timed out (nothing re-renders a quiescent grid). The Combine sink applies
+    // synchronously on publish, on the main thread; the generation guard inside
+    // applySnapshot dedupes against updateUIViewController.
+    context.coordinator.snapshotCancellable = loader.$snapshot.sink { [weak vc] snapshot in
+      // The sink replays the current (empty) snapshot at subscribe time, before the
+      // view loads and the data source exists — skip until then; updateUIViewController
+      // applies whatever is current once the view is up.
+      guard let vc, vc.isViewLoaded else { return }
+      vc.applySnapshot(snapshot, animating: true)
+    }
     // The route provider captures the VC's immutable snapshot value (Sendable), never
     // the loader — no per-tap array copy, no actor hop.
     vc.onTap = { [weak vc, onOpen] id in

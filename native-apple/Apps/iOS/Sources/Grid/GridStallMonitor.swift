@@ -14,6 +14,12 @@ final class GridStallMonitor: @unchecked Sendable {
   private var _stalls = 0
   private var _maxStallMs: Double = 0
   private var _pings = 0
+  /// "ping:phase" per stall (capped) — the test windows these against warmup; the
+  /// phase names the main-thread work item running when the stall fired (triage).
+  private var _stallMarks: [String] = []
+  /// Set (main thread only) at the entry of each grid hot path. Read racily by the
+  /// watchdog — attribution, not accounting.
+  nonisolated(unsafe) var currentPhase = "boot"
   private var running = false
 
   /// Latest loader/layout timings (set from the main actor; read under lock).
@@ -43,7 +49,8 @@ final class GridStallMonitor: @unchecked Sendable {
       let done = DispatchSemaphore(value: 0)
       DispatchQueue.main.async { done.signal() }
       // 20 ms cadence: a healthy main thread answers in ~0 ms; anything past 100 ms is
-      // a stall the gate counts.
+      // a stall the gate counts. Each stall records its ping index so the UI test can
+      // separate warmup (shader compile, first-window paging) from steady-state scroll.
       let outcome = done.wait(timeout: .now() + .milliseconds(100))
       let latencyMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
       lock.withLock {
@@ -51,6 +58,7 @@ final class GridStallMonitor: @unchecked Sendable {
         if outcome == .timedOut {
           _stalls += 1
           _maxStallMs = max(_maxStallMs, latencyMs)
+          if _stallMarks.count < 50 { _stallMarks.append("\(_pings):\(currentPhase)") }
         } else {
           _maxStallMs = max(_maxStallMs, min(latencyMs, 100))
         }
@@ -63,6 +71,7 @@ final class GridStallMonitor: @unchecked Sendable {
     lock.withLock {
       var parts = [
         "stalls=\(_stalls)", String(format: "maxStall=%.0fms", _maxStallMs), "pings=\(_pings)",
+        "marks=\(_stallMarks.joined(separator: ","))",
       ]
       if let first = firstPaintMs { parts.append(String(format: "firstPaint=%.0fms", first)) }
       parts.append(String(format: "gridLoad=%.0fms", gridLoadMs))
