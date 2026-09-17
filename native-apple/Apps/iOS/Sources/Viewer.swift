@@ -81,6 +81,7 @@ struct ZoomableImageView: UIViewRepresentable {
 struct ViewerPage: View {
   @EnvironmentObject var session: AppSession
   var assetId: String
+  var onSingleTap: (() -> Void)? = nil
   var onTrim: (Asset) -> Void = { _ in }
 
   @State private var asset: Asset?
@@ -92,10 +93,12 @@ struct ViewerPage: View {
       Color.black.ignoresSafeArea()
       if let asset, asset.type == .video {
         VideoPage(asset: asset, onTrim: onTrim)
+          .onTapGesture { onSingleTap?() }
       } else if let asset, let motionId = asset.livePhotoVideoId {
         LivePhotoPageView(asset: asset, motionAssetId: motionId)
+          .onTapGesture { onSingleTap?() }
       } else if let image {
-        ZoomableImageView(image: image, analysis: liveText)
+        ZoomableImageView(image: image, analysis: liveText, onSingleTap: onSingleTap)
       } else {
         ProgressView()
           .tint(.white)
@@ -148,38 +151,75 @@ struct ViewerPage: View {
 
 // MARK: - viewer (brief task 4)
 
-/// Full-screen viewer: horizontal paging, progressive tiers, swipe-down dismiss with the grid
-/// behind it, swipe-up info panel, and a permission-gated toolbar (brief task 9).
+/// Full-screen viewer: UIKit paging over a `ViewerRoute` (O(1) open), progressive tiers,
+/// swipe-down dismiss with the grid behind it, swipe-up info panel, and a
+/// permission-gated toolbar (brief task 9).
 struct ViewerView: View {
   @EnvironmentObject var session: AppSession
-  var ids: [String]
-  var initialId: String?
+  private let route: ViewerRoute?
 
+  @State private var ids: [String]
+  @State private var currentIndex: Int
   @State private var currentId: String?
   @State private var asset: Asset?
+  @State private var showChrome = true
   @State private var showInfo = false
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
   @State private var showEdit = false
   @State private var editPreview: UIImage?
   @State private var actionError: String?
+  @State private var openMs: Double?
   @Environment(\.dismiss) private var dismiss
+  private let openStart = Date()
+
+  /// Legacy entry: fixed id list (Library/Search/Collections/Spaces/Albums call sites).
+  init(ids: [String], initialId: String?) {
+    self.route = nil
+    _ids = State(initialValue: ids)
+    let start = initialId ?? ids.first
+    _currentId = State(initialValue: start)
+    _currentIndex = State(initialValue: ids.firstIndex(of: start ?? "") ?? 0)
+  }
+
+  /// WP1 contract entry: index provider plus start id — resolved once on open, never an
+  /// array copy per tap or per SwiftUI update.
+  init(route: ViewerRoute) {
+    self.route = route
+    _ids = State(initialValue: [])
+    _currentId = State(initialValue: route.startId)
+    _currentIndex = State(initialValue: 0)
+  }
 
   var body: some View {
     NavigationStack {
       ZStack {
         Color.black.ignoresSafeArea()
-        TabView(selection: $currentId) {
-          ForEach(ids, id: \.self) { id in
-            ViewerPage(assetId: id, onTrim: { openEdit($0) })
-              .tag(id as String?)
-          }
+        if ids.isEmpty {
+          ProgressView()
+            .tint(.white)
+            .accessibilityIdentifier("viewer-loading")
+        } else {
+          ViewerPager(
+            ids: ids, session: session, currentIndex: $currentIndex,
+            onSingleTap: { showChrome.toggle() },
+            onDismiss: { dismiss() })
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .accessibilityIdentifier("viewer-pager")
+        // UI-test hooks (hidden): page position and open latency.
+        Text("\(min(currentIndex + 1, max(ids.count, 1))) of \(ids.count)")
+          .accessibilityIdentifier("viewer-page-index")
+          .opacity(0)
+          .allowsHitTesting(false)
+        if let openMs {
+          Text("openMs=\(String(format: "%.0f", openMs))")
+            .accessibilityIdentifier("viewer-open-summary")
+            .opacity(0)
+            .allowsHitTesting(false)
+        }
       }
       .navigationTitle("")
       .navigationBarTitleDisplayMode(.inline)
+      .toolbar(showChrome ? .visible : .hidden, for: .navigationBar, .bottomBar)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button { dismiss() } label: { Label("Close", systemImage: "xmark") }
@@ -230,15 +270,30 @@ struct ViewerView: View {
         Text(actionError ?? "")
       }
       .task(id: currentId) { await reloadAsset() }
-      .onAppear { currentId = initialId ?? ids.first }
-      // Swipe-down dismiss (brief task 4): a fast downward drag closes the viewer.
-      .gesture(
-        DragGesture()
-          .onEnded { value in
-            if value.translation.height > 140 && abs(value.translation.width) < 80 {
-              dismiss()
-            }
-          })
+      // Route entry resolves its ids once, inside the ViewerOpen signpost (the route
+      // is Sendable; the asset load below stays on the main actor). The legacy entry
+      // already has its list.
+      .task {
+        if let route, ids.isEmpty {
+          let pending = route
+          let resolved = HeirloomSignpost.interval(HeirloomSignpost.viewerOpen) {
+            pending.resolveIds()
+          }
+          ids = resolved
+          currentIndex = resolved.firstIndex(of: pending.startId) ?? 0
+        }
+        await reloadAsset()
+        if openMs == nil {
+          openMs = Date().timeIntervalSince(openStart) * 1000
+        }
+      }
+      // The pager owns the index: swipes report back through the binding, and the
+      // toolbar asset follows.
+      .onChange(of: currentIndex) { _, index in
+        if ids.indices.contains(index) {
+          currentId = ids[index]
+        }
+      }
     }
   }
 
@@ -455,6 +510,7 @@ struct ViewerInfoPanel: View {
   @State private var exif: AssetExif?
   @State private var people: [Person] = []
   @State private var albumNames: [String] = []
+  @Environment(\.dismiss) private var dismiss
 
   var body: some View {
     NavigationStack {
@@ -511,6 +567,11 @@ struct ViewerInfoPanel: View {
       }
       .navigationTitle("Info")
       .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
       .task {
         guard let store = session.store else { return }
         exif = try? await store.exif(for: asset.id)

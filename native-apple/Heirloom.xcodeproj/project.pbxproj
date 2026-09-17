@@ -94,6 +94,7 @@
 		B63C1150C2B471CE7C7BA00F /* Search in Frameworks */ = {isa = PBXBuildFile; productRef = 3A6164A7A7F48AE42AE1D9C5 /* Search */; };
 		BB8AFB92998483F7105D6AE1 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500F5A4905443D3A3CF04B9A /* SharedContainer.swift */; };
 		BC2215C8BF65688DA4298B47 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 85CFCE58FBB95FEC2EF1800C /* LocalStore */; };
+		BDE3988953DD862B5FA0BAA4 /* ViewerPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0364F98EC3A3B2999C136AE8 /* ViewerPager.swift */; };
 		C01CDF31C9D4498BC443A056 /* MacAllAlbumsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 087CC5923156A206E813BA60 /* MacAllAlbumsView.swift */; };
 		C30A28B0EEA9BC9DAE5F2E56 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 2C468586827D06DB7DBFB36A /* LocalStore */; };
 		C58688346D8899529D46D329 /* MacMemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */; };
@@ -156,6 +157,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0364F98EC3A3B2999C136AE8 /* ViewerPager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerPager.swift; sourceTree = "<group>"; };
 		0432689A5916D5706386B8C5 /* Heirloom-BackgroundUpload.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-BackgroundUpload.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		087CC5923156A206E813BA60 /* MacAllAlbumsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAllAlbumsView.swift; sourceTree = "<group>"; };
 		08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCollectionGridView.swift; sourceTree = "<group>"; };
@@ -490,6 +492,7 @@
 				4BFC85FFBA7579C03CE7BAE6 /* Viewer.swift */,
 				683549FBD7B58A52DC3C7CF5 /* Grid */,
 				AE5AC37478A7488803456FDF /* Library */,
+				D398B19AF109C2089750E934 /* Viewer */,
 			);
 			name = Sources;
 			path = Apps/iOS/Sources;
@@ -548,6 +551,14 @@
 			);
 			name = Sources;
 			path = Apps/macOS/Sources;
+			sourceTree = "<group>";
+		};
+		D398B19AF109C2089750E934 /* Viewer */ = {
+			isa = PBXGroup;
+			children = (
+				0364F98EC3A3B2999C136AE8 /* ViewerPager.swift */,
+			);
+			path = Viewer;
 			sourceTree = "<group>";
 		};
 		D8B643938B68CF6D98D144FE = {
@@ -1052,6 +1063,7 @@
 				CFE6D0BD60A82F54DDE04E44 /* Spaces.swift in Sources */,
 				82D97B8E9E022D5AFA2E6E7E /* ThumbhashCache.swift in Sources */,
 				E285774554AF518271B4AD20 /* Viewer.swift in Sources */,
+				BDE3988953DD862B5FA0BAA4 /* ViewerPager.swift in Sources */,
 				9830135D974E63A6479AC3CC /* ViewerRoute.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
