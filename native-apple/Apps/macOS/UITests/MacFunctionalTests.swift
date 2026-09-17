@@ -15,7 +15,7 @@ final class MacFunctionalTests: XCTestCase {
     app = XCUIApplication()
     // Same fresh-state guard as MacSmokeTests: a previous run's restored window races
     // the fixture-seeded content on repeat launches within one test session.
-    app.launchArguments = ["--fixture-seed", "-ApplePersistenceIgnoreState", "YES"]
+    app.launchArguments = ["--fixture-seed", "--ui-testing", "-ApplePersistenceIgnoreState", "YES"]
   }
 
   override func tearDown() {
@@ -34,7 +34,7 @@ final class MacFunctionalTests: XCTestCase {
   }
 
   private func launchAndWaitForLibrary() {
-    app.launch()
+    app.launchForUIAutomation()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(el("sidebar").waitForExistence(timeout: 30), "sidebar renders")
     XCTAssertTrue(el("asset-grid").waitForExistence(timeout: 30), "grid renders")

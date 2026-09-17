@@ -164,7 +164,10 @@ struct MacLibraryBrowser: View {
     .task {
       // The timeline is local-first, but a newly opened desktop app must initiate the first
       // server stream rather than silently presenting a stale cache as a finished library.
-      guard !didRequestInitialSync, state.isConnected else { return }
+      // The fixture world deliberately uses fixture.invalid and has no server.  It is
+      // already fully seeded locally, so an initial sync can only produce a misleading
+      // DNS-error toast during UI tests.
+      guard !isFixtureSeeded, !didRequestInitialSync, state.isConnected else { return }
       didRequestInitialSync = true
       await state.syncNow()
     }

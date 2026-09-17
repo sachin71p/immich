@@ -1,6 +1,36 @@
 import AppKit
 import SwiftUI
 
+/// XCUITest launches the app from a background test-runner process.  On some macOS
+/// versions the initial SwiftUI window is created minimized instead of becoming key,
+/// even though the application process has started.  Make the test-only launch mode
+/// perform the same unminimize + foreground sequence as a Dock click.
+@MainActor
+private enum MacUITestWindowPresenter {
+  static var isEnabled: Bool {
+    CommandLine.arguments.contains("--ui-testing")
+  }
+
+  static func presentInitialWindow() {
+    guard isEnabled else { return }
+
+    // The SwiftUI scene creates its NSWindow just after its content appears.  Deferring
+    // one turn ensures it is available before we ask AppKit to bring it forward.
+    DispatchQueue.main.async {
+      let windows = NSApp.windows
+      guard !windows.isEmpty else { return }
+
+      NSApp.activate(ignoringOtherApps: true)
+      for window in windows {
+        if window.isMiniaturized {
+          window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+      }
+    }
+  }
+}
+
 /// WP4 quit guard (Step 2): sheets hold no unsaved data, so ⌘Q / AppleScript quit is
 /// immediate — except while a move or upload is in flight, when the user confirms.
 /// `pendingUploads` is a best-known cache (enqueue sites refresh it); the delegate
@@ -83,6 +113,9 @@ struct HeirloomMacOSApp: App {
       // Attached to the stable `Group`, not `ProgressView()`: once `state` becomes non-nil
       // this branch swaps to MacMainView/MacConnectView, which would tear down and cancel
       // a `.task` scoped to `ProgressView()` mid-await (CancellationError from `seedForSmoke`).
+      .onAppear {
+        MacUITestWindowPresenter.presentInitialWindow()
+      }
       .task {
         state = Self.launchState()
         // The delegate only needs the store for the quit-time pending-upload recheck.
