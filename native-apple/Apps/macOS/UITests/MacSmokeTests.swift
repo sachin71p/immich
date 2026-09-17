@@ -12,7 +12,19 @@ final class MacSmokeTests: XCTestCase {
     app = XCUIApplication()
     // Prevent AppKit from restoring a previous run's saved window state, which otherwise
     // races the fresh fixture-seeded content on repeat launches within one test session.
-    app.launchArguments = ["--fixture-seed", "-ApplePersistenceIgnoreState", "YES"]
+    // T0: the sized small fixture (~2k rows) + no-animation contract flag.
+    app.launchArguments = [
+      "--fixture-seed", "-HeirloomFixture", "small", "-HeirloomUITestNoAnimation",
+      "-ApplePersistenceIgnoreState", "YES",
+    ]
+  }
+
+  /// Menu-bar items are label lookups (AX ids arrive with WP-C); always wait for
+  /// them instead of clicking blind — the menu tree populates asynchronously.
+  private func menuItem(_ title: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+    let item = app.menuBars.menuItems[title]
+    XCTAssertTrue(item.waitForExistence(timeout: 10), "menu item \(title)", file: file, line: line)
+    return item
   }
 
   /// Sidebar + grid render from the fixture DB.
@@ -48,8 +60,8 @@ final class MacSmokeTests: XCTestCase {
 
     // Toolbar: zoom slider, Years/Months/All segmented control, library switcher.
     XCTAssertTrue(app.descendants(matching: .any)["zoom-slider"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.descendants(matching: .any)["grouping-segmented"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["grouping-segmented"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].waitForExistence(timeout: 10))
   }
 
   /// Keyboard selection (⌘A) then Move to… lists the allowed targets (AP-04: move sheet
@@ -68,7 +80,7 @@ final class MacSmokeTests: XCTestCase {
     app.typeKey("a", modifierFlags: .command)
 
     // Move sheet via the Image menu (menus own the shortcut — MacMenus).
-    app.menuBars.menuItems["Move to…"].click()
+    menuItem("Move to…").click()
 
     let sheet = app.descendants(matching: .any)["move-sheet-title"]
     XCTAssertTrue(sheet.waitForExistence(timeout: 10), "move sheet opens for the selection")
@@ -88,8 +100,11 @@ final class MacSmokeTests: XCTestCase {
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(app.descendants(matching: .any)["asset-grid"].waitForExistence(timeout: 30))
 
+    XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].waitForExistence(timeout: 10))
     app.descendants(matching: .any)["library-switcher"].click()
-    app.menuItems["Family"].click()
+    let family = app.menuItems["Family"]
+    XCTAssertTrue(family.waitForExistence(timeout: 10))
+    family.click()
 
     // Space-scoped: space assets render; the personal asset is gone.
     XCTAssertTrue(

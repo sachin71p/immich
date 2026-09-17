@@ -15,7 +15,11 @@ final class MacFunctionalTests: XCTestCase {
     app = XCUIApplication()
     // Same fresh-state guard as MacSmokeTests: a previous run's restored window races
     // the fixture-seeded content on repeat launches within one test session.
-    app.launchArguments = ["--fixture-seed", "-ApplePersistenceIgnoreState", "YES"]
+    // T0: the sized small fixture (~2k rows) + no-animation contract flag.
+    app.launchArguments = [
+      "--fixture-seed", "-HeirloomFixture", "small", "-HeirloomUITestNoAnimation",
+      "-ApplePersistenceIgnoreState", "YES",
+    ]
   }
 
   override func tearDown() {
@@ -55,6 +59,24 @@ final class MacFunctionalTests: XCTestCase {
     app.descendants(matching: .any).matching(
       NSPredicate(format: "identifier BEGINSWITH %@", "grid-cell-")
     ).count
+  }
+
+  /// Menu-bar and sheet controls are label lookups (AX ids arrive with WP-C);
+  /// always wait for them instead of clicking blind — T0 flake fix.
+  @discardableResult
+  private func menuItem(_ title: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+    // firstMatch: "Delete" exists in both the Edit menu and the context-menu
+    // surface; the menu-bar instance is the one the suite drives.
+    let item = app.menuBars.menuItems[title].firstMatch
+    XCTAssertTrue(item.waitForExistence(timeout: 10), "menu item \(title)", file: file, line: line)
+    item.click()
+    return item
+  }
+
+  private func sheetButton(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
+    let button = app.sheets.buttons[title]
+    XCTAssertTrue(button.waitForExistence(timeout: 10), "sheet button \(title)", file: file, line: line)
+    button.click()
   }
 
   // MARK: - Step 3: destinations + resolved titles
@@ -106,21 +128,21 @@ final class MacFunctionalTests: XCTestCase {
     XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
     firstCell.click()
     app.typeKey("a", modifierFlags: .command)
-    app.menuBars.menuItems["Move to…"].click()
+    menuItem("Move to…")
     XCTAssertTrue(el("move-sheet-title").waitForExistence(timeout: 10), "move sheet opens")
 
     // Cancel closes.
-    app.sheets.buttons["Cancel"].click()
+    sheetButton("Cancel")
     assertClosed("move-sheet-title", "move sheet Cancel closes")
 
     // Escape closes.
-    app.menuBars.menuItems["Move to…"].click()
+    menuItem("Move to…")
     XCTAssertTrue(el("move-sheet-title").waitForExistence(timeout: 10), "move sheet reopens")
     app.typeKey(.escape, modifierFlags: [])
     assertClosed("move-sheet-title", "move sheet Escape closes")
 
     // ⌘Q quits with the sheet open (no in-progress guard in fixture mode).
-    app.menuBars.menuItems["Move to…"].click()
+    menuItem("Move to…")
     XCTAssertTrue(el("move-sheet-title").waitForExistence(timeout: 10), "move sheet reopens")
     app.typeKey("q", modifierFlags: .command)
     XCTAssertTrue(app.wait(for: .notRunning, timeout: 15), "⌘Q quits with sheet open")
@@ -136,7 +158,7 @@ final class MacFunctionalTests: XCTestCase {
     assertClosed("new-space-name", "new-space Escape closes")
     el("sidebar-new-space").click()
     XCTAssertTrue(el("new-space-name").waitForExistence(timeout: 10), "new-space sheet reopens")
-    app.sheets.buttons["Cancel"].click()
+    sheetButton("Cancel")
     assertClosed("new-space-name", "new-space Cancel closes")
   }
 
@@ -144,7 +166,7 @@ final class MacFunctionalTests: XCTestCase {
     launchAndWaitForLibrary()
     el("sidebar-new-album").click()
     XCTAssertTrue(el("new-album-name").waitForExistence(timeout: 10), "new-album sheet opens")
-    app.sheets.buttons["Cancel"].click()
+    sheetButton("Cancel")
     assertClosed("new-album-name", "new-album Cancel closes")
     el("sidebar-new-album").click()
     XCTAssertTrue(el("new-album-name").waitForExistence(timeout: 10), "new-album sheet reopens")
@@ -157,12 +179,12 @@ final class MacFunctionalTests: XCTestCase {
     let firstCell = el("grid-cell-asset-personal-1")
     XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
     firstCell.click()
-    app.menuBars.menuItems["Add to Album…"].click()
+    menuItem("Add to Album…")
     XCTAssertTrue(
       el("add-to-album-album-trip").waitForExistence(timeout: 10), "add-to-album sheet opens")
-    app.sheets.buttons["Cancel"].click()
+    sheetButton("Cancel")
     assertClosed("add-to-album-album-trip", "add-to-album Cancel closes")
-    app.menuBars.menuItems["Add to Album…"].click()
+    menuItem("Add to Album…")
     XCTAssertTrue(
       el("add-to-album-album-trip").waitForExistence(timeout: 10), "add-to-album sheet reopens")
     app.typeKey(.escape, modifierFlags: [])
@@ -176,7 +198,7 @@ final class MacFunctionalTests: XCTestCase {
     el("space-manage-button").click()
     XCTAssertTrue(el("space-save").waitForExistence(timeout: 10), "manage sheet opens")
     // Done carries `.cancelAction` (closes without saving); Escape does the same.
-    app.sheets.buttons["Done"].click()
+    sheetButton("Done")
     assertClosed("space-save", "manage Done closes")
     el("space-manage-button").click()
     XCTAssertTrue(el("space-save").waitForExistence(timeout: 10), "manage sheet reopens")
@@ -186,13 +208,13 @@ final class MacFunctionalTests: XCTestCase {
 
   func testCameraImportSheetDismisses() {
     launchAndWaitForLibrary()
-    app.menuBars.menuItems["Import from Camera…"].click()
+    menuItem("Import from Camera…")
     XCTAssertTrue(
       app.sheets.element(boundBy: 0).waitForExistence(timeout: 10), "camera sheet opens")
     // Done carries `.cancelAction` in both the device and the no-device layouts.
-    app.sheets.buttons["Done"].click()
+    sheetButton("Done")
     XCTAssertEqual(app.sheets.count, 0, "camera Done closes")
-    app.menuBars.menuItems["Import from Camera…"].click()
+    menuItem("Import from Camera…")
     XCTAssertTrue(
       app.sheets.element(boundBy: 0).waitForExistence(timeout: 10), "camera sheet reopens")
     app.typeKey(.escape, modifierFlags: [])
@@ -225,8 +247,10 @@ final class MacFunctionalTests: XCTestCase {
     XCTAssertTrue(
       el("grid-cell-asset-space-shot").waitForExistence(timeout: 10),
       "second favorited item in Favorites")
-    // personal-1 ships favorited in the seed: exactly 3 cells, no reload involved.
-    XCTAssertEqual(gridCellCount(), 3, "Favorites holds the seed favorite plus the 2 new ones")
+    // personal-1 ships favorited in the seed; the sized small fixture adds
+    // generated favorites too, so this is a floor, not an exact count.
+    XCTAssertGreaterThanOrEqual(
+      gridCellCount(), 3, "Favorites holds the seed favorite plus the 2 new ones")
   }
 
   // MARK: - Step 3: fixture-mode trash without a full reload
@@ -240,7 +264,7 @@ final class MacFunctionalTests: XCTestCase {
     let before = gridCellCount()
     XCTAssertGreaterThan(before, 1)
     doomed.click()
-    app.menuBars.menuItems["Delete"].click()
+    menuItem("Delete")
     XCTAssertTrue(el("toast").waitForExistence(timeout: 10), "trash toast shows")
     XCTAssertTrue(el("asset-grid").exists, "grid persists (no full reload)")
     let gone = XCTNSPredicateExpectation(
@@ -335,21 +359,29 @@ final class MacFunctionalTests: XCTestCase {
     XCTAssertTrue(
       waitForTitle(equalTo: before, timeout: 10), "swipe right pages back")
 
-    // Vertical scroll must not page (title stays put).
+    // Vertical scroll must not page: within 2 s the title must NOT change
+    // (a timed-out "title changed" expectation, not a sleep + re-read).
     viewer.swipeUp()
-    Thread.sleep(forTimeInterval: 1.0)
-    XCTAssertEqual(windowTitle(), before, "vertical scroll does not page")
+    let stayedPut = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "title != %@", before),
+      object: app.windows.firstMatch)
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [stayedPut], timeout: 2), .timedOut,
+      "vertical scroll does not page")
   }
 
-  /// Polls the window title until it differs from (or returns to) a value.
+  /// Waits (sleep-free, via predicate expectations) until the window title
+  /// differs from `before` or returns to `match`.
   private func waitForTitle(changeFrom before: String? = nil, equalTo match: String? = nil, timeout: TimeInterval) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-      let title = windowTitle()
-      if let before, title != before { return true }
-      if let match, title == match { return true }
-      Thread.sleep(forTimeInterval: 0.5)
+    let predicate: NSPredicate
+    if let match {
+      predicate = NSPredicate(format: "title == %@", match)
+    } else if let before {
+      predicate = NSPredicate(format: "title != %@", before)
+    } else {
+      return false
     }
-    return false
+    let changed = XCTNSPredicateExpectation(predicate: predicate, object: app.windows.firstMatch)
+    return XCTWaiter.wait(for: [changed], timeout: timeout) == .completed
   }
 }
