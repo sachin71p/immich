@@ -108,6 +108,39 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Captured-by-Me tile — same predicate as `capturedByUser` (owner-based, not
+  /// container-based: a photo stays "mine" after sharing or moving).
+  public func capturedByMeCount(userId: String, scope: ContainerScope) async throws -> Int {
+    let (whereSQL, args) = Self.scopeWhere(scope)
+    let sql = """
+      SELECT COUNT(*) AS n FROM asset
+      WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked'
+        AND asset.ownerId = ? AND \(whereSQL)
+      """
+    return try await dbQueue.read { db in
+      (try Int.fetchOne(db, sql: sql, arguments: Self.sqlArgs([userId], args))) ?? 0
+    }
+  }
+
+  /// Archive tile — same predicate as `visibilityAssets(.archive)`.
+  public func archiveCount(scope: ContainerScope) async throws -> Int {
+    try await scalarCount(
+      scope: scope, predicate: "asset.deletedAt IS NULL AND asset.visibility = 'archive'")
+  }
+
+  /// Locked tile — same predicate as `lockedAssets` (personal-only by design:
+  /// ignores scope and restricts to the signed-in user's own assets).
+  public func lockedCount(userId: String) async throws -> Int {
+    let sql = """
+      SELECT COUNT(*) AS n FROM asset
+      WHERE asset.deletedAt IS NULL AND asset.visibility = 'locked'
+        AND asset.spaceId IS NULL AND asset.libraryId IS NULL AND asset.ownerId = ?
+      """
+    return try await dbQueue.read { db in
+      (try Int.fetchOne(db, sql: sql, arguments: [userId])) ?? 0
+    }
+  }
+
   /// One `COUNT(*)` over `asset` with the caller's scope. The `visibleAsset` join is
   /// intentionally omitted (unlike the media-kind query): favorites/recents/hidden/
   /// trash predicates match their row queries, which don't filter live-photo members.
