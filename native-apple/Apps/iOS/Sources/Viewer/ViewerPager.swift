@@ -22,8 +22,11 @@ struct ViewerPager: UIViewControllerRepresentable {
   @Binding var currentIndex: Int
   /// Shared Live Photo play trigger (a reference so already-built pages see each tap).
   var livePlay: LivePlayRequest
+  /// False while the info panel is open, so closing it can't dismiss the viewer.
+  var dismissEnabled: Bool = true
   var onSingleTap: () -> Void
   var onDismiss: () -> Void
+  var onSwipeUp: () -> Void = {}
 
   func makeUIViewController(context: Context) -> ViewerPageController {
     // The Binding struct itself is captured (reference semantics): page-controller
@@ -37,13 +40,16 @@ struct ViewerPager: UIViewControllerRepresentable {
       livePlay: livePlay,
       onIndexChange: { index in indexBinding.wrappedValue = index },
       onSingleTap: onSingleTap,
-      onDismiss: onDismiss)
+      onDismiss: onDismiss,
+      onSwipeUp: onSwipeUp)
+    controller.dismissEnabled = dismissEnabled
     context.coordinator.controller = controller
     return controller
   }
 
   func updateUIViewController(_ controller: ViewerPageController, context: Context) {
     controller.ids = ids
+    controller.dismissEnabled = dismissEnabled
     if controller.currentIndex != currentIndex {
       controller.jump(to: currentIndex, animated: true)
     }
@@ -62,14 +68,22 @@ private enum ViewerDismiss {
   static let velocity: CGFloat = 900
 }
 
+/// Swipe-up-to-info thresholds (mirrors the dismiss feel, upward).
+private enum ViewerSwipeUp {
+  static let distance: CGFloat = 120
+  static let velocity: CGFloat = 900
+}
+
 final class ViewerPageController: UIPageViewController {
   var ids: [String]
+  var dismissEnabled = true
   private(set) var currentIndex: Int
   private let session: AppSession
   private let livePlay: LivePlayRequest
   private let onIndexChange: (Int) -> Void
   private let onSingleTap: () -> Void
   private let onDismiss: () -> Void
+  private let onSwipeUp: () -> Void
   private var prefetch: Task<Void, Never>?
 
   init(
@@ -77,7 +91,8 @@ final class ViewerPageController: UIPageViewController {
     livePlay: LivePlayRequest,
     onIndexChange: @escaping (Int) -> Void,
     onSingleTap: @escaping () -> Void,
-    onDismiss: @escaping () -> Void
+    onDismiss: @escaping () -> Void,
+    onSwipeUp: @escaping () -> Void
   ) {
     self.ids = ids
     self.currentIndex = min(max(startIndex, 0), max(ids.count - 1, 0))
@@ -86,6 +101,7 @@ final class ViewerPageController: UIPageViewController {
     self.onIndexChange = onIndexChange
     self.onSingleTap = onSingleTap
     self.onDismiss = onDismiss
+    self.onSwipeUp = onSwipeUp
     super.init(
       transitionStyle: .scroll, navigationOrientation: .horizontal, options: nil)
   }
@@ -102,9 +118,9 @@ final class ViewerPageController: UIPageViewController {
     if let first = page(at: currentIndex) {
       setViewControllers([first], direction: .forward, animated: false)
     }
-    let dismissPan = UIPanGestureRecognizer(target: self, action: #selector(handleDismiss(_:)))
-    dismissPan.delegate = self
-    view.addGestureRecognizer(dismissPan)
+    let verticalPan = UIPanGestureRecognizer(target: self, action: #selector(handleVertical(_:)))
+    verticalPan.delegate = self
+    view.addGestureRecognizer(verticalPan)
     prefetchAround(currentIndex)
   }
 
@@ -147,7 +163,9 @@ final class ViewerPageController: UIPageViewController {
     }
   }
 
-  @objc private func handleDismiss(_ pan: UIPanGestureRecognizer) {
+  /// Vertical pan: downward drags dismiss (with finger-follow), upward drags reveal
+  /// the info panel. Mostly-vertical only, so paging never competes.
+  @objc private func handleVertical(_ pan: UIPanGestureRecognizer) {
     switch pan.state {
     case .changed:
       let translation = pan.translation(in: view)
@@ -157,6 +175,11 @@ final class ViewerPageController: UIPageViewController {
       let velocity = pan.velocity(in: view)
       if translation.y > ViewerDismiss.distance || velocity.y > ViewerDismiss.velocity {
         onDismiss()
+      } else if translation.y < -ViewerSwipeUp.distance
+        || velocity.y < -ViewerSwipeUp.velocity
+      {
+        UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
+        onSwipeUp()
       } else {
         UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
       }
@@ -208,7 +231,10 @@ extension ViewerPageController: UIGestureRecognizerDelegate {
   func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
     guard let pan = gesture as? UIPanGestureRecognizer, let view else { return false }
     let velocity = pan.velocity(in: view)
-    return velocity.y > 0 && velocity.y > 2 * abs(velocity.x)
+    guard abs(velocity.y) > 2 * abs(velocity.x) else { return false }
+    // Upward drags always reveal info; downward drags dismiss unless the info
+    // panel is open (its own close drag owns those).
+    return velocity.y < 0 || dismissEnabled
   }
 
   func gestureRecognizer(

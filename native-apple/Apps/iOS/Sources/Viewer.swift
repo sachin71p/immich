@@ -125,7 +125,9 @@ struct ViewerPage: View {
         }
         if let next {
           image = next
-          await analyzeLiveText(next)
+          // Live Text runs once, on the full tier only (P6: per-tier analysis on the
+          // main actor stalled the viewer under load).
+          if tier == .fullsize { await analyzeLiveText(next) }
         }
         if tier == .fullsize { break }
       } catch {
@@ -134,18 +136,24 @@ struct ViewerPage: View {
     }
   }
 
-  /// A9.2: analyze the latest still for Live Text. Failures leave `liveText` nil and the
-  /// viewer keeps working — Live Text is an enhancement, never a gate.
+  /// A9.2: analyze the latest still for Live Text. Vision runs detached (P6: it must
+  /// never execute on the main actor); failures leave `liveText` nil and the viewer
+  /// keeps working — Live Text is an enhancement, never a gate.
   private func analyzeLiveText(_ uiImage: UIImage) async {
     guard let cgImage = uiImage.cgImage else { return }
-    do {
-      let analyzer = ImageAnalyzer()
-      liveText = try await analyzer.analyze(
-        cgImage, orientation: .up,
-        configuration: ImageAnalyzer.Configuration([.text, .machineReadableCode, .visualLookUp]))
-    } catch {
-      liveText = nil
+    // VisionKit's `ImageAnalysis` isn't Sendable; the completed result is handed
+    // once from the detached task to the main actor and never shared afterwards.
+    struct CompletedAnalysis: @unchecked Sendable {
+      let analysis: ImageAnalysis?
     }
+    let completed = await Task.detached(priority: .utility) {
+      let analyzer = ImageAnalyzer()
+      return CompletedAnalysis(
+        analysis: try? await analyzer.analyze(
+          cgImage, orientation: .up,
+          configuration: ImageAnalyzer.Configuration([.text, .machineReadableCode, .visualLookUp])))
+    }.value
+    liveText = completed.analysis
   }
 }
 
@@ -206,8 +214,22 @@ struct ViewerView: View {
         ViewerPager(
           ids: ids, session: session, currentIndex: $currentIndex,
           livePlay: livePlay,
+          dismissEnabled: !showInfo,
           onSingleTap: { showChrome.toggle() },
-          onDismiss: { dismiss() })
+          onDismiss: { dismiss() },
+          onSwipeUp: { showInfo = true })
+      }
+      if showInfo, let asset {
+        ViewerInfoPanel(
+          asset: asset, exif: exif, containerName: containerName(for: asset),
+          onClose: { showInfo = false }
+        )
+        .environmentObject(session)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .zIndex(5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(.horizontal, 4)
+        .padding(.bottom, showChrome ? ViewerLayout.bottomReserve : 12)
       }
       // UI-test hooks (hidden): page position and open latency.
       Text("\(min(currentIndex + 1, max(ids.count, 1))) of \(ids.count)")
@@ -247,7 +269,7 @@ struct ViewerView: View {
             isFavorite: asset.isFavorite,
             onShare: { share(asset) },
             onFavorite: { toggleFavorite(asset) },
-            onInfo: { showInfo = true },
+            onInfo: { showInfo.toggle() },
             onAdjust: { openEdit(asset) },
             onTrash: { showTrashConfirm = true })
         }
@@ -270,13 +292,6 @@ struct ViewerView: View {
     } message: {
       Text("This photo moves to Recently Deleted.")
     }
-      .sheet(isPresented: $showInfo) {
-        if let asset {
-          ViewerInfoPanel(asset: asset)
-            .environmentObject(session)
-            .presentationDetents([.medium, .large])
-        }
-      }
       .sheet(isPresented: $showMoveSheet) {
         if let currentId {
           MoveSheet(selectedIds: [currentId]) {
@@ -376,6 +391,15 @@ struct ViewerView: View {
             }
           }
         })
+    }
+  }
+
+  private func containerName(for asset: Asset) -> String {
+    switch asset.container {
+    case .personal(let ownerId):
+      return ownerId == session.userId ? "Personal Library" : "Personal Library (shared)"
+    case .space(let id): return session.spaces.first { $0.id == id }?.name ?? "Shared Library"
+    case .library(let id): return session.libraries.first { $0.id == id }?.name ?? "External Library"
     }
   }
 
@@ -529,123 +553,3 @@ struct ViewerView: View {
   }
 }
 
-// MARK: - info panel (brief task 4: swipe-up panel; "All metadata" lands in A7)
-
-/// Date, location mini-map, camera/lens/exposure summary, container, people, albums.
-struct ViewerInfoPanel: View {
-  @EnvironmentObject var session: AppSession
-  var asset: Asset
-
-  @State private var exif: AssetExif?
-  @State private var people: [Person] = []
-  @State private var albumNames: [String] = []
-  @Environment(\.dismiss) private var dismiss
-
-  var body: some View {
-    NavigationStack {
-      List {
-        Section("Details") {
-          if let date = asset.localDateTime {
-            LabeledContent("Date", value: date.formatted(date: .long, time: .shortened))
-          }
-          LabeledContent("File", value: asset.originalFileName)
-          if let w = asset.width, let h = asset.height {
-            LabeledContent("Dimensions", value: "\(w) × \(h)")
-          }
-          LabeledContent("Container", value: containerName)
-        }
-        if let exif, exif.latitude != nil, exif.longitude != nil {
-          Section("Location") {
-            MiniMap(latitude: exif.latitude!, longitude: exif.longitude!)
-              .frame(height: 160)
-              .clipShape(RoundedRectangle(cornerRadius: 10))
-            if let city = exif.city ?? exif.state ?? exif.country {
-              Text(city)
-            }
-          }
-        }
-        Section("Camera") {
-          if let make = exif?.make, let model = exif?.model {
-            LabeledContent("Camera", value: "\(make) \(model)")
-          }
-          if let lens = exif?.lensModel {
-            LabeledContent("Lens", value: lens)
-          }
-          HStack {
-            if let iso = exif?.iso { Text("ISO \(iso)") }
-            if let f = exif?.fNumber { Text(String(format: "ƒ/%.1f", f)) }
-            if let exp = exif?.exposureTime { Text(exp) }
-            if let focal = exif?.focalLength { Text(String(format: "%.0fmm", focal)) }
-          }
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        }
-        if !people.isEmpty {
-          Section("People") {
-            ForEach(people) { person in Text(person.name) }
-          }
-        }
-        if !albumNames.isEmpty {
-          Section("Albums") {
-            ForEach(albumNames, id: \.self) { Text($0) }
-          }
-        }
-        FullExifBrowser(
-          assetId: asset.id, serverURL: session.serverURL,
-          tokenProvider: session.searchTokenProvider())
-      }
-      .navigationTitle("Info")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
-        }
-      }
-      .task {
-        guard let store = session.store else { return }
-        exif = try? await store.exif(for: asset.id)
-        let mine = try? await store.peopleForOwner(session.userId)
-        let owners = try? await store.peopleForOwner(asset.ownerId)
-        people = Array((mine ?? []) + (owners ?? []).filter { p in !(mine ?? []).contains(p) })
-        if let storeAlbums = try? await store.albumsForUser(session.userId) {
-          var names: [String] = []
-          for album in storeAlbums {
-            if let rows = try? await store.albumAssets(albumId: album.id, limit: 10_000),
-              rows.contains(where: { $0.id == asset.id })
-            {
-              names.append(album.name)
-            }
-          }
-          albumNames = names
-        }
-      }
-    }
-  }
-
-  private var containerName: String {
-    switch asset.container {
-    case .personal(let ownerId):
-      return ownerId == session.userId ? "Personal Library" : "Personal Library (shared)"
-    case .space(let id): return session.spaces.first { $0.id == id }?.name ?? "Shared Library"
-    case .library(let id): return session.libraries.first { $0.id == id }?.name ?? "External Library"
-    }
-  }
-}
-
-struct MiniMap: View {
-  var latitude: Double
-  var longitude: Double
-
-  var body: some View {
-    Map(initialPosition: .region(region)) {
-      Marker(coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) {}
-    }
-    .mapStyle(.standard)
-  }
-
-  private var region: MKCoordinateRegion {
-    MKCoordinateRegion(
-      center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-      span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
-  }
-}

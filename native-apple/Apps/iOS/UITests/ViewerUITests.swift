@@ -18,6 +18,38 @@ final class ViewerUITests: XCTestCase {
       "tapping a grid cell should open the viewer")
   }
 
+  /// Closes the inline info panel with an explicit drag from its top edge (element
+  /// swipes are too short for the panel's dismiss threshold).
+  /// Drags the grabber button downward (swipe-to-close); falls back to a tap, which
+  /// closes through the same `onClose`.
+  private func closeInfoPanel(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    let panel = app.descendants(matching: .any)["viewer-info-panel"]
+    XCTAssertTrue(panel.waitForExistence(timeout: 10), file: file, line: line)
+    let grabber = app.buttons["viewer-info-grabber"]
+    XCTAssertTrue(grabber.waitForExistence(timeout: 10), file: file, line: line)
+    // Let the slide-in transition finish: gestures that start mid-animation drop.
+    sleep(1)
+    let start = grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 300)))
+  }
+
+  /// Swiping up on the photo reveals the inline panel; closing it keeps the viewer.
+  func testViewerInfoSwipeUpDown() throws {
+    let app = XCUIApplication()
+    openViewer(app)
+    app.swipeUp()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["viewer-info-panel"].waitForExistence(timeout: 10),
+      "swiping up should open the inline panel")
+    closeInfoPanel(app)
+    XCTAssertFalse(
+      app.descendants(matching: .any)["viewer-info-panel"].waitForExistence(timeout: 5),
+      "grabber swipe-down should close the panel")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 10),
+      "closing the panel should stay in the viewer")
+  }
+
   private func pageIndex(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> String {
     let label = app.staticTexts["viewer-page-index"]
     XCTAssertTrue(label.waitForExistence(timeout: 10), file: file, line: line)
@@ -36,12 +68,18 @@ final class ViewerUITests: XCTestCase {
     XCTAssertTrue(info.isHittable, "V1: Info button should be hittable")
     info.tap()
     XCTAssertTrue(
-      app.navigationBars["Info"].waitForExistence(timeout: 10),
-      "V1: tapping Info should open the Info panel")
-    app.buttons["Done"].tap()
+      app.descendants(matching: .any)["viewer-info-panel"].waitForExistence(timeout: 15),
+      "V1: tapping Info should open the inline panel")
+    XCTAssertTrue(
+      app.staticTexts["viewer-info-date"].waitForExistence(timeout: 10),
+      "the panel should show the date card")
+    closeInfoPanel(app)
     XCTAssertFalse(
-      app.navigationBars["Info"].waitForExistence(timeout: 10),
-      "Done should close the Info panel")
+      app.descendants(matching: .any)["viewer-info-panel"].waitForExistence(timeout: 5),
+      "grabber swipe-down should close the panel")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 10),
+      "closing the panel should stay in the viewer")
 
     let more = app.buttons["More"]
     XCTAssertTrue(more.waitForExistence(timeout: 10), "More button should exist")
