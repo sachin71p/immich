@@ -55,10 +55,15 @@
 		5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */; };
 		60B4AF936251E3716C5E102A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E3E22E15AF847EB8E62EE01 /* README.md */; };
 		695EF8BFB7841509B4E25CD0 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 1E53BF363D53907D6EAE51E5 /* CoreModel */; };
+		6A46C8A4B3FAA6E9F8F9599E /* LibraryChromeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */; };
+		6F36BCFA6CD47B187D3D4BB1 /* LibraryFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33177EE3B7C28F1376AB609A /* LibraryFilter.swift */; };
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
 		73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */; };
+		73C675B369F31BCD375AAAF8 /* LibrarySelectMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE98821B494A9BE5D727EEAB /* LibrarySelectMenu.swift */; };
 		7AE9781FE902087E5559F25F /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 37D0016B12D659C36170F7CE /* Upload */; };
+		7DEFCFF9AD62C74F4A7AC875 /* LibraryFilterMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22148554E0DF227F6078A07C /* LibraryFilterMenu.swift */; };
 		7E22ACEF69BE6E6DFDD0E56F /* MacMainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6086603C26DEA57A022404B /* MacMainWindow.swift */; };
+		800A8E8B6F7D5E6335A95FCC /* YearsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8C25D063828EA8571BC260 /* YearsView.swift */; };
 		8094A44964D5F3C4BC5B7E23 /* A3SmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */; };
 		82D97B8E9E022D5AFA2E6E7E /* ThumbhashCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EB7C05A8DB97F45456CFEB /* ThumbhashCache.swift */; };
 		8558FDD60F9DA6DFD825D262 /* MacPreviewFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1621E72990EA01E79B8DD583 /* MacPreviewFixtures.swift */; };
@@ -84,6 +89,7 @@
 		A06BB3B03917EA87DF4E52DB /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = DEA50F3624BB1859CEE7621D /* ImmichAPI */; };
 		A21E44AE8980E8646CFCC995 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = CE5B9476767F8F8B729A241A /* LocalStore */; };
 		A2AB5BC56AA8FB528F73B9ED /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71607B706C614A1C8A0A6D54 /* ConnectView.swift */; };
+		A52AB145FC28B24F89200534 /* MonthsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092BF2BAD6CCE9099D356D /* MonthsView.swift */; };
 		A69BDA174B3139C1419A4932 /* BackupScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3A24A3184D6A5D800A2BE6 /* BackupScheduler.swift */; };
 		AA6BA29CD7FC0168056D59AA /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = C861899D990206AFFFC3FEFD /* Upload */; };
 		AB034DACF8D205272A697724 /* HeirloomAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AEC1F2E0350651E6C9C7E7F /* HeirloomAgent.swift */; };
@@ -95,6 +101,7 @@
 		BB8AFB92998483F7105D6AE1 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500F5A4905443D3A3CF04B9A /* SharedContainer.swift */; };
 		BC2215C8BF65688DA4298B47 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 85CFCE58FBB95FEC2EF1800C /* LocalStore */; };
 		C01CDF31C9D4498BC443A056 /* MacAllAlbumsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 087CC5923156A206E813BA60 /* MacAllAlbumsView.swift */; };
+		C183FED2724261FCAD785610 /* KeyAssetPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E647D70429540C5A8F9AF4 /* KeyAssetPhoto.swift */; };
 		C30A28B0EEA9BC9DAE5F2E56 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 2C468586827D06DB7DBFB36A /* LocalStore */; };
 		C58688346D8899529D46D329 /* MacMemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */; };
 		C66E3C17920D5031FD4EBE4D /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB42CF139FDE95D19202A9F0 /* MacSearchView.swift */; };
@@ -169,6 +176,7 @@
 		173F9A53CF69350E161F685F /* FastScroller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastScroller.swift; sourceTree = "<group>"; };
 		1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSeed.swift; sourceTree = "<group>"; };
 		220BD30E984341379A611211 /* PhotoForkIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoForkIntents.swift; sourceTree = "<group>"; };
+		22148554E0DF227F6078A07C /* LibraryFilterMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilterMenu.swift; sourceTree = "<group>"; };
 		22467E2D72965EE2650E6009 /* Heirloom-Intents.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-Intents.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		252B49AC8E4F995558D5C3A8 /* Heirloom-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Heirloom-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2926BA269E6027FC436CF9C2 /* AssetGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetGridView.swift; sourceTree = "<group>"; };
@@ -178,6 +186,7 @@
 		2DF22B76A8D8B4DEDC7D192E /* Heirloom-PhotoEditing.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-PhotoEditing.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2E728F2C4FB8AF3679B66C4D /* Heirloom-Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		317A308C324F67538E064057 /* A9ExtrasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A9ExtrasUITests.swift; sourceTree = "<group>"; };
+		33177EE3B7C28F1376AB609A /* LibraryFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilter.swift; sourceTree = "<group>"; };
 		36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPerfUITests.swift; sourceTree = "<group>"; };
 		3A7A06636822786D5165150E /* Heirloom-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Heirloom-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A3SmokeUITests.swift; sourceTree = "<group>"; };
@@ -214,6 +223,7 @@
 		7C4B1F519514BB8DC4D63FB6 /* Heirloom-Agent.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Heirloom-Agent.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DA2A5BE54E39B6CB40564E4 /* Heirloom.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Heirloom.entitlements; sourceTree = "<group>"; };
 		848364178733C3D1D80789CF /* EditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditView.swift; sourceTree = "<group>"; };
+		8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryChromeUITests.swift; sourceTree = "<group>"; };
 		8AEC1F2E0350651E6C9C7E7F /* HeirloomAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomAgent.swift; sourceTree = "<group>"; };
 		8D2F60BB9D91D70D4CD487A0 /* MacViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViewer.swift; sourceTree = "<group>"; };
 		8D65FC4B1B649D178D8A4490 /* MacMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenus.swift; sourceTree = "<group>"; };
@@ -226,6 +236,8 @@
 		A2968E433A0A5C31FDFAD3BB /* MacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebar.swift; sourceTree = "<group>"; };
 		A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentLoginItem.swift; sourceTree = "<group>"; };
 		A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTour.swift; sourceTree = "<group>"; };
+		AA092BF2BAD6CCE9099D356D /* MonthsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthsView.swift; sourceTree = "<group>"; };
+		B0E647D70429540C5A8F9AF4 /* KeyAssetPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyAssetPhoto.swift; sourceTree = "<group>"; };
 		B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLiveText.swift; sourceTree = "<group>"; };
 		B9F1850C4ACF8338AEB20BFB /* MacImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImport.swift; sourceTree = "<group>"; };
 		BBDE1EF756578312D6F93758 /* MacDuplicatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDuplicatesView.swift; sourceTree = "<group>"; };
@@ -246,6 +258,8 @@
 		D89001BB0440213908CC2001 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DB2BE337917F87C38F80A852 /* PhotosCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PhotosCore; path = PhotosCore; sourceTree = SOURCE_ROOT; };
 		DC84EEBDF5622F30FB15AD60 /* HeirloomIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomIOSApp.swift; sourceTree = "<group>"; };
+		DC8C25D063828EA8571BC260 /* YearsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearsView.swift; sourceTree = "<group>"; };
+		DE98821B494A9BE5D727EEAB /* LibrarySelectMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySelectMenu.swift; sourceTree = "<group>"; };
 		E0AF35940917C91636A4A755 /* MacPreviewCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewCatalog.swift; sourceTree = "<group>"; };
 		E5EB7C05A8DB97F45456CFEB /* ThumbhashCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbhashCache.swift; sourceTree = "<group>"; };
 		E6086603C26DEA57A022404B /* MacMainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMainWindow.swift; sourceTree = "<group>"; };
@@ -429,6 +443,7 @@
 				3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */,
 				317A308C324F67538E064057 /* A9ExtrasUITests.swift */,
 				36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */,
+				8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */,
 				A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */,
 				9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */,
 			);
@@ -497,8 +512,14 @@
 			children = (
 				CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */,
 				638FDDBA042A300BFF971B53 /* FixtureArtwork.swift */,
+				B0E647D70429540C5A8F9AF4 /* KeyAssetPhoto.swift */,
+				33177EE3B7C28F1376AB609A /* LibraryFilter.swift */,
+				22148554E0DF227F6078A07C /* LibraryFilterMenu.swift */,
 				F6932111B77827985EE3A89E /* LibraryGridLoader.swift */,
+				DE98821B494A9BE5D727EEAB /* LibrarySelectMenu.swift */,
 				D89001BB0440213908CC2001 /* LibraryView.swift */,
+				AA092BF2BAD6CCE9099D356D /* MonthsView.swift */,
+				DC8C25D063828EA8571BC260 /* YearsView.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -813,45 +834,45 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					0D85D641350A0972877BA40F = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					1687D3DFBCC71FF95AB63C24 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 						TestTargetID = E6E2BF7C79DF5ABC1FF5CACA;
 					};
 					22A3362055562D724946234D = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 						TestTargetID = 5AA476FDB0B8F81FFFEB1022;
 					};
 					278B2FEA8D40D4B9AC7EBC7C = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					5AA476FDB0B8F81FFFEB1022 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					684DE8B8868C09C81C09DDF0 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					9B35EFA422FCFD3E02A23CCE = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					BC47A3776A4147CF189475AB = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					D84723B5E7BCA06F495A86D2 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					E6E2BF7C79DF5ABC1FF5CACA = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -933,6 +954,7 @@
 				8094A44964D5F3C4BC5B7E23 /* A3SmokeUITests.swift in Sources */,
 				593799F9CE380A58B326FA1B /* A9ExtrasUITests.swift in Sources */,
 				C959FE40D592B0F2D6380C2D /* GridPerfUITests.swift in Sources */,
+				6A46C8A4B3FAA6E9F8F9599E /* LibraryChromeUITests.swift in Sources */,
 				A02F35BD3C0A4638D10BFFBA /* ScreenshotTour.swift in Sources */,
 				4B342E05068BB4A933AD9B55 /* SyncUITests.swift in Sources */,
 			);
@@ -1034,11 +1056,16 @@
 				EB27BEF28DAA01723107CBB0 /* GridSnapshot.swift in Sources */,
 				5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */,
 				CB8D8A8C1B250E5C7240C58B /* HeirloomIOSApp.swift in Sources */,
+				C183FED2724261FCAD785610 /* KeyAssetPhoto.swift in Sources */,
+				6F36BCFA6CD47B187D3D4BB1 /* LibraryFilter.swift in Sources */,
+				7DEFCFF9AD62C74F4A7AC875 /* LibraryFilterMenu.swift in Sources */,
 				F30454A630980E7DC6A0A473 /* LibraryGridLoader.swift in Sources */,
+				73C675B369F31BCD375AAAF8 /* LibrarySelectMenu.swift in Sources */,
 				59D4D1A8D6DFC98237500769 /* LibraryView.swift in Sources */,
 				E65B8E035572F5055972954B /* LiveVideo.swift in Sources */,
 				075F5E2EF70DA8B36F1BEE27 /* LockedMediaAuthentication.swift in Sources */,
 				9449D68838DF4E1421762D52 /* MemoriesView.swift in Sources */,
+				A52AB145FC28B24F89200534 /* MonthsView.swift in Sources */,
 				B27032EFFEBC3A6E2CE4683A /* MoveSheet.swift in Sources */,
 				CE9BC1526C0AB36E16C9A850 /* PhotoGridCell.swift in Sources */,
 				DD6300F009E5382AD0E581F7 /* PhotoGridViewController.swift in Sources */,
@@ -1049,6 +1076,7 @@
 				82D97B8E9E022D5AFA2E6E7E /* ThumbhashCache.swift in Sources */,
 				E285774554AF518271B4AD20 /* Viewer.swift in Sources */,
 				9830135D974E63A6479AC3CC /* ViewerRoute.swift in Sources */,
+				800A8E8B6F7D5E6335A95FCC /* YearsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1152,7 +1180,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				DEVELOPMENT_TEAM = 599Z443923;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1219,7 +1247,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				DEVELOPMENT_TEAM = 599Z443923;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
