@@ -94,6 +94,28 @@ final class ScreenshotTourUITests: XCTestCase {
     return false
   }
 
+  /// Bidirectional variant for the WP4 Collections tour: sections above the
+  /// current offset are missed by swipe-up-only scrolling, so sweep up first
+  /// (content below) then down (content above), tapping when hittable.
+  @discardableResult
+  func tapScrollingEither(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+    for _ in 0..<3 {
+      if element.waitForExistence(timeout: timeout), element.isHittable {
+        element.tap()
+        return true
+      }
+      app.swipeUp()
+    }
+    for _ in 0..<8 {
+      if element.waitForExistence(timeout: 2), element.isHittable {
+        element.tap()
+        return true
+      }
+      app.swipeDown()
+    }
+    return false
+  }
+
   /// The viewer's Close button. The search field's clear (x) button also carries the
   /// label "Close", so scope by excluding its `xmark.circle.fill` identifier.
   @discardableResult
@@ -258,64 +280,155 @@ final class ScreenshotTourUITests: XCTestCase {
 
   // MARK: - Collections tab
 
+  // MARK: - Collections tab (WP4: every section + every detail type)
+
   func tourCollections() {
     goTab("Collections", expect: app.descendants(matching: .any)["collections"])
     XCTAssertTrue(
       app.descendants(matching: .any)["collections"].waitForExistence(timeout: 10),
       "collections screen should open (viewer must be closed by now)")
+
+    // Every section shell renders (scroll each into view).
+    for section in [
+      "memories", "pinned", "albums", "people", "sharedAlbums", "spaces",
+      "recentDays", "mediaTypes", "utilities", "places",
+    ] {
+      XCTAssertTrue(
+        tapScrollingEither(
+          app.descendants(matching: .any)["collections-section-\(section)"]),
+        "collections section \(section) should render")
+    }
+    // Toolbar: overflow menu + WP5 placeholder avatar.
+    XCTAssertTrue(
+      app.descendants(matching: .any)["account-placeholder"].waitForExistence(timeout: 5),
+      "account placeholder should sit in the Collections toolbar")
     shot("11-collections")
 
-    // Album detail: fixture album "Trip" has two members, so it lives under
-    // "Shared Albums" (the top-level list only shows single-member albums).
-    if tap(app.buttons["Shared Albums"], timeout: 10),
-      tap(app.buttons["Trip"], timeout: 10)
-    {
+    // Memories page (fixture has no saved memories: empty state + tour shot).
+    if tapScrollingEither(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Memories'")).firstMatch) {
+      XCTAssertTrue(
+        app.descendants(matching: .any)["memories"].waitForExistence(timeout: 10),
+        "memories page should open")
       sleep(1)
-      shot("12-collections-album-detail")
-      back()
-      back()
-    }
-
-    // People row (fixture person "Bob").
-    if tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Bob'")).firstMatch, timeout: 10)
-    {
-      sleep(1)
-      shot("13-collections-person-detail")
+      shot("12-collections-memories")
       back()
     }
 
-    // Memories.
-    if tap(app.descendants(matching: .any)["collections-memories"], timeout: 10) {
+    // Albums › page: Personal/Shared segments, then the fixture album.
+    if tapScrollingEither(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Albums'")).firstMatch) {
+      XCTAssertTrue(
+        app.descendants(matching: .any)["albums-list"].waitForExistence(timeout: 10),
+        "albums list should open")
+      shot("13-collections-albums")
+      // Fixture album "Trip" is shared (two members): flip the segment.
+      let segments = app.segmentedControls["albums-segment"]
+      if segments.waitForExistence(timeout: 5) {
+        segments.buttons["Shared"].tap()
+        sleep(1)
+        shot("13b-collections-albums-shared")
+      }
+      if tap(app.descendants(matching: .any)["album-Trip"], timeout: 10) {
+        XCTAssertTrue(
+          app.descendants(matching: .any)["detail-grid"].waitForExistence(timeout: 10),
+          "album grid should open")
+        sleep(1)
+        shot("14-collections-album-detail")
+        back()
+      }
+      back()
+    }
+
+    // People › page (fixture person "Bob") + person detail.
+    if tapScrollingEither(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'People'")).firstMatch) {
+      XCTAssertTrue(
+        app.descendants(matching: .any)["people-list"].waitForExistence(timeout: 10),
+        "people list should open")
+      shot("15-collections-people")
+      if tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Bob'")).firstMatch, timeout: 10) {
+        sleep(2)
+        shot("15b-collections-person-detail")
+        back()
+      }
+      back()
+    }
+
+    // Pinned Edit sheet (reorder; cancel via Done).
+    if tap(app.descendants(matching: .any)["pinned-edit"], timeout: 10) {
       sleep(1)
-      shot("14-collections-memories")
+      shot("16-collections-pinned-edit")
+      tap(app.buttons["Done"], timeout: 5)
+    }
+
+    // Utility pills: Favorites, Recently Deleted, Hidden, Videos, Captured by Me.
+    for (pill, shotName) in [
+      ("utility-Favorites", "17-collections-favorites"),
+      ("utility-Recently Deleted", "17b-collections-recently-deleted"),
+      ("utility-Hidden", "17c-collections-hidden"),
+      ("utility-Videos", "17d-collections-videos"),
+      ("utility-Captured by Me", "17e-collections-captured"),
+      ("utility-Archive", "17f-collections-archive"),
+    ] {
+      if tapScrollingEither(app.descendants(matching: .any)[pill]) {
+        if app.descendants(matching: .any)["detail-grid"].waitForExistence(timeout: 10) {
+          sleep(1)
+          shot(shotName)
+        }
+        back()
+      }
+    }
+
+    // Locked: simulator has no enrolled biometrics, so auth fails fast into the
+    // denied view (or a system prompt appears — cancel it and move on).
+    if tapScrollingEither(app.descendants(matching: .any)["utility-Locked"]) {
+      sleep(2)
+      if app.alerts.firstMatch.waitForExistence(timeout: 3) {
+        app.alerts.firstMatch.buttons.firstMatch.tap()
+      }
+      shot("17g-collections-locked")
+      back()
+    }
+
+    // Duplicates (server-backed; fixture mode shows unavailable/empty — still a stop).
+    if tapScrollingEither(app.descendants(matching: .any)["utility-Duplicates"]) {
+      sleep(1)
+      shot("17h-collections-duplicates")
+      back()
+    }
+
+    // Space detail (fixture space "Family", grid sorted date desc).
+    if tapScrollingEither(app.descendants(matching: .any)["space-Family"]) {
+      XCTAssertTrue(
+        app.descendants(matching: .any)["detail-grid"].waitForExistence(timeout: 10),
+        "space grid should open")
+      sleep(1)
+      shot("18-collections-space-detail")
       back()
     }
 
     // Map (Places).
-    if tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Map'")).firstMatch, timeout: 10)
-    {
+    if tapScrollingEither(app.descendants(matching: .any)["places-tile"]) {
       sleep(1)
-      shot("15-collections-places")
+      shot("19-collections-places")
       back()
     }
 
-    // Favorites list.
-    if tap(
-      app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Favorites'")).firstMatch,
-      timeout: 10)
-    {
+    // Collapse toggle: hiding Shared Albums removes its tiles.
+    goTab("Library", expect: app.descendants(matching: .any)["library-grid"])
+    goTab("Collections", expect: app.descendants(matching: .any)["collections"])
+    if tapScrollingEither(app.descendants(matching: .any)["collections-collapse-sharedAlbums"]) {
       sleep(1)
-      shot("16-collections-favorites")
-      back()
+      XCTAssertFalse(
+        app.descendants(matching: .any)["album-Trip"].exists,
+        "collapsing Shared Albums should hide its tiles")
+      shot("20-collections-collapsed")
+      tapScrollingEither(app.descendants(matching: .any)["collections-collapse-sharedAlbums"])
     }
 
-    // Recently Deleted (trash scope, read-only; below the fold — scroll to it).
-    if tapScrolling(
-      app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Recently Deleted'")).firstMatch)
-    {
+    // Reorder sheet.
+    if tapScrollingEither(app.descendants(matching: .any)["collections-reorder"]) {
       sleep(1)
-      shot("17-collections-recently-deleted")
-      back()
+      shot("21-collections-reorder")
+      tap(app.buttons["Done"], timeout: 5)
     }
   }
 

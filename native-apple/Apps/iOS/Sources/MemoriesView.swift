@@ -2,83 +2,111 @@ import CoreModel
 import LocalStore
 import SwiftUI
 
-// MARK: - memories (A9.3)
+// MARK: - memories page (C6, native-23: full-width cards with title/date + play)
 
-///
-/// Upstream memories (`Memory` + `memoryAsset` links) as a story player with auto-advance,
-/// plus an "On this day" shelf computed client-side from capture dates. Music stays OFF by
-/// default — no licensed tracks are bundled and no licensing work is in scope; the toggle
-/// only records the preference.
+// Upstream memories (`Memory` + `memoryAsset` links) as full-width cards plus an
+// "On This Day" card opening the day's grid. Tapping play opens the story player
+// (auto-advance, music off by default — no licensed tracks are bundled).
 struct MemoriesView: View {
   @EnvironmentObject var session: AppSession
   @State private var stories: [MemoryStory] = []
-  @State private var onThisDay: [TimelineRow] = []
+  @State private var onThisDayIds: [String] = []
   @State private var playingStory: MemoryStory?
 
+  private static let dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d, yyyy"
+    return formatter
+  }()
+
   var body: some View {
-    List {
-      Section("Stories") {
-        if stories.isEmpty {
-          Text("No saved memories yet.")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        } else {
-          ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-              ForEach(stories) { story in
-                Button { playingStory = story } label: {
-                  VStack {
-                    if let first = story.assetIds.first {
-                      RowThumbnail(rowId: first)
-                        .frame(width: 120, height: 160)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    } else {
-                      RoundedRectangle(cornerRadius: 10)
-                        .fill(.gray.opacity(0.3))
-                        .frame(width: 120, height: 160)
-                    }
-                    Text(story.title)
-                      .font(.caption)
-                      .lineLimit(1)
-                  }
-                }
-                .accessibilityIdentifier("memory-\(story.memoryId)")
-              }
-            }
+    ScrollView {
+      LazyVStack(spacing: 16) {
+        if stories.isEmpty && onThisDayIds.isEmpty {
+          ContentUnavailableView(
+            "No Memories Yet", systemImage: "clock",
+            description: Text("Saved memories and on-this-day moments appear here."))
+        }
+        ForEach(stories) { story in
+          memoryCard(story)
+            .accessibilityIdentifier("memory-\(story.memoryId)")
+        }
+        if !onThisDayIds.isEmpty {
+          NavigationLink {
+            IdListDetail(title: "On This Day", ids: onThisDayIds)
+              .environmentObject(session)
+          } label: {
+            onThisDayCard
           }
+          .buttonStyle(.plain)
         }
       }
-      Section("On This Day") {
-        if onThisDay.isEmpty {
-          Text("Nothing captured on this date in past years.")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(onThisDay) { row in
-            HStack {
-              RowThumbnail(rowId: row.id)
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-              VStack(alignment: .leading) {
-                Text(row.localDateTime?.formatted(date: .long, time: .omitted) ?? "No date")
-                  .font(.subheadline)
-                if let date = row.localDateTime {
-                  Text("\(Calendar.current.component(.year, from: date))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-              }
-            }
-          }
-        }
-      }
+      .padding()
     }
     .navigationTitle("Memories")
+    .navigationBarTitleDisplayMode(.inline)
     .accessibilityIdentifier("memories")
     .refreshable { await reload() }
     .task { await reload() }
     .fullScreenCover(item: $playingStory) { story in
       MemoryStoryPlayerView(story: story)
+    }
+  }
+
+  @ViewBuilder
+  private func memoryCard(_ story: MemoryStory) -> some View {
+    ZStack(alignment: .bottomLeading) {
+      RoundedRectangle(cornerRadius: 20).fill(.gray.opacity(0.25))
+        .frame(height: 320)
+      if let first = story.assetIds.first {
+        AssetThumbView(assetId: first)
+          .frame(height: 320)
+          .clipShape(RoundedRectangle(cornerRadius: 20))
+      }
+      LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .top, endPoint: .bottom)
+        .frame(height: 320)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+      HStack(alignment: .bottom) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(story.title).font(.title2).fontWeight(.bold).foregroundStyle(.white)
+          Text(Self.dateFormatter.string(from: story.memoryAt).uppercased())
+            .font(.caption).foregroundStyle(.white.opacity(0.9))
+        }
+        Spacer()
+        Button { playingStory = story } label: {
+          Image(systemName: "play.fill")
+            .font(.title3)
+            .foregroundStyle(.white)
+            .frame(width: 48, height: 48)
+            .background(.gray.opacity(0.5))
+            .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("memory-play-\(story.memoryId)")
+      }
+      .padding()
+    }
+  }
+
+  @ViewBuilder
+  private var onThisDayCard: some View {
+    ZStack(alignment: .bottomLeading) {
+      RoundedRectangle(cornerRadius: 20).fill(.gray.opacity(0.25))
+        .frame(height: 320)
+      if let first = onThisDayIds.first {
+        AssetThumbView(assetId: first)
+          .frame(height: 320)
+          .clipShape(RoundedRectangle(cornerRadius: 20))
+      }
+      LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .top, endPoint: .bottom)
+        .frame(height: 320)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+      VStack(alignment: .leading, spacing: 2) {
+        Text("On This Day").font(.title2).fontWeight(.bold).foregroundStyle(.white)
+        Text("\(onThisDayIds.count) Items")
+          .font(.caption).foregroundStyle(.white.opacity(0.9))
+      }
+      .padding()
     }
   }
 
@@ -98,10 +126,10 @@ struct MemoriesView: View {
       let scope = try await session.timelineScope()
       let now = Date()
       let calendar = Calendar.current
-      onThisDay = try await store.onThisDayAssets(
+      onThisDayIds = try await store.onThisDayAssets(
         scope: scope,
         month: calendar.component(.month, from: now),
-        day: calendar.component(.day, from: now))
+        day: calendar.component(.day, from: now)).map(\.id)
     } catch {
       // L2: cancellation is never a user-facing error.
       if !error.isCancellation { session.lastError = error.localizedDescription }

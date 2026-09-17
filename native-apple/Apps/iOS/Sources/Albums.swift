@@ -3,19 +3,17 @@ import LocalStore
 import MapKit
 import SwiftUI
 
-// MARK: - albums (brief task 7, DECISIONS §4 R11)
+// MARK: - album detail (WP4 §4: hero cover + grid; brief task 7 behaviours kept)
 
-/// Album detail: album timeline, add/remove assets (any member, R11), share with users, and
-/// album-level settings (rename/delete) gated by role — role only gates settings, never
-/// add/remove (DECISIONS §4).
+// Album timeline as a grid under the native-20 hero (key photo, title, item count).
+// Add/remove stays open to every member (R11); rename/delete stay role-gated.
 struct AlbumDetailView: View {
   @EnvironmentObject var session: AppSession
   var album: Album
 
-  @State private var rows: [TimelineRow] = []
+  @State private var ids: [String]?
   @State private var members: [AlbumMember] = []
   @State private var myRole: AlbumUserRoleKind?
-  @State private var viewerRequest: ViewerRequest?
   @State private var showShare = false
   @State private var showRename = false
   @State private var showDelete = false
@@ -24,64 +22,17 @@ struct AlbumDetailView: View {
   @State private var error: String?
 
   var body: some View {
-    List {
-      Section("Assets (\(rows.count))") {
-        ForEach(rows) { row in
-          HStack {
-            if editMode {
-              Button {
-                if removeIds.contains(row.id) {
-                  removeIds.remove(row.id)
-                } else {
-                  removeIds.insert(row.id)
-                }
-              } label: {
-                Image(systemName: removeIds.contains(row.id) ? "checkmark.circle.fill" : "circle")
-              }
-            }
-            Button {
-              viewerRequest = ViewerRequest(ids: rows.map(\.id), initialId: row.id)
-            } label: {
-              HStack {
-                RowThumbnail(rowId: row.id)
-                  .frame(width: 44, height: 44)
-                  .clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
-                  .font(.subheadline)
-              }
-            }
-            .disabled(editMode)
-          }
-        }
-        if editMode && !removeIds.isEmpty {
-          Button("Remove \(removeIds.count) from Album", role: .destructive) {
-            removeSelected()
-          }
-        }
-      }
-      Section("Members (\(members.count))") {
-        ForEach(members, id: \.userId) { member in
-          HStack {
-            Text(member.userId == session.userId ? "You" : member.userId)
-            Spacer()
-            Text(member.role.rawValue)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
-        Button("Share with Users") { showShare = true }
-      }
-      if canManage {
-        Section("Manage") {
-          Button("Rename") { showRename = true }
-          Button("Delete Album", role: .destructive) { showDelete = true }
-        }
-      }
-      if let error {
-        Section { Text(error).foregroundStyle(.red).font(.caption) }
+    Group {
+      if let ids {
+        IdListDetail(
+          title: album.name, ids: ids,
+          header: AnyView(HeroCoverHeader(
+            coverId: ids.first, title: album.name,
+            subtitle: "\(ids.count) Items")))
+      } else {
+        ProgressView().navigationTitle(album.name)
       }
     }
-    .navigationTitle(album.name)
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button(editMode ? "Done" : "Edit") {
@@ -90,8 +41,8 @@ struct AlbumDetailView: View {
         }
       }
     }
-    .refreshable { await reload() }
     .task { await reload() }
+    .refreshable { await reload() }
     .sheet(isPresented: $showShare) {
       AlbumShareSheet(albumId: album.id) {
         Task { await reload() }
@@ -108,18 +59,69 @@ struct AlbumDetailView: View {
     } message: {
       Text("Assets stay in their libraries; only the album is removed.")
     }
-    .fullScreenCover(item: $viewerRequest) { request in
-      ViewerView(ids: request.ids, initialId: request.initialId)
+    .safeAreaInset(edge: .bottom) {
+      if editMode {
+        albumEditBar
+      } else {
+        albumMemberBar
+      }
     }
   }
 
   /// Album-level settings need editor/owner; add/remove is open to every member (R11).
   private var canManage: Bool { myRole != .viewer }
 
+  @ViewBuilder
+  private var albumEditBar: some View {
+    HStack {
+      Text(removeIds.isEmpty ? "Select items to remove" : "\(removeIds.count) selected")
+        .font(.caption).foregroundStyle(.secondary)
+      Spacer()
+      if !removeIds.isEmpty {
+        Button("Remove from Album", role: .destructive) { removeSelected() }
+          .font(.subheadline)
+      }
+    }
+    .padding()
+    .background(.thinMaterial)
+  }
+
+  // Member management lives below the grid (members, share, rename/delete).
+  @ViewBuilder
+  private var albumMemberBar: some View {
+    Menu {
+      Section("Members (\(members.count))") {
+        ForEach(members, id: \.userId) { member in
+          Text("\(member.userId == session.userId ? "You" : member.userId) · \(member.role.rawValue)")
+        }
+      }
+      Button("Share with Users") { showShare = true }
+      if canManage {
+        Button("Rename") { showRename = true }
+        Button("Delete Album", role: .destructive) { showDelete = true }
+      }
+    } label: {
+      HStack {
+        Image(systemName: "person.2.fill").font(.caption)
+        Text("\(members.count) Members").font(.caption)
+        Spacer()
+        if let error {
+          Text(error).font(.caption2).foregroundStyle(.red).lineLimit(1)
+        }
+      }
+      .padding(.horizontal)
+      .padding(.vertical, 8)
+      .background(.thinMaterial)
+    }
+    .accessibilityIdentifier("album-members")
+  }
+
   private func reload() async {
     guard let store = session.store else { return }
     do {
-      rows = try await store.albumAssets(albumId: album.id, limit: 10_000)
+      // Removal selection is id-based, so it survives grid reloads.
+      let rows = try await store.albumAssets(albumId: album.id, limit: 100_000)
+      ids = rows.map(\.id)
       members = try await store.membersOfAlbum(album.id)
       myRole = try await store.albumMemberRole(albumId: album.id, userId: session.userId)
     } catch {
@@ -148,6 +150,103 @@ struct AlbumDetailView: View {
         self.error = error.localizedDescription
       }
     }
+  }
+}
+
+// MARK: - albums › page (C4, native-19)
+
+/// All-albums page: Personal / Shared segments, a 2-column rounded tile grid, "+"
+/// (existing create flow) and "…" (sort). Shared = more than one member (R11).
+struct AlbumsListView: View {
+  @EnvironmentObject var session: AppSession
+  var sharedOnly = false
+
+  @State private var tiles: [AlbumTileData]?
+  @State private var segment = 0
+  @State private var showCreate = false
+  @State private var sortByName = false
+
+  private var shown: [AlbumTileData] {
+    let tiles = tiles ?? []
+    let filtered = segment == 1 ? tiles.filter(\.isShared) : tiles.filter { !$0.isShared }
+    if sortByName {
+      return filtered.sorted { $0.album.name.localizedCompare($1.album.name) == .orderedAscending }
+    }
+    return filtered
+  }
+
+  var body: some View {
+    Group {
+      if tiles == nil {
+        ProgressView().navigationTitle("Albums")
+      } else {
+        ScrollView {
+          LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 12) {
+            ForEach(shown) { tile in
+              NavigationLink {
+                AlbumDetailView(album: tile.album).environmentObject(session)
+              } label: {
+                PhotoTitleTile(
+                  assetId: tile.coverId, title: tile.album.name,
+                  subtitle: "\(tile.assetCount)")
+              }
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("album-\(tile.album.name)")
+            }
+          }
+          .padding()
+        }
+        .navigationTitle("Albums")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            HStack {
+              Button { showCreate = true } label: { Image(systemName: "plus") }
+                .accessibilityIdentifier("albums-create")
+              Menu {
+                Button("Sort by Name") { sortByName = true }
+                Button("Sort by Recent") { sortByName = false }
+              } label: {
+                Image(systemName: "ellipsis")
+              }
+              .accessibilityIdentifier("albums-menu")
+            }
+          }
+        }
+      }
+    }
+    .safeAreaInset(edge: .top) {
+      Picker("Albums", selection: $segment) {
+        Text("Personal").tag(0)
+        Text("Shared").tag(1)
+      }
+      .pickerStyle(.segmented)
+      .padding(.horizontal)
+      .accessibilityIdentifier("albums-segment")
+    }
+    .task { await load() }
+    .refreshable { await load() }
+    .onAppear { if sharedOnly { segment = 1 } }
+    .sheet(isPresented: $showCreate) {
+      AlbumCreateSheet { _ in Task { await load() } }
+        .environmentObject(session)
+    }
+    .accessibilityIdentifier("albums-list")
+  }
+
+  private func load() async {
+    guard let store = session.store else { return }
+    let all = (try? await store.albumsForUser(session.userId)) ?? []
+    var tiles: [AlbumTileData] = []
+    for album in all {
+      let members = (try? await store.membersOfAlbum(album.id)) ?? []
+      let cover = try? await store.albumAssets(albumId: album.id, limit: 1)
+      let count = (try? await store.albumAssetCount(album.id)) ?? 0
+      tiles.append(AlbumTileData(
+        album: album, memberCount: members.count,
+        coverId: cover?.first?.id, assetCount: count))
+    }
+    self.tiles = tiles
   }
 }
 
@@ -331,59 +430,158 @@ struct AlbumPickerSheet: View {
   }
 }
 
-// MARK: - person detail (DECISIONS §11: per-owner faces)
+// MARK: - person detail (WP4 §4: hero cover + grid)
 
 struct PersonDetailView: View {
   @EnvironmentObject var session: AppSession
-  var person: Person
-  @State private var rows: [TimelineRow] = []
+  var personId: String
+  var name: String
+  @State private var ids: [String]?
+  @State private var faceAssetId: String?
+
+  private var title: String { name.isEmpty ? "Person" : name }
 
   var body: some View {
     Group {
-      if rows.isEmpty {
-        ContentUnavailableView(
-          "No Photos", systemImage: "person",
-          description: Text("Faces cluster under the contributor's People."))
+      if let ids {
+        if ids.isEmpty {
+          ContentUnavailableView(
+            "No Photos", systemImage: "person",
+            description: Text("Faces cluster under the contributor's People."))
+            .navigationTitle(title)
+        } else {
+          IdListDetail(
+            title: title, ids: ids,
+            header: AnyView(PersonHeroHeader(
+              personId: personId, faceAssetId: faceAssetId,
+              title: title, subtitle: "\(ids.count) Items")))
+        }
       } else {
-        AssetRowList(title: person.name.isEmpty ? "Person" : person.name, rows: rows)
+        ProgressView().navigationTitle(title)
       }
     }
-    .navigationTitle(person.name.isEmpty ? "Person" : person.name)
-    .task {
-      guard let store = session.store else { return }
-      let ids = (try? await store.assetIds(forPerson: person.id)) ?? []
-      let assets = (try? await store.assets(ids: ids)) ?? []
-      rows = assets.compactMap { asset in
-        TimelineRow(
-          id: asset.id, thumbhash: asset.thumbhash,
-          aspectRatio: Self.ratio(of: asset),
-          mediaKind: asset.livePhotoVideoId != nil ? .livePhoto
-            : (asset.type == .video ? .video : .photo),
-          isFavorite: asset.isFavorite, isTrashed: asset.deletedAt != nil,
-          isArchived: asset.visibility == .archive, localDateTime: asset.localDateTime)
-      }
-      .sorted { ($0.localDateTime ?? .distantPast) > ($1.localDateTime ?? .distantPast) }
-    }
+    .task { await load() }
+    .refreshable { await load() }
   }
 
-  static func ratio(of asset: Asset) -> Double {
-    if let w = asset.width, let h = asset.height, h > 0 {
-      return Double(w) / Double(h)
-    }
-    return 1
+  private func load() async {
+    guard let store = session.store else { return }
+    ids = (try? await store.assetIds(forPerson: personId, limit: 100_000)) ?? []
+    faceAssetId = (try? await store.peopleForOwner(session.userId))?
+      .first { $0.id == personId }?.faceAssetId
   }
 }
 
-// MARK: - places (map of GPS assets)
+private struct PersonHeroHeader: View {
+  var personId: String
+  var faceAssetId: String?
+  var title: String
+  var subtitle: String
 
-/// A9.4: clustered map (annotations from the shared `MapClusterer`, driven by the
-/// `MKMapView` controller) + a selection grid for the tapped marker/cluster.
+  var body: some View {
+    ZStack(alignment: .bottomLeading) {
+      Rectangle().fill(.gray.opacity(0.25)).frame(height: 240)
+      PersonFaceView(personId: personId, faceAssetId: faceAssetId)
+        .frame(height: 240)
+        .clipped()
+      LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+        .frame(height: 240)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(.title2).fontWeight(.bold).foregroundStyle(.white)
+        Text(subtitle).font(.subheadline).foregroundStyle(.white.opacity(0.9))
+      }
+      .padding()
+    }
+  }
+}
+
+// MARK: - people › page (WP4 §6: 3-column face grid + Sort; groups omitted — no data)
+
+/// Groups are omitted: Immich has no group API, so there is nothing to render
+/// (plan §6: omit unless the data exists).
+struct PeopleListView: View {
+  @EnvironmentObject var session: AppSession
+  @State private var people: [PersonTileData]?
+  @State private var sortByName = false
+
+  private var shown: [PersonTileData] {
+    let people = people ?? []
+    if sortByName {
+      return people.sorted { $0.summary.name.localizedCompare($1.summary.name) == .orderedAscending }
+    }
+    return people
+  }
+
+  var body: some View {
+    Group {
+      if let people {
+        if people.isEmpty {
+          ContentUnavailableView(
+            "No People", systemImage: "person.2",
+            description: Text("Faces appear here once they sync."))
+            .navigationTitle("People")
+        } else {
+          ScrollView {
+            LazyVGrid(
+              columns: [.init(.flexible()), .init(.flexible()), .init(.flexible())],
+              spacing: 12
+            ) {
+              ForEach(shown) { person in
+                NavigationLink {
+                  PersonDetailView(personId: person.id, name: person.summary.name)
+                    .environmentObject(session)
+                } label: {
+                  FaceTile(person: person)
+                }
+                .buttonStyle(.plain)
+              }
+            }
+            .padding()
+          }
+          .navigationTitle("People")
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+              Menu {
+                Button("Sort by Name") { sortByName = true }
+                Button("Sort by Count") { sortByName = false }
+              } label: {
+                Text("Sort").font(.subheadline)
+              }
+              .accessibilityIdentifier("people-sort")
+            }
+          }
+        }
+      } else {
+        ProgressView().navigationTitle("People")
+      }
+    }
+    .task { await load() }
+    .refreshable { await load() }
+    .accessibilityIdentifier("people-list")
+  }
+
+  private func load() async {
+    guard let store = session.store else { return }
+    let summaries = (try? await store.peopleSummaries(userId: session.userId)) ?? []
+    let persons = (try? await store.peopleForOwner(session.userId)) ?? []
+    let faces = Dictionary(uniqueKeysWithValues: persons.map { ($0.id, $0.faceAssetId) })
+    people = summaries
+      .filter { !($0.name.isEmpty && $0.assetCount == 0) }
+      .map { PersonTileData(summary: $0, faceAssetId: faces[$0.id] ?? nil) }
+  }
+}
+
+// MARK: - places (map of GPS assets; selection opens the grid)
+
+/// Clustered map (annotations from the shared `MapClusterer`) + the tapped
+/// marker/cluster selection as a grid below it.
 struct PlacesView: View {
   @EnvironmentObject var session: AppSession
   @State private var pins: [LocatedAsset] = []
-  @State private var rows: [TimelineRow] = []
   @State private var zoomLevel: Double = 3
   @State private var selectedIds: [String] = []
+  @State private var columns = 5
   @State private var viewerRequest: ViewerRequest?
 
   private var clusters: [MapCluster] {
@@ -392,14 +590,9 @@ struct PlacesView: View {
       zoomLevel: zoomLevel)
   }
 
-  private var selectedRows: [TimelineRow] {
-    let wanted = Set(selectedIds)
-    return rows.filter { wanted.contains($0.id) }
-  }
-
   var body: some View {
-    List {
-      Section("Map") {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
         ClusteredMapView(
           clusters: clusters,
           onSelect: { selectedIds = $0 },
@@ -407,57 +600,44 @@ struct PlacesView: View {
         )
         .frame(height: 280)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
         .accessibilityIdentifier("places-map")
-      }
-      if !selectedIds.isEmpty {
-        Section("Selection (\(selectedRows.count))") {
-          ForEach(selectedRows) { row in
-            Button {
-              viewerRequest = ViewerRequest(ids: selectedIds, initialId: row.id)
-            } label: {
-              HStack {
-                RowThumbnail(rowId: row.id)
-                  .frame(width: 44, height: 44)
-                  .clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
-                  .font(.subheadline)
-              }
-            }
-          }
+        if !selectedIds.isEmpty {
+          Text("Selection (\(selectedIds.count))")
+            .font(.headline)
+            .padding(.horizontal)
+          selectionGrid
+            .frame(height: 400)
         }
       }
-      Section("Located Assets (\(rows.count))") {
-        ForEach(rows) { row in
-          Button {
-            viewerRequest = ViewerRequest(ids: rows.map(\.id), initialId: row.id)
-          } label: {
-            HStack {
-              RowThumbnail(rowId: row.id)
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-              Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
-                .font(.subheadline)
-            }
-          }
-        }
-      }
+      .padding(.vertical)
     }
     .navigationTitle("Places")
-    .task {
-      guard let store = session.store,
-        let scope = try? await session.timelineScope()
-      else { return }
-      pins = (try? await store.locatedAssets(scope: scope)) ?? []
-      let assets = (try? await store.assets(ids: pins.map(\.id))) ?? []
-      rows = assets.map {
-        TimelineRow(
-          id: $0.id, thumbhash: $0.thumbhash, aspectRatio: PersonDetailView.ratio(of: $0),
-          mediaKind: $0.type == .video ? .video : .photo, isFavorite: $0.isFavorite,
-          isTrashed: false, isArchived: false, localDateTime: $0.localDateTime)
-      }
-    }
+    .task { await load() }
+    .refreshable { await load() }
     .fullScreenCover(item: $viewerRequest) { request in
       ViewerView(ids: request.ids, initialId: request.initialId)
     }
+  }
+
+  @ViewBuilder
+  private var selectionGrid: some View {
+    AssetGridView(
+      source: .ids(selectedIds),
+      store: session.store,
+      pipeline: session.pipeline,
+      columns: $columns,
+      onOpen: { route in
+        viewerRequest = ViewerRequest(ids: route.resolveIds(), initialId: route.startId)
+      },
+      showsSectionHeaders: false
+    )
+  }
+
+  private func load() async {
+    guard let store = session.store,
+      let scope = try? await session.timelineScope()
+    else { return }
+    pins = (try? await store.locatedAssets(scope: scope)) ?? []
   }
 }
