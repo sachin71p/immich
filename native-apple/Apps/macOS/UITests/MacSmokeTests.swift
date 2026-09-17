@@ -27,6 +27,18 @@ final class MacSmokeTests: XCTestCase {
     ]
   }
 
+  /// Selection-dependent menu items capture the focused grid actions when Commands
+  /// rebuilds: after a selection click, wait until the selection-gated "Move to…"
+  /// enables, proving the new selection reached the menus before clicking any
+  /// menu item (otherwise the fired closure still carries the previous selection).
+  private func waitForSelectionMenus(file: StaticString = #filePath, line: UInt = #line) {
+    let item = app.menuBars.menuItems["Move to…"]
+    XCTAssertTrue(item.waitForExistence(timeout: 10), "menu item Move to…", file: file, line: line)
+    let deadline = Date().addingTimeInterval(10)
+    while !item.isEnabled && Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+    XCTAssertTrue(item.isEnabled, "selection reaches the menus", file: file, line: line)
+  }
+
   /// Menu-bar items are label lookups (AX ids arrive with WP-C); always wait for
   /// them instead of clicking blind — the menu tree populates asynchronously.
   private func menuItem(_ title: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
@@ -66,8 +78,9 @@ final class MacSmokeTests: XCTestCase {
       )
     }
 
-    // Toolbar: zoom slider, Years/Months/All segmented control, library switcher.
-    XCTAssertTrue(app.descendants(matching: .any)["zoom-slider"].waitForExistence(timeout: 10))
+    // Toolbar: grid size stepper, Years/Months/All segmented control, library switcher.
+    // ("zoom-slider" predates the stepper redesign; the app exposes "grid-size-controls".)
+    XCTAssertTrue(app.descendants(matching: .any)["grid-size-controls"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["grouping-segmented"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].waitForExistence(timeout: 10))
   }
@@ -86,22 +99,31 @@ final class MacSmokeTests: XCTestCase {
     XCTAssertFalse(app.descendants(matching: .any)["toast"].exists, "fixture launch does not attempt a network sync")
   }
 
-  /// Keyboard selection (⌘A) then Move to… lists the allowed targets (AP-04: move sheet
-  /// targets equal the `Rules.MoveTargets` expectations for the selection).
+  /// Representative multi-select then Move to… lists the allowed targets (AP-04: move
+  /// sheet targets equal the `Rules.MoveTargets` expectations for the selection).
+  /// One cell per container (personal + space + external library): the asserted union
+  /// is identical to a select-all union, at a fraction of the target-computation cost.
   func testKeyboardSelectionAndMoveTargets() {
     app.launchForUIAutomation()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(app.descendants(matching: .any)["asset-grid"].waitForExistence(timeout: 30))
 
-    // Keyboard selection: focus the grid and select all. Click a cell rather than the
-    // grid container itself — the container is fully covered by its cells, so XCUITest
-    // has no free pixel to click on it directly.
+    // Multi-select: focus the grid with a click (the container is fully covered by
+    // its cells, so XCUITest has no free pixel to click on it directly), then
+    // extend across containers — keyboard selection via ⌘-held clicks.
     let firstCell = app.descendants(matching: .any)["grid-cell-asset-personal-1"].firstMatch
-    XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
+    XCTAssertTrue(firstCell.waitForExistence(timeout: 10), "personal cell renders")
     firstCell.click()
-    app.typeKey("a", modifierFlags: .command)
+    let spaceCell = app.descendants(matching: .any)["grid-cell-asset-space-video"].firstMatch
+    let libCell = app.descendants(matching: .any)["grid-cell-asset-library-1"].firstMatch
+    XCTAssertTrue(spaceCell.waitForExistence(timeout: 10), "space cell renders")
+    XCTAssertTrue(libCell.waitForExistence(timeout: 10), "external-library cell renders")
+    // One modified click per perform, mirroring the passing favorite-two shape.
+    XCUIElement.perform(withKeyModifiers: .command) { spaceCell.click() }
+    XCUIElement.perform(withKeyModifiers: .command) { libCell.click() }
 
     // Move sheet via the Image menu (menus own the shortcut — MacMenus).
+    waitForSelectionMenus()
     menuItem("Move to…").click()
 
     let sheet = app.descendants(matching: .any)["move-sheet-title"]
@@ -109,9 +131,9 @@ final class MacSmokeTests: XCTestCase {
 
     // Union across the seeded selection (personal + space + external-library assets):
     // every container the user can access is offered (DECISIONS §6 rules 2–4).
-    XCTAssertTrue(app.descendants(matching: .any)["move-target-personal"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.descendants(matching: .any)["move-target-space-space-family"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["move-target-library-library-archive"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["move-target-personal"].waitForExistence(timeout: 10), "personal target offered")
+    XCTAssertTrue(app.descendants(matching: .any)["move-target-space-space-family"].exists, "family target offered")
+    XCTAssertTrue(app.descendants(matching: .any)["move-target-library-library-archive"].exists, "archive target offered")
 
     app.typeKey(.escape, modifierFlags: [])
   }
@@ -124,9 +146,12 @@ final class MacSmokeTests: XCTestCase {
 
     XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].waitForExistence(timeout: 10))
     app.descendants(matching: .any)["library-switcher"].click()
-    let family = app.menuItems["Family"]
-    XCTAssertTrue(family.waitForExistence(timeout: 10))
-    family.click()
+    // The SwiftUI Menu popup keeps its items out of the XCUITest tree
+    // (`app.menuItems` only sees the menu bar), so drive it by type-select: the
+    // open menu takes focus and matches the typed prefix, Return commits.
+    Thread.sleep(forTimeInterval: 1.0)
+    app.typeText("Family")
+    app.typeKey(.enter, modifierFlags: [])
 
     // Space-scoped: space assets render; the personal asset is gone.
     XCTAssertTrue(
