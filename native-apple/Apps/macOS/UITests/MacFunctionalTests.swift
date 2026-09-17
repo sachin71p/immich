@@ -46,6 +46,15 @@ final class MacFunctionalTests: XCTestCase {
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(el("sidebar").waitForExistence(timeout: 30), "sidebar renders")
     XCTAssertTrue(el("asset-grid").waitForExistence(timeout: 30), "grid renders")
+    // The default 1400px window collapses trailing toolbar items (Favorite,
+    // Select, Sync, Manage) into the overflow menu where AX cannot reach them:
+    // ⌥-click the green button so the window fills the display and the full
+    // grid toolbar renders before any test touches it.
+    let zoom = app.windows.firstMatch.buttons["_XCUI:FullScreenWindow"]
+    XCTAssertTrue(zoom.waitForExistence(timeout: 10), "zoom button renders")
+    XCUIElement.perform(withKeyModifiers: .option) { zoom.click() }
+    XCTAssertTrue(
+      el("favorite-button").waitForExistence(timeout: 10), "toolbar unfurls after zoom")
   }
 
   private func windowTitle() -> String {
@@ -212,13 +221,21 @@ final class MacFunctionalTests: XCTestCase {
 
   func testManageSpaceSheetDoneAndEscape() {
     launchAndWaitForLibrary()
+    // Space rows render from the async spaces refresh, and Manage additionally
+    // needs the space selection applied — wait for both, never click blind.
+    XCTAssertTrue(
+      el("sidebar-space-space-family").waitForExistence(timeout: 10), "space row renders")
     el("sidebar-space-space-family").click()
     XCTAssertEqual(windowTitle(), "Family")
+    XCTAssertTrue(
+      el("space-manage-button").waitForExistence(timeout: 10), "manage button renders")
     el("space-manage-button").click()
     XCTAssertTrue(el("space-save").waitForExistence(timeout: 10), "manage sheet opens")
     // Done carries `.cancelAction` (closes without saving); Escape does the same.
     sheetButton("Done")
     assertClosed("space-save", "manage Done closes")
+    XCTAssertTrue(
+      el("space-manage-button").waitForExistence(timeout: 10), "manage button renders")
     el("space-manage-button").click()
     XCTAssertTrue(el("space-save").waitForExistence(timeout: 10), "manage sheet reopens")
     app.typeKey(.escape, modifierFlags: [])
@@ -257,6 +274,12 @@ final class MacFunctionalTests: XCTestCase {
     // named explicitly, so grid sort order cannot affect which two get favorited).
     cell1.click()
     XCUIElement.perform(withKeyModifiers: .command) { cell2.click() }
+    // The ⌘-click rebuilds selection-driven UI including the toolbar: prove the
+    // new selection flushed through (menus rebuild on the same state) before
+    // touching the toolbar.
+    waitForSelectionMenus()
+    XCTAssertTrue(
+      el("favorite-button").waitForExistence(timeout: 10), "favorite button renders")
     el("favorite-button").click()
     el("sidebar-favorites").click()
     XCTAssertEqual(windowTitle(), "Favorites")
