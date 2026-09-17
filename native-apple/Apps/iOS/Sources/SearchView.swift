@@ -65,9 +65,6 @@ struct SearchView: View {
         }
       }
       .navigationTitle("Search")
-      // The search-role tab renders this as the floating bottom field (plus mic
-      // where the system offers one); typing debounces into `runSearch` below.
-      .searchable(text: $query, placement: .automatic, prompt: "Search photos")
       .toolbar {
         ToolbarItem(placement: .primaryAction) {
           HStack(spacing: 4) {
@@ -114,6 +111,10 @@ struct SearchView: View {
         await loadIdle()
       }
     }
+    // On the stack itself (the search-tab pattern): the search-role tab renders
+    // this as the floating bottom field (plus mic where the system offers one);
+    // typing debounces into `runSearch` above.
+    .searchable(text: $query, placement: .automatic, prompt: "Search photos")
     .accessibilityIdentifier("search-view")
   }
 

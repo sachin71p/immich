@@ -345,7 +345,8 @@ final class ScreenshotTourUITests: XCTestCase {
     shot("23-account-sheet")
 
     // Sign Out shows its confirmation; cancel it so the tour keeps its session.
-    XCTAssertTrue(tap(app.buttons["account-signout"], timeout: 10))
+    // The button sits at the bottom of the sheet list — scroll to it.
+    XCTAssertTrue(tapScrolling(app.buttons["account-signout"]))
     XCTAssertTrue(
       app.alerts.firstMatch.waitForExistence(timeout: 5),
       "sign out should ask for confirmation")

@@ -81,8 +81,23 @@ unaffected (code-side registration exists).
   failure seen was WP1 `timelineRows` 102k timing under parallel load
   (1714 ms vs 1500 ms budget) — passes in isolation (4.5 s suite run);
   flaky/environmental, untouched by this WP.
-- `bash native-apple/scripts/verify.sh ios`: see below (was still running at
-  report time if noted).
+- `bash native-apple/scripts/verify.sh ios`: **blocked by shared-box contention,
+  not by WP5 code.** 4/6 UI tests pass (A3 smoke, A9 extras with the new label
+  tap, GridPerf 100k, viewer performance). The screenshot tour dies at a
+  different spot on every run — switcher menu, timeline-sources→viewer, zoom
+  levels — all in untouched Library/Viewer code, always as a runner SIGKILL
+  followed by the known 600 s `simctl diagnose` hang. The box runs 4–6
+  concurrent sibling `xcodebuild test` sessions with ~70 MB free RAM, and the
+  distress is visible inside the runs (later screenshot attachments are dropped
+  from the xcresult). One run reached the WP5 steps: account sheet opened, name
+  asserted, shot 23 taken. Two tour-script issues found there are fixed in
+  `0be2b28` (sign-out scrolled into view; `.searchable` moved onto the
+  `NavigationStack` per the search-tab pattern after `searchFields` timed out
+  once under the same distress). Re-run when the box is quiet:
+  `xcodebuild -project native-apple/Heirloom.xcodeproj -scheme Heirloom-iOS
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max'
+  -only-testing:Heirloom-iOS-UITests/ScreenshotTourUITests/testScreenshotTour test`
+  Full-log evidence in `/tmp/wp5-tour-rerun*.log` (scratch, not committed).
 - `make xcodegen`: regen committed (`-f`, file is tracked-but-ignored;
   precedent `28fde2682`).
 
