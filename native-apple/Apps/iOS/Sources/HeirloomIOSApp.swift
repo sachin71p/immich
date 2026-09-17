@@ -58,30 +58,26 @@ struct MainTabs: View {
   @EnvironmentObject var session: AppSession
 
   var body: some View {
-    // A9.6: selection binding so `OpenSearchIntent` can land on the Search tab.
+    // A9.6: selection binding so `OpenSearchIntent` can land on the Search tab —
+    // the "search" value plus the `Heirloom.pendingRoute` key are the Shortcuts
+    // deep-link contract; both are preserved here.
+    // WP5 (T1): Library, Collections, search-role tab. Shared lives in
+    // Collections + the Library filter menu (WP2/WP4); Settings moved behind
+    // the account avatar (`AccountButton`, presented from Search until WP4
+    // wires the Collections toolbar).
     TabView(selection: $session.requestedTab) {
-      LibraryView()
-        .tag("library")
-        .tabItem { Label("Library", systemImage: "photo").accessibilityIdentifier("tab-library") }
-      CollectionsView()
-        .tag("collections")
-        .tabItem {
-          Label("Collections", systemImage: "square.grid.2x2").accessibilityIdentifier(
-            "tab-collections")
-        }
-      SearchView()
-        .tag("search")
-        .tabItem {
-          Label("Search", systemImage: "magnifyingglass").accessibilityIdentifier("tab-search")
-        }
-      NavigationStack {
-        SpacesListView()
+      Tab("Library", systemImage: "photo", value: "library") {
+        LibraryView()
       }
-      .tag("shared")
-      .tabItem { Label("Shared", systemImage: "person.2").accessibilityIdentifier("tab-shared") }
-      SettingsView()
-        .tag("settings")
-        .tabItem { Label("Settings", systemImage: "gear").accessibilityIdentifier("tab-settings") }
+      Tab("Collections", systemImage: "square.grid.2x2", value: "collections") {
+        CollectionsView()
+      }
+      Tab(value: "search", role: .search) {
+        SearchView()
+      }
     }
+    // Same value WP2 applies on LibraryView; a duplicate minimize behavior does
+    // not conflict, it converges.
+    .tabBarMinimizeBehavior(.onScrollDown)
   }
 }

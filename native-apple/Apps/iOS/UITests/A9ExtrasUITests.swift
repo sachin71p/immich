@@ -8,7 +8,9 @@ final class A9ExtrasUITests: XCTestCase {
     app.launchArguments += ["-useFixtureStore"]
     app.launch()
 
-    app.buttons["tab-collections"].tap()
+    // WP5: tabs are the new-style `Tab` API — match by label like the tour does,
+    // identifiers no longer propagate onto tab-bar buttons.
+    app.tabBars.buttons["Collections"].tap()
     XCTAssertTrue(
       app.descendants(matching: .any)["collections"].waitForExistence(timeout: 30),
       "collections should render from the fixture DB")
