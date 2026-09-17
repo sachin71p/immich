@@ -126,6 +126,7 @@ targets:
       - Apps/macOS/Tests
       - Apps/macOS/Sources/FixtureSeed.swift
       - Apps/macOS/Sources/AXIDs.swift
+      - Apps/macOS/Sources/LaunchGate.swift
       - Apps/macOS/Sources/Gestures/GestureInputs.swift
     dependencies:
       - package: PhotosCore

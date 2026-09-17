@@ -14,10 +14,22 @@ import Rules
 public final class PhotosLocalStore: Sendable {
   let dbQueue: DatabasePool
 
+  /// Mapped-memory budget for every pool connection (WP-F F2: the 229 MB owner DB
+  /// memory-maps its read working set instead of faulting pages through `sqlite3_step`).
+  public static let readerMmapSizeBytes = 268_435_456
+
+  private static func makePool(path: String) throws -> DatabasePool {
+    var configuration = Configuration()
+    try configuration.prepareDatabase { db in
+      try db.execute(sql: "PRAGMA mmap_size = \(readerMmapSizeBytes)")
+    }
+    return try DatabasePool(path: path, configuration: configuration)
+  }
+
   /// Opens (creating if needed) the database at `path` and migrates it to the latest schema.
   /// An existing rollback-journal owner DB is converted to WAL on open (GRDB pool default).
   public init(path: String) throws {
-    dbQueue = try DatabasePool(path: path)
+    dbQueue = try Self.makePool(path: path)
     try Schema.makeMigrator().migrate(dbQueue)
   }
 
@@ -28,7 +40,7 @@ public final class PhotosLocalStore: Sendable {
     // pooled, and never near the real library. The OS reclaims TMPDIR contents.
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("PhotosLocalStore-\(UUID().uuidString).sqlite")
-    dbQueue = try DatabasePool(path: url.path)
+    dbQueue = try Self.makePool(path: url.path)
     try Schema.makeMigrator().migrate(dbQueue)
   }
 

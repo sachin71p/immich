@@ -142,6 +142,37 @@ final class MacFunctionalTests: XCTestCase {
     }
   }
 
+  // MARK: - WP-F F3: signed-in launch never shows connect
+
+  /// The fixture seed signs in synchronously (`MacAppState.seeded`), so from the
+  /// first poll `connect.form` must never exist, and the footer must never read
+  /// "0 Photos" while content loads (spinner or cached counts instead).
+  /// Runs via `verify.sh mac-ui` on the host (main session owns device foreground).
+  func testSignedInLaunchNeverShowsConnect() {
+    app.launchForUIAutomation()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
+    // Poll every ~16 ms for the first 3 s: the connect form must never appear.
+    let deadline = Date().addingTimeInterval(3)
+    var sawConnect = false
+    while Date() < deadline {
+      if el("connect.form").exists {
+        sawConnect = true
+        break
+      }
+      usleep(16_000)
+    }
+    XCTAssertFalse(sawConnect, "connect.form rendered for a signed-in launch")
+    XCTAssertTrue(el("sidebar").waitForExistence(timeout: 30), "sidebar renders")
+    XCTAssertTrue(el("asset-grid").waitForExistence(timeout: 30), "grid renders")
+    // "0 Photos" is only legal once loading finished (a genuinely empty library);
+    // while loading, the footer shows the spinner.
+    if el("library-loading").exists {
+      XCTAssertFalse(
+        el("library-sync-status").staticTexts["0 Photos, 0 Videos"].exists,
+        "footer flashed 0 Photos while loading")
+    }
+  }
+
   // MARK: - Step 3: move sheet + ⌘Q
 
   /// Move sheet opens for a keyboard selection; Cancel closes, Escape closes, and ⌘Q

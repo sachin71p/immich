@@ -51,23 +51,74 @@ final class HeirloomPerfTests: XCTestCase {
 
   // MARK: - signpost scaffolding (skipped until the owning WP emits them)
   // Each test below measures an `XCTOSSignpostMetric(subsystem:
-  // "com.immich.heirloom.macos", category: "HeirloomLog", name: <signpost>)`
-  // once the owning WP emits that signpost.
+  // "com.immich.heirloom", category: "timeline", name: <signpost>)` — the exact
+  // pair `HeirloomSignpost` emits — once the owning WP emits that signpost.
 
-  func testLaunchFirstThumbnails() throws {
-    throw XCTSkip("awaiting WP-F: Launch.FirstThumbnails signpost")
+  // WP-F F3: cold launch serves the persisted snapshot (target: first thumbnails
+  // from disk without a connect flash or "0 Photos").
+  func testLaunchFirstThumbnails() {
+    measure(
+      metrics: [
+        XCTOSSignpostMetric(
+          subsystem: "com.immich.heirloom", category: "timeline", name: "Launch.FirstThumbnails")
+      ])
+    {
+      launchAndWaitForGrid()
+      app.terminate()
+    }
   }
 
-  func testLibraryReturn() throws {
-    throw XCTSkip("awaiting WP-F: Library.Return signpost")
+  // WP-F F1: Library → Collections → Library serves the cached snapshot
+  // (target ≤ 150 ms). The first round-trip warms the cache outside `measure`.
+  func testLibraryReturn() {
+    launchAndWaitForGrid()
+    let collections = app.descendants(matching: .any)["sidebar-collections"]
+    let library = app.descendants(matching: .any)["sidebar-library"]
+    XCTAssertTrue(collections.waitForExistence(timeout: 30))
+    collections.click()
+    XCTAssertTrue(library.waitForExistence(timeout: 30))
+    library.click()
+    measure(
+      metrics: [
+        XCTOSSignpostMetric(
+          subsystem: "com.immich.heirloom", category: "timeline", name: "Library.Return")
+      ])
+    {
+      collections.click()
+      library.click()
+    }
   }
 
-  func testPageFirstPaint() throws {
-    throw XCTSkip("awaiting WP-P: Page.FirstPaint signpost")
+  // WP-F F4 (co-owned with WP-P): Videos page first paint (target ≤ 1 s).
+  func testPageFirstPaint() {
+    launchAndWaitForGrid()
+    let videos = app.descendants(matching: .any)["sidebar-videos"]
+    let library = app.descendants(matching: .any)["sidebar-library"]
+    XCTAssertTrue(videos.waitForExistence(timeout: 30))
+    measure(
+      metrics: [
+        XCTOSSignpostMetric(
+          subsystem: "com.immich.heirloom", category: "timeline", name: "Page.FirstPaint")
+      ])
+    {
+      videos.click()
+      XCTAssertTrue(
+        app.descendants(matching: .any)["asset-grid"].waitForExistence(timeout: 30))
+      library.click()
+    }
   }
 
-  func testTimelineQuery() throws {
-    throw XCTSkip("awaiting WP-F: Timeline.Query signpost")
+  // WP-F F2: store timeline/filter query interval (cold ≤ 1.5 s, warm ≤ 300 ms).
+  func testTimelineQuery() {
+    measure(
+      metrics: [
+        XCTOSSignpostMetric(
+          subsystem: "com.immich.heirloom", category: "timeline", name: "Timeline.Query")
+      ])
+    {
+      launchAndWaitForGrid()
+      app.terminate()
+    }
   }
 
   func testEditOpen() throws {

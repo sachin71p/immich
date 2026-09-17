@@ -465,6 +465,18 @@ public actor MediaPipeline {
     cancelPrefetch(keeping: [])
   }
 
+  /// WP-F F5 velocity-aware micro prefetch for mosaic zoom (consumed by WP-G's grid,
+  /// which owns scroll velocity — the pipeline never reads UI state). Items whose
+  /// cells will pass through the viewport within 100 ms are skipped before any fetch
+  /// starts; the survivors load through the standard dedup/memory/disk `.micro` path
+  /// (thumbnail bytes downsampled to 64 px at decode).
+  public func prefetchMicro(_ items: [(id: String, distance: Double)], velocity: Double) async {
+    let wanted = items.filter {
+      MicroThumbnail.shouldDecode(distanceToViewportPts: $0.distance, velocityPtsPerSec: velocity)
+    }.map(\.id)
+    await prefetch(ids: wanted, tier: .micro, edited: false)
+  }
+
   // MARK: - offline keeps (pinning)
 
   /// Keeps full originals on device for an album/space/library/favorites id list — task 3.

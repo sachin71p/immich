@@ -11,7 +11,28 @@ extension PhotosLocalStore {
         try Self.applyOne(change, currentUserId: currentUserId, db: db)
       }
       try Self.recomputeAlbumSharingTypes(db: db)
+      try Self.reattachProjectionTypes(changes: changes, db: db)
     }
+  }
+
+  /// WP-F F2 denormalization repair, once per batch: an exif batch can land before
+  /// its asset rows, in which case the `.assetExif` mirror UPDATE hits zero rows.
+  /// One set-based UPDATE re-attaches those flags — O(1) statements per batch
+  /// instead of one probe per asset row (the 102k-row seed path).
+  private static func reattachProjectionTypes(changes: [SyncChange], db: Database) throws {
+    let ids = changes.compactMap { change -> String? in
+      if case .asset(let asset) = change { return asset.id }
+      return nil
+    }
+    guard !ids.isEmpty else { return }
+    let placeholders = ids.map { _ in "?" }.joined(separator: ",")
+    try db.execute(
+      sql: """
+        UPDATE asset SET projectionType = (
+          SELECT assetExif.projectionType FROM assetExif WHERE assetExif.assetId = asset.id
+        ) WHERE id IN (\(placeholders)) AND projectionType IS NULL
+          AND EXISTS (SELECT 1 FROM assetExif WHERE assetExif.assetId = asset.id)
+        """, arguments: StatementArguments(ids))
   }
 
   private static func applyOne(_ change: SyncChange, currentUserId: String, db: Database) throws {
@@ -27,12 +48,20 @@ extension PhotosLocalStore {
       try PartnerRecord.deleteOne(db, key: ["sharedById": sharedById, "sharedWithId": sharedWithId])
 
     case .asset(let asset):
+      // `save` only writes `AssetRecord` columns, so a mirrored `projectionType`
+      // already on the row survives; exif-before-asset ordering is repaired once
+      // per batch by `reattachProjectionTypes` (never per row — seed path).
       try AssetRecord(asset).save(db)
     case .assetDelete(let id):
       try AssetRecord.deleteOne(db, key: id)
       try AssetExifRecord.deleteOne(db, key: id)
     case .assetExif(let exif):
       try AssetExifRecord(exif).save(db)
+      // WP-F F2 denormalization: keep `asset.projectionType` (the grid's panorama
+      // classifier, read without a join) in step with the exif row.
+      try db.execute(
+        sql: "UPDATE asset SET projectionType = ? WHERE id = ?",
+        arguments: [exif.projectionType, exif.assetId])
 
     case .album(let album):
       try AlbumRecord(album).save(db)

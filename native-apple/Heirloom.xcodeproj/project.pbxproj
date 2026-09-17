@@ -31,6 +31,7 @@
 		2043120048B38CFB6245002A /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 168420A922E85CB950B4AE95 /* ImmichAPI */; };
 		22328826F00AB80090B9DBE6 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 952D308CC84C144B2BC179A7 /* LocalStore */; };
 		23D25F7E4E774F4695B170E1 /* ErrorFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */; };
+		24550AB8E5710572ADF4B323 /* LaunchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */; };
 		255CFEE364CE5BDABF5C70B7 /* AXIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */; };
 		26D2C31B3ABC77106FBF1674 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AA815EE14B97B0CBB0477F0 /* SearchView.swift */; };
 		29ABBE27D7DCD7F5BFF9DC17 /* MacConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED843D17D53914CE88AD6A8 /* MacConnectView.swift */; };
@@ -67,6 +68,7 @@
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
 		73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */; };
 		74E1521AB4E36AEC675EF355 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 6C16597F47DFD5A8BF513C1F /* CoreModel */; };
+		79D89EF062DDFD2CE8B71701 /* LaunchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */; };
 		7AE9781FE902087E5559F25F /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 37D0016B12D659C36170F7CE /* Upload */; };
 		7B20DEECFEAD303A8949BC9D /* SyntheticEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C83BE3CB664D9797E41FF48 /* SyntheticEvents.swift */; };
 		7E22ACEF69BE6E6DFDD0E56F /* MacMainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6086603C26DEA57A022404B /* MacMainWindow.swift */; };
@@ -80,6 +82,7 @@
 		8B6CCC43E03D96B3C89CB8A5 /* FastScroller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173F9A53CF69350E161F685F /* FastScroller.swift */; };
 		8BE193705534A8D74F73A0D4 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */; };
 		8C6C50D67AB3541D47564244 /* testFixtureThumbnailView.light.png in Resources */ = {isa = PBXBuildFile; fileRef = CC3C5DBDA96BB5C31EEA7E15 /* testFixtureThumbnailView.light.png */; };
+		8D371D998273E8F8D81F5981 /* LaunchGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5B8B059C88FF518693735C /* LaunchGateTests.swift */; };
 		8E9F084D689556BF9E2E912F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE3A2E934C82B427235CAAC4 /* Assets.xcassets */; };
 		9072FA0D2B3536D5DD098ECD /* HeirloomWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B423EDAD3D1C1AC259A1BE /* HeirloomWidgets.swift */; };
 		90F9E6ACBD138F7275D37FCB /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 1BE688DBA40C3BEC4B449CBA /* SyncEngine */; };
@@ -188,6 +191,8 @@
 		15D4A19C943EBA642A067465 /* Heirloom-macOS-Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Heirloom-macOS-Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1621E72990EA01E79B8DD583 /* MacPreviewFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewFixtures.swift; sourceTree = "<group>"; };
 		173F9A53CF69350E161F685F /* FastScroller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastScroller.swift; sourceTree = "<group>"; };
+		1A5B8B059C88FF518693735C /* LaunchGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateTests.swift; sourceTree = "<group>"; };
+		1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGate.swift; sourceTree = "<group>"; };
 		1CA119048529A71E42CB383D /* FixtureStubTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureStubTests.swift; sourceTree = "<group>"; };
 		1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSeed.swift; sourceTree = "<group>"; };
 		1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomPerfTests.swift; sourceTree = "<group>"; };
@@ -554,6 +559,7 @@
 				A723E1EC0CE8F83F81CA597F /* FixtureSnapshotTests.swift */,
 				1CA119048529A71E42CB383D /* FixtureStubTests.swift */,
 				938939017F03BF2906B018DD /* GestureInputTests.swift */,
+				1A5B8B059C88FF518693735C /* LaunchGateTests.swift */,
 				C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */,
 				CCAB1BF69EB0A0B9A89A2048 /* __Snapshots__ */,
 				F821A37526B1924D59BF997F /* Support */,
@@ -579,6 +585,7 @@
 				C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */,
 				4D11D9052E6205D135807468 /* FixtureSeed.swift */,
 				14131A6D7F58E899A3F0DF12 /* HeirloomMacOSApp.swift */,
+				1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */,
 				A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */,
 				087CC5923156A206E813BA60 /* MacAllAlbumsView.swift */,
 				0DCB8DBDC4ACB6E8F052C452 /* MacAppState.swift */,
@@ -1101,6 +1108,7 @@
 				F383DF5E160D7FFF3C0D423D /* FixtureSeed.swift in Sources */,
 				49785A0D9B8F7EB859A6DADE /* GestureInputs.swift in Sources */,
 				CFEE33158BF0E7C74F7C24EF /* HeirloomMacOSApp.swift in Sources */,
+				24550AB8E5710572ADF4B323 /* LaunchGate.swift in Sources */,
 				E41CE7E89CE02CE15849BDC8 /* LockedMediaAuthentication.swift in Sources */,
 				2CFC71F750FE62CC4BFC6F03 /* MacAgentLoginItem.swift in Sources */,
 				C01CDF31C9D4498BC443A056 /* MacAllAlbumsView.swift in Sources */,
@@ -1160,6 +1168,8 @@
 				12AF7E15015BE8A9DFEAA02D /* FixtureStubTests.swift in Sources */,
 				D201E688DF00302A733FDC25 /* GestureInputTests.swift in Sources */,
 				F7B1EBB04F2816C02BA5DE41 /* GestureInputs.swift in Sources */,
+				79D89EF062DDFD2CE8B71701 /* LaunchGate.swift in Sources */,
+				8D371D998273E8F8D81F5981 /* LaunchGateTests.swift in Sources */,
 				1728134BDAC57250D594772C /* SeedSmokePathTests.swift in Sources */,
 				7B20DEECFEAD303A8949BC9D /* SyntheticEvents.swift in Sources */,
 			);

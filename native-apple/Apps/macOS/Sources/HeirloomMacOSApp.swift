@@ -139,6 +139,12 @@ struct HeirloomMacOSApp: App {
         delegate.state = state
         if HeirloomLaunchFlag.isPresent("-fixture-seed", legacy: "--fixture-seed") {
           try? await state?.seedForSmoke()
+        } else if state?.restorePersistedSession(tokenPresent: MacKeychain.loadToken() != nil)
+          == true
+        {
+          // WP-F F3: signed-in users land straight in the library — `MacConnectView`
+          // never renders. Revalidation is async and never flashes connect.
+          await state?.revalidateSession()
         } else {
           await state?.adoptKeychainSession()
         }

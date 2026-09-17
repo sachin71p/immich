@@ -37,13 +37,17 @@ extension PhotosLocalStore {
   static let mediaKindCaseSQL = """
     CASE
       WHEN asset.livePhotoVideoId IS NOT NULL THEN 'livePhoto'
-      WHEN assetExif.projectionType = 'equirectangular' THEN 'panorama'
+      WHEN asset.projectionType = 'equirectangular' THEN 'panorama'
       WHEN asset.type = 'VIDEO' THEN 'video'
       WHEN asset.originalFileName LIKE 'Screenshot%' OR asset.originalFileName LIKE 'screenshot%' THEN 'screenshot'
       ELSE 'photo'
     END
     """
 
+  /// WP-F F2: no `assetExif` join — the only exif field the grid consumes
+  /// (`projectionType`, for the panorama arm above) is denormalized onto `asset`
+  /// (v5 migration backfill + `.assetExif` apply mirroring). Map pins and search
+  /// keep their own explicit exif joins; they are not on the grid hot path.
   static let rowSelectSQL = """
     SELECT asset.id AS id, asset.thumbhash AS thumbhash, asset.width AS width, asset.height AS height,
       asset.isFavorite AS isFavorite,
@@ -57,7 +61,6 @@ extension PhotosLocalStore {
       SELECT id FROM asset
       WHERE id NOT IN (SELECT livePhotoVideoId FROM asset WHERE livePhotoVideoId IS NOT NULL)
     ) AS visibleAsset ON visibleAsset.id = asset.id
-    LEFT JOIN assetExif ON assetExif.assetId = asset.id
     """
 
   static func row(from row: Row) -> TimelineRow {
@@ -157,8 +160,10 @@ extension PhotosLocalStore {
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs([bucketKey], args, [limit, offset])).map(Self.row)
+      }
     }
   }
 
@@ -170,8 +175,10 @@ extension PhotosLocalStore {
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit, offset])).map(Self.row)
+      }
     }
   }
 
@@ -184,8 +191,10 @@ extension PhotosLocalStore {
       ORDER BY asset.createdAt DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit, offset])).map(Self.row)
+      }
     }
   }
 
@@ -204,10 +213,12 @@ extension PhotosLocalStore {
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
-      try Row.fetchAll(
-        db, sql: sql, arguments: Self.sqlArgs([mediaKind.rawValue], args, [limit, offset])
-      ).map(Self.row)
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
+        try Row.fetchAll(
+          db, sql: sql, arguments: Self.sqlArgs([mediaKind.rawValue], args, [limit, offset])
+        ).map(Self.row)
+      }
     }
   }
 
@@ -238,8 +249,10 @@ extension PhotosLocalStore {
       WHERE asset.deletedAt IS NULL AND asset.visibility != 'locked' \(bucketSQL) AND \(whereSQL)
       ORDER BY asset.localDateTime DESC
       """
-    return try await dbQueue.read { db in
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(bucketArgs, args)).map(Self.row)
+      }
     }
   }
 
@@ -322,8 +335,10 @@ extension PhotosLocalStore {
       ORDER BY asset.deletedAt DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit, offset])).map(Self.row)
+      }
     }
   }
 
@@ -337,8 +352,10 @@ extension PhotosLocalStore {
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs([currentUserId], [limit, offset])).map(Self.row)
+      }
     }
   }
 }

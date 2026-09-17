@@ -162,7 +162,39 @@ final class MacAppState {
     SharedTokenStore.saveBestEffort(token)
     SharedContainer.sharedDefaults.set(serverURL.absoluteString, forKey: SharedContainer.serverURLKey)
     userId = try await connection.currentUserId()
+    if let userId { SharedContainer.setSavedUserID(userId) }
     await refresh()
+  }
+
+  /// WP-F F3: synchronous relaunch — restores the persisted session (server URL +
+  /// user id + Keychain token presence) with no async work, so the launch gate can
+  /// decide before the first scene renders. Returns whether a session was restored.
+  @discardableResult
+  func restorePersistedSession(tokenPresent: Bool) -> Bool {
+    guard userId == nil else { return true }
+    guard
+      LaunchGate.isSignedIn(
+        serverURLString: SharedContainer.serverURLString(), tokenPresent: tokenPresent,
+        userID: SharedContainer.savedUserID())
+    else { return false }
+    userId = SharedContainer.savedUserID()
+    return true
+  }
+
+  /// Revalidates a synchronously restored session against the server without ever
+  /// flashing the connect screen: on network failure the restored (offline) session
+  /// stays — the local DB is the UI's data source — and only a confirmed identity
+  /// change replaces the user id.
+  func revalidateSession() async {
+    guard userId != nil else {
+      await adoptKeychainSession()
+      return
+    }
+    if let id = try? await connection.currentUserId() {
+      userId = id
+      SharedContainer.setSavedUserID(id)
+      await refresh()
+    }
   }
 
   /// Relaunch: a Keychain token from a previous session restores the user without
@@ -172,6 +204,7 @@ final class MacAppState {
     if await connection.tokenStore.get() == nil { return }
     if let id = try? await connection.currentUserId() {
       userId = id
+      SharedContainer.setSavedUserID(id)
       await refresh()
     }
   }
@@ -179,6 +212,7 @@ final class MacAppState {
   func logout() async {
     await connection.tokenStore.set(nil)
     SharedContainer.sharedDefaults.removeObject(forKey: SharedContainer.serverURLKey)
+    SharedContainer.clearSavedUserID()
     userId = nil
     spaces = []
     libraries = []

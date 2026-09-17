@@ -87,6 +87,10 @@ enum AXIDs {
   static let editDone = "edit.done"
   static let editCancel = "edit.cancel"
 
+  // MARK: - connect (WP-F F3: signed-in launch never shows the form)
+
+  static let connectForm = "connect.form"
+
   // MARK: - collections / search
 
   static func collectionsShelf(_ name: String) -> String { "collections.shelf.\(name)" }

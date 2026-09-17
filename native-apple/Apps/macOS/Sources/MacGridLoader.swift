@@ -24,6 +24,31 @@ final class MacGridLoader {
     var userId = ""
     var albumMemberIds: Set<String>? = nil
 
+    /// Stable cache-key parts for the WP-F F1 snapshot cache.
+    var sortID: String {
+      switch order {
+      case .newestFirst: "newestFirst"
+      case .oldestFirst: "oldestFirst"
+      }
+    }
+
+    static let notInAlbumID = "notInAlbum"
+
+    var filterID: String {
+      filters.map { filter in
+        switch filter {
+        case .all: "all"
+        case .favorites: "favorites"
+        case .edited: "edited"
+        case .photos: "photos"
+        case .videos: "videos"
+        case .screenshots: "screenshots"
+        case .capturedByMe: "capturedByMe"
+        case .notInAlbum: Self.notInAlbumID
+        }
+      }.sorted().joined(separator: ",")
+    }
+
     /// All cases resolve from the row alone — no store fetch, no dictionary lookup —
     /// so this runs as a `@Sendable` closure inside the detached snapshot build.
     func include(_ row: TimelineRow) -> Bool {
@@ -64,6 +89,9 @@ final class MacGridLoader {
   @ObservationIgnored private var currentSwitcher: LibraryFilterOption = .all
   @ObservationIgnored private var currentStore: PhotosLocalStore?
   @ObservationIgnored private var currentUserId = ""
+  /// WP-F F1: built snapshots keyed by (scope, filter, grouping, sort). Served
+  /// synchronously on navigation; revalidated in the background only when dirty.
+  @ObservationIgnored private let snapshotCache = TimelineSnapshotCache()
   /// Set by the view so edited rows can evict stale cache entries.
   @ObservationIgnored var pipeline: MediaPipeline?
 
@@ -76,29 +104,68 @@ final class MacGridLoader {
 
   // MARK: - load
 
+  /// Disk directory for WP-F F3 launch snapshots (`timeline-<scope>.bin`).
+  static var timelineSnapshotDirectory: URL {
+    FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Heirloom/Timeline", isDirectory: true)
+  }
+
   func load(
     store: PhotosLocalStore, userId: String, destination: SidebarDestination,
     grouping: TimelineGrouping, switcher: LibraryFilterOption
   ) async {
     loadTask?.cancel()
-    // A new destination must never show the old destination's content under a new title:
-    // clear immediately. Grouping/switcher/sync reloads in the same destination keep the
-    // old snapshot until the new one is ready. (The view shows a spinner only past 150 ms.)
+    // A new destination must never show the old destination's content under a new title —
+    // unless the snapshot cache (or the launch disk snapshot) has this destination's
+    // content ready to serve synchronously, in which case it shows immediately.
     let destinationChanged = destination != currentDestination
     currentDestination = destination
     currentGrouping = grouping
     currentSwitcher = switcher
     currentStore = store
     currentUserId = userId
-    if destinationChanged {
-      snapshot = .empty
+    let key = cacheKey(
+      userId: userId, destination: destination, grouping: grouping, switcher: switcher,
+      presentation: presentation)
+    // WP-F F1: synchronous cache hit — no store I/O on navigation. Clean hits return
+    // immediately; dirty hits render now and revalidate below without clearing.
+    if let hit = snapshotCache.snapshot(for: key) {
+      let state = Self.launchSignposter.beginInterval(HeirloomSignpost.libraryReturn)
+      snapshot = hit.snapshot
+      phase = .loaded
+      Self.launchSignposter.endInterval(HeirloomSignpost.libraryReturn, state)
+      guard hit.dirty else { return }
+    } else {
+      if destinationChanged {
+        snapshot = .empty
+      }
+      // WP-F F3: cold launch serves the persisted snapshot immediately (thumbhash
+      // placeholders, then disk-cached thumbnails), then revalidates below.
+      if let disk = TimelineDiskSnapshot.load(
+        scopeID: key.scope, directory: Self.timelineSnapshotDirectory)
+      {
+        let state = Self.launchSignposter.beginInterval(HeirloomSignpost.launchFirstThumbnails)
+        snapshot = disk.snapshot()
+        phase = .loaded
+        Self.launchSignposter.endInterval(HeirloomSignpost.launchFirstThumbnails, state)
+      } else {
+        phase = .loading
+      }
     }
-    phase = .loading
     let myGeneration = nextGeneration()
     let frozen = presentation
+    let isFilterPage = destination != .library
     loadTask = Task {
       let gridLoadState = Self.launchSignposter.beginInterval(HeirloomSignpost.gridLoad)
       defer { Self.launchSignposter.endInterval(HeirloomSignpost.gridLoad, gridLoadState) }
+      // WP-F F4: filter/media/album pages emit Page.FirstPaint around fetch+build.
+      let paintState =
+        isFilterPage ? Self.launchSignposter.beginInterval(HeirloomSignpost.pageFirstPaint) : nil
+      defer {
+        if let paintState {
+          Self.launchSignposter.endInterval(HeirloomSignpost.pageFirstPaint, paintState)
+        }
+      }
       do {
         // Store queries are nonisolated async: they suspend off the main thread even
         // though this task runs on the main actor. No MainActor wrapping anywhere.
@@ -113,6 +180,11 @@ final class MacGridLoader {
         self.source = sections
         self.snapshot = built
         self.phase = .loaded
+        // WP-F F1+F3: publish to the memory cache and persist the compact columns
+        // for the next launch. Disk writes are best-effort and never fail a load.
+        self.snapshotCache.store(built, for: key)
+        try? TimelineDiskSnapshot(snapshot: built, scopeID: key.scope)
+          .save(scopeID: key.scope, directory: Self.timelineSnapshotDirectory)
       } catch is CancellationError {
         // Cancellation is not an error: keep the current snapshot, show nothing.
         return
@@ -149,11 +221,31 @@ final class MacGridLoader {
     startRebuild()
   }
 
+  /// WP-F F1 cache key: (scope, filter, grouping, sort) with stable string parts.
+  private func cacheKey(
+    userId: String, destination: SidebarDestination, grouping: TimelineGrouping,
+    switcher: LibraryFilterOption, presentation: Presentation
+  ) -> TimelineSnapshotCache.Key {
+    let switcherID: String =
+      switch switcher {
+      case .all: "all"
+      case .personalOnly: "personal"
+      case .space(let id): "space:\(id)"
+      case .library(let id): "library:\(id)"
+      }
+    return TimelineSnapshotCache.Key(
+      scope: "\(userId)|\(destination.restorableID)|\(switcherID)",
+      filter: presentation.filterID, grouping: grouping.rawValue, sort: presentation.sortID)
+  }
+
   // MARK: - apply
 
   func apply(_ change: MacAssetChange, destination: SidebarDestination) {
     switch change {
     case .favorite(let ids, let isFavorite):
+      // WP-F F1: cached snapshots go dirty (revalidated on next navigation) —
+      // the live snapshot still patches in place below for instant feedback.
+      snapshotCache.markAllDirty()
       if destination == .favorites, !isFavorite {
         snapshot = snapshot.removing(ids: ids, generation: nextGeneration())
       } else {
@@ -164,13 +256,18 @@ final class MacGridLoader {
         lastPatch = (next.revision, changed)
       }
     case .removedFromCurrentContexts(let ids):
+      // WP-F F1: removed rows are gone in every context — evict, never serve stale.
+      snapshotCache.invalidateAll()
       snapshot = snapshot.removing(ids: ids, generation: nextGeneration())
     case .edited(let ids):
+      snapshotCache.markAllDirty()
       let (next, changed) = snapshot.patching(ids: ids) { $0.isEdited = true }
       snapshot = next
       lastPatch = (next.revision, changed)
       evictCaches(ids: ids)
     case .albumsChanged:
+      // WP-F F1: only Not-in-Album snapshots depend on membership.
+      snapshotCache.markDirty { $0.filter.contains(Presentation.notInAlbumID) }
       guard presentation.filters.contains(.notInAlbum), let store = currentStore else { return }
       let userId = currentUserId
       rebuildTask?.cancel()

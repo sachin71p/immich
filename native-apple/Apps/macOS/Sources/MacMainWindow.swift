@@ -299,12 +299,22 @@ struct MacLibraryBrowser: View {
   }
 
   /// Compact footer twin for the empty state (same counts + sync line as the pane footer).
+  /// WP-F F3: while the first snapshot is still loading the footer shows a spinner
+  /// (or cached counts) — never "0 Photos".
   private var emptyFooter: some View {
     let photos = loader.snapshot.photoCount
     let videos = loader.snapshot.videoCount
     return VStack(spacing: 3) {
-      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
-        .font(.headline)
+      if let counts = LaunchGate.footerCountsText(
+        photos: photos, videos: videos, phaseIsLoading: loader.phase == .loading,
+        hasRows: !loader.snapshot.rows.isEmpty)
+      {
+        Text(counts)
+          .font(.headline)
+      } else {
+        ProgressView()
+          .accessibilityIdentifier("library-loading")
+      }
       Text(syncStatusText)
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -1121,8 +1131,17 @@ struct MacTimelineGridPane: View {
     let photos = loader.snapshot.photoCount
     let videos = loader.snapshot.videoCount
     return VStack(spacing: 3) {
-      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
-        .font(.headline)
+      // WP-F F3: never "0 Photos" while loading — spinner until the first rows land.
+      if let counts = LaunchGate.footerCountsText(
+        photos: photos, videos: videos, phaseIsLoading: loader.phase == .loading,
+        hasRows: !loader.snapshot.rows.isEmpty)
+      {
+        Text(counts)
+          .font(.headline)
+      } else {
+        ProgressView()
+          .accessibilityIdentifier("library-loading")
+      }
       Text(syncStatusText)
         .font(.caption)
         .foregroundStyle(.secondary)
