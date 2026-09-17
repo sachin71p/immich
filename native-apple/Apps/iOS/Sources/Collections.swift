@@ -49,7 +49,7 @@ struct CollectionsView: View {
                 .clipShape(Circle())
             }
             .accessibilityIdentifier("collections-menu")
-            AccountButtonPlaceholder()
+            AccountButton()
           }
         }
       }

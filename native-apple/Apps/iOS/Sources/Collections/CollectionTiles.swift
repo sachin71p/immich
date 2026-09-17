@@ -3,20 +3,6 @@ import LocalStore
 import Media
 import SwiftUI
 
-// MARK: - account placeholder (WP4; WP5 swaps in the real AccountButton)
-
-// Until WP5 lands, the Collections toolbar uses this local placeholder. The
-// orchestrator swaps it for WP5's `AccountButton` in a one-line follow-up.
-struct AccountButtonPlaceholder: View {
-  var body: some View {
-    Circle()
-      .fill(.gray.opacity(0.3))
-      .frame(width: 32, height: 32)
-      .overlay { Image(systemName: "person.crop.circle").foregroundStyle(.secondary) }
-      .accessibilityIdentifier("account-placeholder")
-  }
-}
-
 // MARK: - section header ("Title ›" + collapse chevron, native-15…18)
 
 struct CollectionSectionHeader<Destination: View>: View {
