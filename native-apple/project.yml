@@ -127,6 +127,8 @@ targets:
       - Apps/macOS/Sources/FixtureSeed.swift
       - Apps/macOS/Sources/AXIDs.swift
       - Apps/macOS/Sources/Gestures/GestureInputs.swift
+      # WP-V: dependency-free pager/header/menu model (unit-tested pure logic).
+      - Apps/macOS/Sources/MacViewerPagerModel.swift
     dependencies:
       - package: PhotosCore
         product: CoreModel
