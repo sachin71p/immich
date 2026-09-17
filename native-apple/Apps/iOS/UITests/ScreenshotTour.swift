@@ -120,6 +120,11 @@ final class ScreenshotTourUITests: XCTestCase {
   /// label "Close", so scope by excluding its `xmark.circle.fill` identifier.
   @discardableResult
   func closeViewer() -> Bool {
+    // WP3 chrome: glass back chevron first, then the legacy Close lookup.
+    if tap(app.buttons["viewer-back"], timeout: 5) {
+      sleep(1)
+      return true
+    }
     let close = app.buttons.matching(
       NSPredicate(format: "label == 'Close' AND identifier != 'xmark.circle.fill'")
     ).firstMatch
@@ -253,29 +258,31 @@ final class ScreenshotTourUITests: XCTestCase {
     sleep(1)
     shot("08-viewer-photo")
 
-    // Info panel (read-only sheet).
+    // Pager + filmstrip: swipe to the next item and back.
+    app.swipeLeft()
+    sleep(1)
+    shot("08b-viewer-next")
+    app.swipeRight()
+    sleep(1)
+
+    // Info inline panel (WP3 step 4): Info toggles it open and closed.
     if tap(app.buttons["Info"], timeout: 10) {
       sleep(1)
       shot("09-viewer-info")
-      dismissSheet()
+      _ = tap(app.buttons["Info"], timeout: 5)
+      sleep(1)
     }
 
-    // "…" menu (Move to… / Add to Album / Archive / …). Best effort: the toolbar Menu
-    // carries no stable identifier, so find it by its ellipsis label — but only when no
-    // sheet is covering the viewer (a covered tap would hit the wrong element).
-    if !app.sheets.firstMatch.exists {
-      let more = app.buttons.matching(NSPredicate(format: "label CONTAINS 'More'")).firstMatch
-      if more.waitForExistence(timeout: 5) {
-        more.tap()
-        sleep(1)
-        shot("10-viewer-more-menu")
-        more.tap()
-      } else {
-        XCTContext.runActivity(named: "viewer-more-menu skipped (no identifier)") { _ in }
-      }
+    // "…" menu (WP3 step 3): top-right glass button; Copy is a harmless fixture
+    // no-op that dismisses the menu.
+    if tap(app.buttons["More"], timeout: 10) {
+      sleep(1)
+      shot("10-viewer-more-menu")
+      _ = tap(app.buttons["Copy"], timeout: 5)
+      sleep(1)
     }
 
-    closeViewer()
+    _ = closeViewer()
   }
 
   // MARK: - Collections tab

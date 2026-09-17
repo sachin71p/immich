@@ -23,7 +23,12 @@ final class A3SmokeUITests: XCTestCase {
     XCTAssertTrue(
       app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 10),
       "tapping a grid cell should open the viewer")
-    app.buttons["Close"].tap()
+    // WP3 chrome: the ✕ Close became a glass back chevron (swipe-down also works).
+    if !app.buttons["viewer-back"].waitForExistence(timeout: 10) {
+      app.swipeDown()
+    } else {
+      app.buttons["viewer-back"].tap()
+    }
 
     // Select + "…" menu + move sheet lists the Rules.MoveTargets for the selection.
     // (WP2: bulk actions moved from the bottom bar into the top "…" menu.)

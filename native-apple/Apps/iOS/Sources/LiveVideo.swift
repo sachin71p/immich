@@ -15,6 +15,9 @@ struct LivePhotoPageView: View {
   @EnvironmentObject var session: AppSession
   var asset: Asset
   var motionAssetId: String
+  var onSingleTap: (() -> Void)? = nil
+  /// Shared LIVE-badge play trigger (WP3 chrome): each token bump plays the motion once.
+  @ObservedObject var playRequest: LivePlayRequest
 
   @State private var livePhoto: PHLivePhoto?
   @State private var still: UIImage?
@@ -23,7 +26,9 @@ struct LivePhotoPageView: View {
   var body: some View {
     Group {
       if let livePhoto {
-        LivePhotoInnerView(livePhoto: livePhoto, placeholder: still)
+        LivePhotoInnerView(
+          livePhoto: livePhoto, placeholder: still,
+          playToken: playRequest.token)
       } else if let still {
         Image(uiImage: still)
           .resizable()
@@ -38,6 +43,7 @@ struct LivePhotoPageView: View {
       }
     }
     .accessibilityIdentifier("livephoto-page")
+    .onTapGesture { onSingleTap?() }
     .task(id: asset.id) { await load() }
   }
 
@@ -91,6 +97,8 @@ struct LivePhotoPageView: View {
 private struct LivePhotoInnerView: UIViewRepresentable {
   var livePhoto: PHLivePhoto
   var placeholder: UIImage?
+  /// Bumped by the chrome's LIVE badge: plays the full motion once per new token.
+  var playToken: Int = 0
 
   func makeUIView(context: Context) -> PHLivePhotoView {
     let view = PHLivePhotoView()
@@ -104,18 +112,25 @@ private struct LivePhotoInnerView: UIViewRepresentable {
       target: context.coordinator, action: #selector(Coordinator.playHint(_:)))
     view.addGestureRecognizer(hover)
     context.coordinator.view = view
+    context.coordinator.appliedToken = playToken
     return view
   }
 
   func updateUIView(_ view: PHLivePhotoView, context: Context) {
     context.coordinator.view = view
     if view.livePhoto == nil { view.livePhoto = livePhoto }
+    // The LIVE badge's tap arrives as a new token on the already-built view.
+    if playToken != context.coordinator.appliedToken {
+      context.coordinator.appliedToken = playToken
+      if playToken > 0 { view.startPlayback(with: .full) }
+    }
   }
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
   final class Coordinator: NSObject {
     weak var view: PHLivePhotoView?
+    var appliedToken = 0
 
     @objc func playFull(_ gesture: UILongPressGestureRecognizer) {
       guard gesture.state == .began else { return }
@@ -129,62 +144,156 @@ private struct LivePhotoInnerView: UIViewRepresentable {
   }
 }
 
-// MARK: - video (A9.1)
+// MARK: - video (WP3 step 3, spec device-native-11)
 
-/// AVKit video playback: system scrubber, automatic HDR, and HLS-style streaming from the
-/// server playback route. Mute toggles instantly on the player; Trim hands off to the A8
-/// editor (`EditView` via `VideoEdit`) instead of duplicating trim UI.
+/// AVKit video playback with a native-style glass scrubber pill (play/pause, progress,
+/// mute) above the viewer chrome. The system playback controls stay off so the pill is
+/// the single control surface; trimming lives behind the chrome's Adjust button
+/// (`EditView` via `VideoEdit`). Streams from the server playback route.
 struct VideoPage: View {
   @EnvironmentObject var session: AppSession
   var asset: Asset
-  var onTrim: (Asset) -> Void
+  var onSingleTap: (() -> Void)? = nil
 
   @State private var player: AVPlayer?
+  @State private var isPlaying = false
   @State private var isMuted = false
+  @State private var progress: Double = 0
+  @State private var durationSeconds: Double = 0
+  @State private var isScrubbing = false
+  @State private var timeObserver: Any?
+  @State private var endObserver: NSObjectProtocol?
 
   var body: some View {
     ZStack {
       Group {
         if let player {
           PlayerControllerView(player: player)
+            .onTapGesture { onSingleTap?() }
         } else {
           ProgressView().tint(.white)
         }
       }
-      .task {
-        guard let base = session.serverURL,
-          let token = await session.bearerToken()
-        else { return }
-        let url = MediaEndpoint(serverURL: base, assetID: asset.id).videoPlaybackURL()
-        let urlAsset = AVURLAsset(
-          url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
-        let item = AVPlayerItem(asset: urlAsset)
-        let created = AVPlayer(playerItem: item)
-        created.isMuted = isMuted
-        player = created
+      .task(id: asset.id) {
+        await makePlayer()
+      }
+      .onDisappear {
+        stopObserving()
+        player?.pause()
+        player = nil
       }
       VStack {
         Spacer()
-        HStack {
-          Spacer()
-          Button {
-            isMuted.toggle()
-            player?.isMuted = isMuted
-          } label: {
-            Label(
-              isMuted ? "Unmute" : "Mute",
-              systemImage: isMuted ? "speaker.slash.fill" : "speaker.fill")
+        // Glass scrubber pill (spec native-11): play/pause, progress, mute. It
+        // reserves the chrome's bottom space so it always sits above the bar.
+        if player != nil {
+          HStack(spacing: 12) {
+            Button {
+              togglePlay()
+            } label: {
+              Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                .font(.title3)
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+            }
+            .accessibilityLabel(isPlaying ? "Pause" : "Play")
+            Slider(value: $progress, in: 0...1, onEditingChanged: endScrub)
+              .tint(.white)
+              .accessibilityLabel("Seek")
+            Button {
+              isMuted.toggle()
+              player?.isMuted = isMuted
+            } label: {
+              Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.fill")
+                .font(.title3)
+                .foregroundStyle(.white.opacity(isMuted ? 0.6 : 1))
+                .frame(width: 30, height: 30)
+            }
+            .accessibilityLabel(isMuted ? "Unmute" : "Mute")
           }
-          Button { onTrim(asset) } label: {
-            Label("Trim", systemImage: "scissors")
-          }
+          .padding(.horizontal, 16)
+          .padding(.vertical, 10)
+          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+          .padding(.horizontal, 20)
+          .padding(.bottom, ViewerLayout.bottomReserve)
+          .accessibilityIdentifier("video-scrubber")
         }
-        .tint(.white)
-        .padding()
-        .background(.black.opacity(0.35))
       }
     }
     .accessibilityIdentifier("video-page")
+  }
+
+  private func makePlayer() async {
+    stopObserving()
+    progress = 0
+    isPlaying = false
+    guard let base = session.serverURL,
+      let token = await session.bearerToken()
+    else { return }
+    let url = MediaEndpoint(serverURL: base, assetID: asset.id).videoPlaybackURL()
+    let urlAsset = AVURLAsset(
+      url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
+    let item = AVPlayerItem(asset: urlAsset)
+    let created = AVPlayer(playerItem: item)
+    created.isMuted = isMuted
+    player = created
+    if let seconds = try? await item.asset.load(.duration).seconds, seconds.isFinite {
+      durationSeconds = seconds
+    }
+    // Both blocks run on .main, so they touch @State synchronously through the
+    // assumed actor (the observer/notify APIs don't carry that statically).
+    timeObserver = created.addPeriodicTimeObserver(
+      forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
+    ) { [weak created] _ in
+      MainActor.assumeIsolated {
+        guard let created, let current = created.currentItem else { return }
+        let elapsed = current.currentTime().seconds
+        guard elapsed.isFinite, durationSeconds > 0, !isScrubbing else { return }
+        progress = min(max(elapsed / durationSeconds, 0), 1)
+      }
+    }
+    endObserver = NotificationCenter.default.addObserver(
+      forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+    ) { _ in
+      MainActor.assumeIsolated {
+        isPlaying = false
+        progress = 1
+      }
+    }
+  }
+
+  private func stopObserving() {
+    if let timeObserver, let player {
+      player.removeTimeObserver(timeObserver)
+    }
+    timeObserver = nil
+    if let endObserver {
+      NotificationCenter.default.removeObserver(endObserver)
+    }
+    self.endObserver = nil
+  }
+
+  private func togglePlay() {
+    guard let player else { return }
+    if isPlaying {
+      player.pause()
+      isPlaying = false
+    } else {
+      if progress >= 1 { seek(to: 0) }
+      player.play()
+      isPlaying = true
+    }
+  }
+
+  private func endScrub(_ editing: Bool) {
+    isScrubbing = editing
+    if !editing { seek(to: progress) }
+  }
+
+  private func seek(to fraction: Double) {
+    guard let player, durationSeconds > 0 else { return }
+    progress = fraction
+    player.seek(to: CMTime(seconds: fraction * durationSeconds, preferredTimescale: 600))
   }
 }
 
@@ -194,8 +303,8 @@ private struct PlayerControllerView: UIViewControllerRepresentable {
   func makeUIViewController(context: Context) -> AVPlayerViewController {
     let controller = AVPlayerViewController()
     controller.player = player
-    controller.showsPlaybackControls = true
-    controller.allowsPictureInPicturePlayback = true
+    controller.showsPlaybackControls = false
+    controller.allowsPictureInPicturePlayback = false
     controller.updatesNowPlayingInfoCenter = true
     return controller
   }
