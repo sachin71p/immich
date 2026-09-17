@@ -24,7 +24,7 @@ PLAN §WP2 text spec plus the WP1 grid contracts (`Grid/README.md`).
   favorites/edited/shared/screenshot/video/live, `timelineRows` join for
   Captured-by-Me and panoramas, `assetIdsInAnyAlbum` for Not-in-Album,
   `recentAssets` pages for Added sort).
-- `Library/LibraryFilterMenu.swift` (new): flat button groups (see deviation 3) —
+- `Library/LibraryFilterMenu.swift` (new): nested drill-in submenus (see deviation 3) —
   Sort buttons, Filter: checkmarks, Media Types, Library View (Both/Personal/each
   Space/each external library + Show in Timeline… — absorbs the switcher), View
   Options (Zoom In/Out, Aspect Ratio Grid, Show Screenshots / Show Shared with
@@ -113,12 +113,19 @@ Each gate run exactly once, no re-runs, no new probes
    (WP5-owned), under which the accessory never renders — the control was
    invisible. The segmented control + count and the select toolbar sit in a
    bottom inset with `.thinMaterial` instead. Revisit when WP5 moves to `Tab`.
-3. **Filter menu uses flat button groups, not ▸ submenus or sections.**
-   A `Menu`-in-`Menu` drill-in row never opens under XCUITest, and `Section`
-   content inside a `Menu` is not exposed to AX at all — so Sort / Filter /
-   Media Types / Library View / View Options are plain one-level buttons
-   separated by dividers. Same items, same persistence; restore submenus only
-   if UI-test drill-in becomes drivable.
+3. **Filter menu uses ▸ drill-in submenus (spec native-06/07/08).**
+   Sort and Filter stay top-level; Media Types / Library View / View Options
+   are `Menu`-in-`Menu` drill-in rows (`submenu-*` identifiers). The flat
+   ~20-row menu overflowed small phones and iOS menus don't scroll for
+   XCUITest, so bottom items (Show Screenshots et al.) were unreachable.
+   Drill-in navigation works under XCUITest (tap the parent row, wait for
+   existence, the submenu opens) — but rows inside the drilled-in submenu lose
+   their accessibility identifiers on iOS 27 (verified by AX dump; an
+   id-on-the-label variant drops them too), so `tapSubmenuLeaf` taps leaves
+   by stable visible label. Every leaf keeps its identifier in code, and
+   `Section` content inside a `Menu` is still not exposed to AX, so dividers
+   separate the top-level groups. LibraryChromeUITests 6/6 green on
+   iPhone 17 with this flow.
 2. **"Shared Library Badge" Show-toggle omitted.** Badges render in the WP1 cell
    (`PhotoGridCell`), which WP2 may not fork. Screenshots and Shared-with-You
    hides are implemented as id filters; the badge toggle needs a WP1 cell flag.
