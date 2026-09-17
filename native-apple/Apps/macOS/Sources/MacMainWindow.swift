@@ -129,6 +129,9 @@ struct MacLibraryBrowser: View {
           .navigationTitle(resolvedTitle)
         .toolbar { toolbarContent }
           .onDrop(of: [.fileURL], isTargeted: nil, perform: handleFileDrop)
+          .onReceive(NotificationCenter.default.publisher(for: .macDismissSheetsForQuit)) { _ in
+            dismissSheetsForQuit()
+          }
       }
     }
     .focusedValue(\.macAssetActions, gridActions)
@@ -149,6 +152,7 @@ struct MacLibraryBrowser: View {
     .onReceive(NotificationCenter.default.publisher(for: .macImportCamera)) { _ in
       state.showingCameraImport = true
     }
+
     .task(id: reloadKey) { await reload() }
     .task(id: selection?.restorableID ?? "library") {
       // The loader subscribes to the change center in a view-owned task; resubscribing
@@ -620,6 +624,18 @@ struct MacLibraryBrowser: View {
       return "Last server sync finished \(completed.formatted(date: .omitted, time: .shortened))"
     }
     return "Sync has not completed yet"
+  }
+
+  /// Quit path (HeirloomAppDelegate): sheets carry no unsaved data, so drop every
+  /// binding — ended AppKit sheets must not re-present while terminating.
+  private func dismissSheetsForQuit() {
+    moveSheetIds = nil
+    addToAlbumIds = nil
+    showingNewSpace = false
+    showingNewAlbum = false
+    managingSpace = nil
+    state.showingCameraImport = false
+    state.showingImportChooser = false
   }
 
   private func selectDestination(_ destination: SidebarDestination?) {

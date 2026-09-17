@@ -57,7 +57,24 @@ final class HeirloomAppDelegate: NSObject, NSApplicationDelegate {
     if HeirloomQuitGuard.shared.isMoveInProgress, HeirloomQuitGuard.shared.pendingUploads <= 0 {
       return Self.confirmMove() ? .terminateNow : .terminateCancel
     }
-    if HeirloomQuitGuard.shared.pendingUploads <= 0 { return .terminateNow }
+    if HeirloomQuitGuard.shared.pendingUploads <= 0 {
+      // A window with an attached sheet refuses to close, which stalls termination.
+      // Sheets hold no unsaved data (WP4 Step 2 intent above): when none is attached
+      // quit is immediate; otherwise ask views to drop their sheet bindings (so the
+      // sheets can't re-present), end what AppKit still holds, and finish quitting.
+      guard sender.windows.contains(where: { $0.attachedSheet != nil }) else {
+        return .terminateNow
+      }
+      NotificationCenter.default.post(name: .macDismissSheetsForQuit, object: nil)
+      for window in sender.windows {
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+      }
+      Task { @MainActor in
+        try? await Task.sleep(for: .milliseconds(500))
+        sender.reply(toApplicationShouldTerminate: true)
+      }
+      return .terminateLater
+    }
     // Possible uploads: confirm against the live queue, then reply exactly once.
     Task { @MainActor in
       let live = (try? await state.store.pendingUploadCount())
@@ -124,6 +141,21 @@ struct HeirloomMacOSApp: App {
           try? await state?.seedForSmoke()
         } else {
           await state?.adoptKeychainSession()
+        }
+        // Harness self-quit (see `HeirloomLaunchFlag.terminateAfter`): the real
+        // `NSApp.terminate` path on a timer. Termination never engages while a
+        // sheet is attached (the delegate is not even consulted), so dismiss
+        // sheets first — exactly what the delegate does for a live ⌘Q — then quit.
+        if let after = HeirloomLaunchFlag.terminateAfter {
+          Task { @MainActor in
+            try? await Task.sleep(for: .seconds(after))
+            NotificationCenter.default.post(name: .macDismissSheetsForQuit, object: nil)
+            for window in NSApp.windows {
+              if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            }
+            try? await Task.sleep(for: .seconds(1))
+            NSApp.terminate(nil)
+          }
         }
       }
     }
