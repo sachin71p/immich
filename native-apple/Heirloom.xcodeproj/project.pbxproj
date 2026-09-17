@@ -55,6 +55,7 @@
 		5A9070AF65B0D801A0589A4F /* MacDragDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */; };
 		5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */; };
 		60B4AF936251E3716C5E102A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E3E22E15AF847EB8E62EE01 /* README.md */; };
+		618DFB1CCA18F10289E6EE43 /* CollectionsPerfUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0A82C8B3A74F4B5F6F1A23 /* CollectionsPerfUITests.swift */; };
 		695EF8BFB7841509B4E25CD0 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 1E53BF363D53907D6EAE51E5 /* CoreModel */; };
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
 		73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */; };
@@ -191,6 +192,7 @@
 		4BF163F29D0EA87EDF909745 /* PhotoEditingExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoEditingExtension.swift; sourceTree = "<group>"; };
 		4BFC85FFBA7579C03CE7BAE6 /* Viewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Viewer.swift; sourceTree = "<group>"; };
 		4D11D9052E6205D135807468 /* FixtureSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSeed.swift; sourceTree = "<group>"; };
+		4E0A82C8B3A74F4B5F6F1A23 /* CollectionsPerfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionsPerfUITests.swift; sourceTree = "<group>"; };
 		500F5A4905443D3A3CF04B9A /* SharedContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedContainer.swift; sourceTree = "<group>"; };
 		5059E39F92B118B91DB141F6 /* MacSidebarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebarModel.swift; sourceTree = "<group>"; };
 		52ADF313E45A57DF68AB044B /* Collections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Collections.swift; sourceTree = "<group>"; };
@@ -447,6 +449,7 @@
 			children = (
 				3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */,
 				317A308C324F67538E064057 /* A9ExtrasUITests.swift */,
+				4E0A82C8B3A74F4B5F6F1A23 /* CollectionsPerfUITests.swift */,
 				36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */,
 				A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */,
 				9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */,
@@ -952,6 +955,7 @@
 			files = (
 				8094A44964D5F3C4BC5B7E23 /* A3SmokeUITests.swift in Sources */,
 				593799F9CE380A58B326FA1B /* A9ExtrasUITests.swift in Sources */,
+				618DFB1CCA18F10289E6EE43 /* CollectionsPerfUITests.swift in Sources */,
 				C959FE40D592B0F2D6380C2D /* GridPerfUITests.swift in Sources */,
 				A02F35BD3C0A4638D10BFFBA /* ScreenshotTour.swift in Sources */,
 				4B342E05068BB4A933AD9B55 /* SyncUITests.swift in Sources */,
