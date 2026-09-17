@@ -78,6 +78,27 @@ final class ViewerUITests: XCTestCase {
       "dismiss should land back on the grid")
   }
 
+  /// Trash asks for confirmation; cancelling keeps the viewer open and changes nothing.
+  func testViewerTrashConfirmsAndCancels() throws {
+    let app = XCUIApplication()
+    openViewer(app)
+    let trash = app.buttons["Trash"]
+    XCTAssertTrue(trash.waitForExistence(timeout: 10), "Trash button should exist")
+    XCTAssertTrue(trash.isHittable, "Trash button should be hittable")
+    trash.tap()
+    XCTAssertTrue(
+      app.buttons["Delete"].waitForExistence(timeout: 10),
+      "Trash should show a confirmation with a Delete action")
+    XCTAssertTrue(
+      app.buttons["Cancel"].waitForExistence(timeout: 10),
+      "Trash confirmation should offer Cancel")
+    app.buttons["Cancel"].tap()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 10),
+      "cancelling Trash should stay in the viewer")
+    XCTAssertTrue(pageIndex(app).hasPrefix("1 of "), "cancelled item should still be current")
+  }
+
   /// Favorite toggles against the fixture store (local mutation, no server).
   func testViewerFavoriteTogglesInFixture() throws {
     let app = XCUIApplication()

@@ -20,6 +20,8 @@ struct ViewerPager: UIViewControllerRepresentable {
   var session: AppSession
   /// SwiftUI-owned page index (two-way: pager reports swipes, filmstrip writes jumps).
   @Binding var currentIndex: Int
+  /// Shared Live Photo play trigger (a reference so already-built pages see each tap).
+  var livePlay: LivePlayRequest
   var onSingleTap: () -> Void
   var onDismiss: () -> Void
 
@@ -32,6 +34,7 @@ struct ViewerPager: UIViewControllerRepresentable {
       ids: ids,
       startIndex: indexBinding.wrappedValue,
       session: session,
+      livePlay: livePlay,
       onIndexChange: { index in indexBinding.wrappedValue = index },
       onSingleTap: onSingleTap,
       onDismiss: onDismiss)
@@ -63,6 +66,7 @@ final class ViewerPageController: UIPageViewController {
   var ids: [String]
   private(set) var currentIndex: Int
   private let session: AppSession
+  private let livePlay: LivePlayRequest
   private let onIndexChange: (Int) -> Void
   private let onSingleTap: () -> Void
   private let onDismiss: () -> Void
@@ -70,6 +74,7 @@ final class ViewerPageController: UIPageViewController {
 
   init(
     ids: [String], startIndex: Int, session: AppSession,
+    livePlay: LivePlayRequest,
     onIndexChange: @escaping (Int) -> Void,
     onSingleTap: @escaping () -> Void,
     onDismiss: @escaping () -> Void
@@ -77,6 +82,7 @@ final class ViewerPageController: UIPageViewController {
     self.ids = ids
     self.currentIndex = min(max(startIndex, 0), max(ids.count - 1, 0))
     self.session = session
+    self.livePlay = livePlay
     self.onIndexChange = onIndexChange
     self.onSingleTap = onSingleTap
     self.onDismiss = onDismiss
@@ -119,8 +125,7 @@ final class ViewerPageController: UIPageViewController {
 
   private func page(at index: Int) -> ViewerPageHost? {
     guard ids.indices.contains(index) else { return nil }
-    let tap = onSingleTap
-    let page = ViewerPage(assetId: ids[index], onSingleTap: tap, onTrim: { _ in })
+    let page = ViewerPage(assetId: ids[index], onSingleTap: onSingleTap, livePlay: livePlay)
     let host = ViewerPageHost(pageIndex: index, rootView: AnyView(page.environmentObject(session)))
     host.view.backgroundColor = .black
     return host

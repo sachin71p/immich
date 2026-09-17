@@ -82,7 +82,7 @@ struct ViewerPage: View {
   @EnvironmentObject var session: AppSession
   var assetId: String
   var onSingleTap: (() -> Void)? = nil
-  var onTrim: (Asset) -> Void = { _ in }
+  var livePlay: LivePlayRequest
 
   @State private var asset: Asset?
   @State private var image: UIImage?
@@ -92,11 +92,11 @@ struct ViewerPage: View {
     ZStack {
       Color.black.ignoresSafeArea()
       if let asset, asset.type == .video {
-        VideoPage(asset: asset, onTrim: onTrim)
-          .onTapGesture { onSingleTap?() }
+        VideoPage(asset: asset)
       } else if let asset, let motionId = asset.livePhotoVideoId {
-        LivePhotoPageView(asset: asset, motionAssetId: motionId)
-          .onTapGesture { onSingleTap?() }
+        LivePhotoPageView(
+          asset: asset, motionAssetId: motionId,
+          onSingleTap: onSingleTap, playRequest: livePlay)
       } else if let image {
         ZoomableImageView(image: image, analysis: liveText, onSingleTap: onSingleTap)
       } else {
@@ -152,8 +152,8 @@ struct ViewerPage: View {
 // MARK: - viewer (brief task 4)
 
 /// Full-screen viewer: UIKit paging over a `ViewerRoute` (O(1) open), progressive tiers,
-/// swipe-down dismiss with the grid behind it, swipe-up info panel, and a
-/// permission-gated toolbar (brief task 9).
+/// swipe-down dismiss with the grid behind it, swipe-up info panel, and native-style
+/// glass chrome (top pill, badges, filmstrip, bottom bar) with permission gating.
 struct ViewerView: View {
   @EnvironmentObject var session: AppSession
   private let route: ViewerRoute?
@@ -170,6 +170,10 @@ struct ViewerView: View {
   @State private var editPreview: UIImage?
   @State private var actionError: String?
   @State private var openMs: Double?
+  @State private var exif: AssetExif?
+  @State private var ownerName: String?
+  @State private var showTrashConfirm = false
+  @StateObject private var livePlay = LivePlayRequest()
   @Environment(\.dismiss) private var dismiss
   private let openStart = Date()
 
@@ -192,44 +196,80 @@ struct ViewerView: View {
   }
 
   var body: some View {
-    NavigationStack {
-      ZStack {
-        Color.black.ignoresSafeArea()
-        if ids.isEmpty {
-          ProgressView()
-            .tint(.white)
-            .accessibilityIdentifier("viewer-loading")
-        } else {
-          ViewerPager(
-            ids: ids, session: session, currentIndex: $currentIndex,
-            onSingleTap: { showChrome.toggle() },
-            onDismiss: { dismiss() })
-        }
-        // UI-test hooks (hidden): page position and open latency.
-        Text("\(min(currentIndex + 1, max(ids.count, 1))) of \(ids.count)")
-          .accessibilityIdentifier("viewer-page-index")
+    ZStack {
+      Color.black.ignoresSafeArea()
+      if ids.isEmpty {
+        ProgressView()
+          .tint(.white)
+          .accessibilityIdentifier("viewer-loading")
+      } else {
+        ViewerPager(
+          ids: ids, session: session, currentIndex: $currentIndex,
+          livePlay: livePlay,
+          onSingleTap: { showChrome.toggle() },
+          onDismiss: { dismiss() })
+      }
+      // UI-test hooks (hidden): page position and open latency.
+      Text("\(min(currentIndex + 1, max(ids.count, 1))) of \(ids.count)")
+        .accessibilityIdentifier("viewer-page-index")
+        .opacity(0)
+        .allowsHitTesting(false)
+      if let openMs {
+        Text("openMs=\(String(format: "%.0f", openMs))")
+          .accessibilityIdentifier("viewer-open-summary")
           .opacity(0)
           .allowsHitTesting(false)
-        if let openMs {
-          Text("openMs=\(String(format: "%.0f", openMs))")
-            .accessibilityIdentifier("viewer-open-summary")
-            .opacity(0)
-            .allowsHitTesting(false)
-        }
       }
-      .navigationTitle("")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar(showChrome ? .visible : .hidden, for: .navigationBar, .bottomBar)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button { dismiss() } label: { Label("Close", systemImage: "xmark") }
+    }
+    .safeAreaInset(edge: .top) {
+      if showChrome, asset != nil {
+        VStack(spacing: 8) {
+          ViewerTopBar(
+            line1: pillLines.0, line2: pillLines.1,
+            menu: AnyView(moreMenu),
+            onBack: { dismiss() })
+          ViewerBadgeRow(
+            isLive: asset?.livePhotoVideoId != nil,
+            ownerName: ownerName,
+            onPlayLive: { livePlay.token += 1 })
         }
-        ToolbarItemGroup(placement: .bottomBar) {
-          if let asset {
-            viewerToolbar(asset)
+        .padding(.horizontal, 12)
+      }
+    }
+    .safeAreaInset(edge: .bottom) {
+      if showChrome, let asset {
+        VStack(spacing: 10) {
+          ViewerFilmstrip(
+            ids: ids, currentIndex: currentIndex, session: session,
+            onJump: { currentIndex = $0 })
+          ViewerGlassBar(
+            asset: asset, access: session.access,
+            isFavorite: asset.isFavorite,
+            onShare: { share(asset) },
+            onFavorite: { toggleFavorite(asset) },
+            onInfo: { showInfo = true },
+            onAdjust: { openEdit(asset) },
+            onTrash: { showTrashConfirm = true })
+        }
+        .frame(maxWidth: .infinity)
+      }
+    }
+    .animation(.easeInOut(duration: 0.2), value: showChrome)
+    // Delete confirmation as an alert (the Spaces/Albums convention): a
+    // confirmationDialog drops its cancel-role button from the AX hierarchy.
+    .alert("Delete Photo?", isPresented: $showTrashConfirm) {
+      Button("Delete", role: .destructive) {
+        if let asset {
+          mutate {
+            try await session.assetMutations?.trash(ids: [asset.id])
+            dismiss()
           }
         }
       }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This photo moves to Recently Deleted.")
+    }
       .sheet(isPresented: $showInfo) {
         if let asset {
           ViewerInfoPanel(asset: asset)
@@ -288,86 +328,61 @@ struct ViewerView: View {
         }
       }
       // The pager owns the index: swipes report back through the binding, and the
-      // toolbar asset follows.
+      // chrome asset follows.
       .onChange(of: currentIndex) { _, index in
         if ids.indices.contains(index) {
           currentId = ids[index]
         }
       }
-    }
   }
 
+  /// Centre-pill lines for the current asset (location over date · time).
+  private var pillLines: (String, String) {
+    ViewerDateText.pillLines(date: asset?.localDateTime, city: exif?.city ?? exif?.state)
+  }
+
+  /// The top-bar "…" menu (same actions the old bottom-bar menu held; permission
+  /// gating and lock semantics unchanged).
   @ViewBuilder
-  private func viewerToolbar(_ asset: Asset) -> some View {
-    let ctx = session.access
-    let canDownload = Permissions.hasContainerAccess(asset.container, in: ctx)
-    if canDownload {
-      Button {
-        share(asset)
-      } label: { Label("Share", systemImage: "square.and.arrow.up") }
-    }
-    if Permissions.canFavorite(asset, in: ctx) {
-      Button {
-        mutate {
-          guard let mutations = session.assetMutations else { return }
-          try await mutations.setFavorite(ids: [asset.id], isFavorite: !asset.isFavorite)
-        }
-      } label: {
-        Label("Favorite", systemImage: asset.isFavorite ? "heart.fill" : "heart")
-      }
-    }
-    Button { showInfo = true } label: { Label("Info", systemImage: "info.circle") }
-    if Permissions.canEdit(asset, in: ctx) {
-      Button { openEdit(asset) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-    }
-    if Permissions.canDelete(asset, in: ctx) {
-      Button(role: .destructive) {
-        mutate {
-          try await session.assetMutations?.trash(ids: [asset.id])
-          dismiss()
-        }
-      } label: { Label("Delete", systemImage: "trash") }
-    }
-    Menu {
-      if Permissions.canMove(asset, to: .personal, in: ctx)
-        || !MoveTargets.allowed(for: asset, in: ctx).isEmpty
-      {
-        Button("Move to…") { showMoveSheet = true }
-      }
-      if Permissions.canEdit(asset, in: ctx) {
-        Button("Add to Album") { showAlbumPicker = true }
-        Button(asset.visibility == .archive ? "Unarchive" : "Archive") {
+  private var moreMenu: some View {
+    if let asset {
+      ViewerMoreMenu(
+        asset: asset, access: session.access,
+        isOwnerPersonal: canLock(asset),
+        onCopy: { copyAsset(asset) },
+        onAddToAlbum: { showAlbumPicker = true },
+        onMoveTo: { showMoveSheet = true },
+        onArchive: {
           mutate {
             guard let mutations = session.assetMutations else { return }
             try await mutations.setArchived(
               ids: [asset.id], isArchived: asset.visibility != .archive)
           }
-        }
-        Button(asset.visibility == .hidden ? "Unhide" : "Hide") {
+        },
+        onHide: {
           mutate {
             guard let mutations = session.assetMutations else { return }
             try await mutations.setHidden(ids: [asset.id], isHidden: asset.visibility != .hidden)
           }
-        }
-        if canLock(asset) {
-          Button(asset.visibility == .locked ? "Unlock" : "Lock") {
-            Task {
-              guard await LockedMediaAuthentication.authenticate(
-                reason: asset.visibility == .locked ? "Unlock your personal photo" : "Lock this personal photo")
-              else { return }
-              mutate {
-                guard let mutations = session.assetMutations else { return }
-                try await mutations.setLocked(ids: [asset.id], isLocked: asset.visibility != .locked)
-              }
+        },
+        onLock: {
+          Task {
+            guard await LockedMediaAuthentication.authenticate(
+              reason: asset.visibility == .locked ? "Unlock your personal photo" : "Lock this personal photo")
+            else { return }
+            mutate {
+              guard let mutations = session.assetMutations else { return }
+              try await mutations.setLocked(ids: [asset.id], isLocked: asset.visibility != .locked)
             }
           }
-        }
-        if canDownload {
-          Button("Copy") { copyAsset(asset) }
-        }
-      }
-    } label: {
-      Label("More", systemImage: "ellipsis.circle")
+        })
+    }
+  }
+
+  private func toggleFavorite(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.setFavorite(ids: [asset.id], isFavorite: !asset.isFavorite)
     }
   }
 
@@ -497,6 +512,20 @@ struct ViewerView: View {
   private func reloadAsset() async {
     guard let currentId, let store = session.store else { return }
     asset = try? await store.asset(id: currentId)
+    // Chrome context loads with the asset: exif for the title pill, owner name for
+    // the "From" badge. Both are single-row lookups; failures hide their UI.
+    guard let asset else {
+      exif = nil
+      ownerName = nil
+      return
+    }
+    exif = try? await store.exif(for: asset.id)
+    ownerName = nil
+    if asset.spaceId != nil, asset.ownerId != session.userId,
+      let user = try? await store.user(id: asset.ownerId), !user.name.isEmpty
+    {
+      ownerName = user.name
+    }
   }
 }
 

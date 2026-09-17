@@ -117,6 +117,7 @@
 		D88BBF9527653F7952010D94 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = C4A5E82A48F6AF0BA0893C36 /* LocalStore */; };
 		DD6300F009E5382AD0E581F7 /* PhotoGridViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B1F0D46D5FB8B587DF4848 /* PhotoGridViewController.swift */; };
 		DDF142E14F09ECE862AF4CE3 /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 5391217B7AC8A0349772138D /* Upload */; };
+		E00BBE3092CD602E5BCDD234 /* ViewerChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90DE8642D7DD958704AC0FD /* ViewerChrome.swift */; };
 		E09CF031F98CB87E7FA21507 /* MacPreviewCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AF35940917C91636A4A755 /* MacPreviewCatalog.swift */; };
 		E229A8BE2B9D90937CDD28A0 /* MacEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4809432DCC4D04479898A85 /* MacEditView.swift */; };
 		E285774554AF518271B4AD20 /* Viewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFC85FFBA7579C03CE7BAE6 /* Viewer.swift */; };
@@ -254,6 +255,7 @@
 		E5EB7C05A8DB97F45456CFEB /* ThumbhashCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbhashCache.swift; sourceTree = "<group>"; };
 		E6086603C26DEA57A022404B /* MacMainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMainWindow.swift; sourceTree = "<group>"; };
 		E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		E90DE8642D7DD958704AC0FD /* ViewerChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerChrome.swift; sourceTree = "<group>"; };
 		EC15EE8293446CD203DE97CC /* LockedMediaAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedMediaAuthentication.swift; sourceTree = "<group>"; };
 		F6932111B77827985EE3A89E /* LibraryGridLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryGridLoader.swift; sourceTree = "<group>"; };
 		F7506ABF3A9E271B97CFA596 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
@@ -556,6 +558,7 @@
 		D398B19AF109C2089750E934 /* Viewer */ = {
 			isa = PBXGroup;
 			children = (
+				E90DE8642D7DD958704AC0FD /* ViewerChrome.swift */,
 				0364F98EC3A3B2999C136AE8 /* ViewerPager.swift */,
 			);
 			path = Viewer;
@@ -1063,6 +1066,7 @@
 				CFE6D0BD60A82F54DDE04E44 /* Spaces.swift in Sources */,
 				82D97B8E9E022D5AFA2E6E7E /* ThumbhashCache.swift in Sources */,
 				E285774554AF518271B4AD20 /* Viewer.swift in Sources */,
+				E00BBE3092CD602E5BCDD234 /* ViewerChrome.swift in Sources */,
 				BDE3988953DD862B5FA0BAA4 /* ViewerPager.swift in Sources */,
 				9830135D974E63A6479AC3CC /* ViewerRoute.swift in Sources */,
 			);
