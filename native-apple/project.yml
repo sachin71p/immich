@@ -7,6 +7,10 @@ options:
 packages:
   PhotosCore:
     path: PhotosCore
+  # WP-T T2: snapshot testing, test-only (only Heirloom-macOS-Tests depends on it).
+  swift-snapshot-testing:
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    from: 1.19.0
 settings:
   base:
     SWIFT_VERSION: '6.0'
@@ -111,6 +115,28 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.macos.uitests
+  # WP-T T1+T2: macOS unit tests (fixture, gestures, snapshots). A logic-test
+  # bundle (no app host): it compiles the WP-T-owned app sources directly, so
+  # no app-target settings change is needed. Feature WPs add their area tests
+  # under Apps/macOS/Tests/<Area>/ in files they own.
+  Heirloom-macOS-Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Apps/macOS/Tests
+      - Apps/macOS/Sources/FixtureSeed.swift
+      - Apps/macOS/Sources/AXIDs.swift
+      - Apps/macOS/Sources/Gestures/GestureInputs.swift
+    dependencies:
+      - package: PhotosCore
+        product: CoreModel
+      - package: PhotosCore
+        product: LocalStore
+      - package: swift-snapshot-testing
+        product: SnapshotTesting
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.macos.tests
   Heirloom-BackgroundUpload:
     type: app-extension
     platform: iOS
@@ -218,4 +244,5 @@ schemes:
         Heirloom-macOS: all
     test:
       targets:
+        - Heirloom-macOS-Tests
         - Heirloom-macOS-UITests

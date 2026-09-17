@@ -6,6 +6,12 @@ import LocalAuthentication
 /// user permanently unable to recover their own personal media.
 enum LockedMediaAuthentication {
   static func authenticate(reason: String = "Unlock your personal locked photos") async -> Bool {
+    // UI-smoke launches seed a synthetic world with no real user media and no
+    // enrolled biometrics, so device auth can never pass there — bypass it so the
+    // Locked destination and lock/unlock flows stay testable. Production path
+    // unchanged (the flag is only ever passed by the macOS XCUITest harness).
+    let args = CommandLine.arguments
+    if args.contains("-fixture-seed") || args.contains("--fixture-seed") { return true }
     let context = LAContext()
     var error: NSError?
     guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return false }

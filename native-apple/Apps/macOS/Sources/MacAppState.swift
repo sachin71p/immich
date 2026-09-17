@@ -131,11 +131,20 @@ final class MacAppState {
   }
 
   func seedForSmoke() async throws {
-    try await store.apply(FixtureSeed.changes(), currentUserId: FixtureSeed.userId)
+    // Chunked (one SQLite transaction per batch): bounds peak memory on the large
+    // fixture and avoids a single all-or-nothing apply of 100k+ rows whose throw
+    // the app-shell call site would swallow (`try?`), leaving an empty grid.
+    for batch in FixtureSeed.batchedChanges() {
+      try await store.apply(batch, currentUserId: FixtureSeed.userId)
+    }
     // Mirror the hydrated `getLibrary` state (A1): the Archive library accepts uploads,
     // so DECISIONS §6 rule 4 offers it as a move target in the seeded world.
     try await store.setLibraryUploadPath(libraryId: FixtureSeed.libraryId, uploadPath: "/import/archive")
     await refresh()
+    // The grid's `.task(id: reloadKey)` fires on appear — against the still-empty store
+    // while this seed is in flight — and nothing else changes reloadKey once the rows
+    // land, so without this the grid keeps its first empty snapshot forever.
+    timelineVersion += 1
   }
 
   func completeLogin(serverURL: URL, token: String) async throws {
