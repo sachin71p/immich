@@ -121,6 +121,7 @@
 		E285774554AF518271B4AD20 /* Viewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFC85FFBA7579C03CE7BAE6 /* Viewer.swift */; };
 		E3A7EDE4A89259F1A297A40A /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500F5A4905443D3A3CF04B9A /* SharedContainer.swift */; };
 		E41CE7E89CE02CE15849BDC8 /* LockedMediaAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC15EE8293446CD203DE97CC /* LockedMediaAuthentication.swift */; };
+		E5C207FD809E7FE0DE1DA351 /* ViewerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E545120214DDEE8F1EC87862 /* ViewerUITests.swift */; };
 		E65B8E035572F5055972954B /* LiveVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C56C16B1936C90D10B70F230 /* LiveVideo.swift */; };
 		E6DED1853529ACA4D2511877 /* GridSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B7A0F588ED12A3BF26CC38 /* GridSelectionModel.swift */; };
 		E7C97BA4991536BA5DC6F138 /* ShareExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D7BE0C75683FFC943E0E0C /* ShareExtension.swift */; };
@@ -247,6 +248,7 @@
 		DB2BE337917F87C38F80A852 /* PhotosCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PhotosCore; path = PhotosCore; sourceTree = SOURCE_ROOT; };
 		DC84EEBDF5622F30FB15AD60 /* HeirloomIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomIOSApp.swift; sourceTree = "<group>"; };
 		E0AF35940917C91636A4A755 /* MacPreviewCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewCatalog.swift; sourceTree = "<group>"; };
+		E545120214DDEE8F1EC87862 /* ViewerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerUITests.swift; sourceTree = "<group>"; };
 		E5EB7C05A8DB97F45456CFEB /* ThumbhashCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbhashCache.swift; sourceTree = "<group>"; };
 		E6086603C26DEA57A022404B /* MacMainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMainWindow.swift; sourceTree = "<group>"; };
 		E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
@@ -431,6 +433,7 @@
 				36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */,
 				A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */,
 				9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */,
+				E545120214DDEE8F1EC87862 /* ViewerUITests.swift */,
 			);
 			name = UITests;
 			path = Apps/iOS/UITests;
@@ -935,6 +938,7 @@
 				C959FE40D592B0F2D6380C2D /* GridPerfUITests.swift in Sources */,
 				A02F35BD3C0A4638D10BFFBA /* ScreenshotTour.swift in Sources */,
 				4B342E05068BB4A933AD9B55 /* SyncUITests.swift in Sources */,
+				E5C207FD809E7FE0DE1DA351 /* ViewerUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
