@@ -45,7 +45,8 @@ enum BackupScheduler {
     do {
       _ = try await PhotoKitBackupScanner.scanAndEnqueue(store: store, prefs: session.prefs)
     } catch {
-      session.lastError = error.localizedDescription
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { session.lastError = error.localizedDescription }
       return
     }
     #endif

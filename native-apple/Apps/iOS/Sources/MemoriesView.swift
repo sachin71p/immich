@@ -103,7 +103,8 @@ struct MemoriesView: View {
         month: calendar.component(.month, from: now),
         day: calendar.component(.day, from: now))
     } catch {
-      session.lastError = error.localizedDescription
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { session.lastError = error.localizedDescription }
     }
   }
 }

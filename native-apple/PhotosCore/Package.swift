@@ -44,6 +44,7 @@ let package = Package(
       dependencies: [
         "CoreModel", "Rules", "LocalStore", "SyncEngine", "ImmichAPI", "Media", "Search", "Upload", "Editing",
         .product(name: "Nuke", package: "Nuke"),
+        .product(name: "GRDB", package: "GRDB.swift"),
       ],
       resources: [.copy("Fixtures")]
     ),

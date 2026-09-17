@@ -308,9 +308,17 @@ enum Schema {
     // `duration` verbatim into the seconds column, so every existing non-NULL value is 1000x too big.
     // Unconditional on purpose — the column is only ever written via `AssetRecords` from that path,
     // so there are no legitimate pre-existing second-scale values to preserve; NULLs are untouched.
+    // Rounds rather than truncates to match the live wire mapping in `WireTypes.swift`.
+    // Identifier is load-bearing: keep it `v4_duration_ms_to_s` — GRDB tracks migrations by name,
+    // and any device that already ran this exact migration must never re-run an equivalent one
+    // under a different name (that would divide already-fixed durations by 1000 a second time).
     migrator.registerMigration("v4_duration_ms_to_s") { db in
       try db.execute(
-        sql: "UPDATE asset SET durationSeconds = CAST(durationSeconds / 1000 AS INTEGER) WHERE durationSeconds IS NOT NULL")
+        sql: """
+          UPDATE asset
+          SET durationSeconds = CAST(ROUND(durationSeconds / 1000.0) AS INTEGER)
+          WHERE durationSeconds IS NOT NULL
+          """)
     }
 
     return migrator

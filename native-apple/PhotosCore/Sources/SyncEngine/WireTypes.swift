@@ -100,13 +100,12 @@ struct WireAsset: Decodable {
   var isEdited: Bool
 
   var model: Asset {
-    Asset(
+    // Server `duration` is integer MILLISECONDS (ChangeDurationToInteger migration); CoreModel keeps seconds.
+    let durationSeconds = duration.map { Int((Double($0) / 1000).rounded()) }
+    return Asset(
       id: id, ownerId: ownerId, originalFileName: originalFileName, thumbhash: thumbhash, checksum: checksum,
       fileCreatedAt: fileCreatedAt, fileModifiedAt: fileModifiedAt, createdAt: createdAt,
-      // Server `duration` is milliseconds; the local column is whole seconds (integer division;
-      // nil stays nil; sub-second truncates to 0).
-      localDateTime: localDateTime, durationSeconds: duration.map { $0 / 1000 },
-      type: AssetKind(rawValue: type) ?? .other,
+      localDateTime: localDateTime, durationSeconds: durationSeconds, type: AssetKind(rawValue: type) ?? .other,
       deletedAt: deletedAt, isFavorite: isFavorite, visibility: AssetVisibilityKind(rawValue: visibility) ?? .timeline,
       livePhotoVideoId: livePhotoVideoId, stackId: stackId, libraryId: libraryId, spaceId: spaceId, width: width,
       height: height, isEdited: isEdited

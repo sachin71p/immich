@@ -84,12 +84,6 @@ struct SettingsView: View {
               value: Self.formatBytes(cacheUsage[tier] ?? 0))
           }
         }
-        Section("About") {
-          LabeledContent("Heirloom", value: "iOS · shared-libraries fork")
-          Text("Follow Apple Photos interaction patterns; never Apple artwork or the Photos name.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
         if let error {
           Section { Text(error).foregroundStyle(.red).font(.caption) }
         }
@@ -133,7 +127,8 @@ struct SettingsView: View {
         try await session.prefsMutations?.update(prefs, for: session.userId)
         try await session.refresh()
       } catch {
-        self.error = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { self.error = error.localizedDescription }
       }
     }
   }
@@ -170,7 +165,8 @@ struct UploadTargetPicker: View {
               try await session.prefsMutations?.update(prefs, for: session.userId)
               try await session.refresh()
             } catch {
-              self.error = error.localizedDescription
+              // L2: cancellation is never a user-facing error.
+              if !error.isCancellation { self.error = error.localizedDescription }
             }
           }
         })
@@ -226,21 +222,21 @@ struct TimelineSourcesSheet: View {
                 set: { new in setSpaceToggle(space.id, show: new) }))
           }
         }
-        Section("External Libraries") {
-          ForEach(session.libraries) { library in
-            HStack {
-              Toggle(
-                library.name,
-                isOn: Binding(
-                  get: { libraryToggles[library.id] ?? true },
-                  set: { _ in }))
-                .disabled(true)
-              Spacer()
+        // L18: the developer placeholder is gone; the section only shows when it has content.
+        if !session.libraries.isEmpty {
+          Section("External Libraries") {
+            ForEach(session.libraries) { library in
+              HStack {
+                Toggle(
+                  library.name,
+                  isOn: Binding(
+                    get: { libraryToggles[library.id] ?? true },
+                    set: { _ in }))
+                  .disabled(true)
+                Spacer()
+              }
             }
           }
-          Text("Library timeline toggles need a wired library-member endpoint (open issue).")
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         if let error {
           Section { Text(error).foregroundStyle(.red).font(.caption) }
@@ -267,7 +263,8 @@ struct TimelineSourcesSheet: View {
       libraryToggles = Dictionary(
         uniqueKeysWithValues: ctx.libraryMemberships.map { ($0.libraryId, $0.showInTimeline) })
     } catch {
-      self.error = error.localizedDescription
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { self.error = error.localizedDescription }
     }
   }
 
@@ -279,7 +276,8 @@ struct TimelineSourcesSheet: View {
         try await session.prefsMutations?.update(prefs, for: session.userId)
         try await session.refresh()
       } catch {
-        self.error = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { self.error = error.localizedDescription }
       }
     }
   }
@@ -291,7 +289,8 @@ struct TimelineSourcesSheet: View {
         try await session.spaceMutations?.setShowInTimeline(spaceId: spaceId, show: show)
         try await session.refresh()
       } catch {
-        self.error = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { self.error = error.localizedDescription }
       }
     }
   }

@@ -323,7 +323,8 @@ struct ViewerView: View {
         try await session.refresh()
         await reloadAsset()
       } catch {
-        actionError = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
   }
@@ -352,7 +353,8 @@ struct ViewerView: View {
         }
         window.rootViewController?.present(activity, animated: true)
       } catch {
-        actionError = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
   }
@@ -375,7 +377,8 @@ struct ViewerView: View {
           UIPasteboard.general.string = asset.id
         }
       } catch {
-        actionError = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
   }
@@ -397,7 +400,8 @@ struct ViewerView: View {
         }
         showEdit = true
       } catch {
-        actionError = error.localizedDescription
+        // L2: cancellation is never a user-facing error.
+        if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
   }
