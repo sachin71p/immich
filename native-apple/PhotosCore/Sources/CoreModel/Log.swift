@@ -38,6 +38,8 @@ public enum HeirloomSignpost {
   public static let thumbnailFetch: StaticString = "ThumbnailFetch"
   public static let thumbnailDecode: StaticString = "ThumbnailDecode"
   public static let viewerOpen: StaticString = "ViewerOpen"
+  /// WP-E E2/E7: chrome + proxy on screen (budget: 300 ms; the original loads async after).
+  public static let editOpen: StaticString = "EditOpen"
 
   private static let signposter = OSSignposter(subsystem: "com.immich.heirloom", category: "timeline")
 

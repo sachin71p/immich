@@ -62,7 +62,16 @@ public struct EditRecipe: Sendable, Codable, Equatable {
 }
 
 /// All `-100...100` adjust sliders. Values are clamped on set; neutral is `0`.
-public struct AdjustRecipe: Sendable, Codable, Equatable {
+///
+/// WP-E section map: Light (exposure…blackPoint), Color (saturation, vibrance, cast),
+/// Black & White (bwIntensity, bwNeutrals, bwTone, grain), White Balance
+/// (wbTemperature, wbTint; warmth/tint are the legacy pair and keep rendering),
+/// Sharpen (sharpness legacy + sharpenEdges/sharpenFalloff), Vignette (legacy vignette
+/// + vignetteStrength/Radius/Softness), plus definition/noiseReduction.
+///
+/// Back-compat: every WP-E key decodes with `decodeIfPresent`, so recipes written
+/// before this WP (missing keys) decode with neutral defaults and render identically.
+public struct AdjustRecipe: Sendable, Equatable {
   public var exposure: Int
   public var brilliance: Int
   public var highlights: Int
@@ -79,12 +88,33 @@ public struct AdjustRecipe: Sendable, Codable, Equatable {
   public var noiseReduction: Int
   public var vignette: Int
   public var autoEnhance: Bool
+  // MARK: WP-E keys
+  /// Color > Cast (extra color shift applied after warmth/tint).
+  public var cast: Int
+  /// B&W section.
+  public var bwIntensity: Int
+  public var bwNeutrals: Int
+  public var bwTone: Int
+  public var grain: Int
+  /// White Balance section (finer than the legacy warmth/tint pair).
+  public var wbTemperature: Int
+  public var wbTint: Int
+  /// Sharpen section detail.
+  public var sharpenEdges: Int
+  public var sharpenFalloff: Int
+  /// Vignette section detail.
+  public var vignetteStrength: Int
+  public var vignetteRadius: Int
+  public var vignetteSoftness: Int
 
   public init(
     exposure: Int = 0, brilliance: Int = 0, highlights: Int = 0, shadows: Int = 0,
     contrast: Int = 0, brightness: Int = 0, blackPoint: Int = 0, saturation: Int = 0,
     vibrance: Int = 0, warmth: Int = 0, tint: Int = 0, sharpness: Int = 0,
-    definition: Int = 0, noiseReduction: Int = 0, vignette: Int = 0, autoEnhance: Bool = false
+    definition: Int = 0, noiseReduction: Int = 0, vignette: Int = 0, autoEnhance: Bool = false,
+    cast: Int = 0, bwIntensity: Int = 0, bwNeutrals: Int = 0, bwTone: Int = 0, grain: Int = 0,
+    wbTemperature: Int = 0, wbTint: Int = 0, sharpenEdges: Int = 0, sharpenFalloff: Int = 0,
+    vignetteStrength: Int = 0, vignetteRadius: Int = 0, vignetteSoftness: Int = 0
   ) {
     self.exposure = Self.clamp(exposure)
     self.brilliance = Self.clamp(brilliance)
@@ -102,6 +132,18 @@ public struct AdjustRecipe: Sendable, Codable, Equatable {
     self.noiseReduction = Self.clamp(noiseReduction)
     self.vignette = Self.clamp(vignette)
     self.autoEnhance = autoEnhance
+    self.cast = Self.clamp(cast)
+    self.bwIntensity = Self.clamp(bwIntensity)
+    self.bwNeutrals = Self.clamp(bwNeutrals)
+    self.bwTone = Self.clamp(bwTone)
+    self.grain = Self.clamp(grain)
+    self.wbTemperature = Self.clamp(wbTemperature)
+    self.wbTint = Self.clamp(wbTint)
+    self.sharpenEdges = Self.clamp(sharpenEdges)
+    self.sharpenFalloff = Self.clamp(sharpenFalloff)
+    self.vignetteStrength = Self.clamp(vignetteStrength)
+    self.vignetteRadius = Self.clamp(vignetteRadius)
+    self.vignetteSoftness = Self.clamp(vignetteSoftness)
   }
 
   public static func clamp(_ v: Int) -> Int { min(100, max(-100, v)) }
@@ -110,6 +152,71 @@ public struct AdjustRecipe: Sendable, Codable, Equatable {
 
   /// Slider value -> unit float in `-1...1`.
   public func unit(_ v: Int) -> Double { Double(v) / 100.0 }
+}
+
+extension AdjustRecipe: Codable {
+  private enum CodingKeys: String, CodingKey {
+    case exposure, brilliance, highlights, shadows, contrast, brightness, blackPoint,
+      saturation, vibrance, warmth, tint, sharpness, definition, noiseReduction, vignette,
+      autoEnhance, cast, bwIntensity, bwNeutrals, bwTone, grain, wbTemperature, wbTint,
+      sharpenEdges, sharpenFalloff, vignetteStrength, vignetteRadius, vignetteSoftness
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    func v(_ k: CodingKeys) -> Int {
+      guard let outer = (try? c.decodeIfPresent(Int.self, forKey: k)) else { return 0 }
+      return outer ?? 0
+    }
+    let autoEnhance: Bool = {
+      guard let outer = (try? c.decodeIfPresent(Bool.self, forKey: .autoEnhance)) else { return false }
+      return outer ?? false
+    }()
+    self.init(
+      exposure: v(.exposure), brilliance: v(.brilliance), highlights: v(.highlights),
+      shadows: v(.shadows), contrast: v(.contrast), brightness: v(.brightness),
+      blackPoint: v(.blackPoint), saturation: v(.saturation), vibrance: v(.vibrance),
+      warmth: v(.warmth), tint: v(.tint), sharpness: v(.sharpness),
+      definition: v(.definition), noiseReduction: v(.noiseReduction), vignette: v(.vignette),
+      autoEnhance: autoEnhance,
+      cast: v(.cast), bwIntensity: v(.bwIntensity), bwNeutrals: v(.bwNeutrals),
+      bwTone: v(.bwTone), grain: v(.grain), wbTemperature: v(.wbTemperature),
+      wbTint: v(.wbTint), sharpenEdges: v(.sharpenEdges), sharpenFalloff: v(.sharpenFalloff),
+      vignetteStrength: v(.vignetteStrength), vignetteRadius: v(.vignetteRadius),
+      vignetteSoftness: v(.vignetteSoftness))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(exposure, forKey: .exposure)
+    try c.encode(brilliance, forKey: .brilliance)
+    try c.encode(highlights, forKey: .highlights)
+    try c.encode(shadows, forKey: .shadows)
+    try c.encode(contrast, forKey: .contrast)
+    try c.encode(brightness, forKey: .brightness)
+    try c.encode(blackPoint, forKey: .blackPoint)
+    try c.encode(saturation, forKey: .saturation)
+    try c.encode(vibrance, forKey: .vibrance)
+    try c.encode(warmth, forKey: .warmth)
+    try c.encode(tint, forKey: .tint)
+    try c.encode(sharpness, forKey: .sharpness)
+    try c.encode(definition, forKey: .definition)
+    try c.encode(noiseReduction, forKey: .noiseReduction)
+    try c.encode(vignette, forKey: .vignette)
+    try c.encode(autoEnhance, forKey: .autoEnhance)
+    try c.encode(cast, forKey: .cast)
+    try c.encode(bwIntensity, forKey: .bwIntensity)
+    try c.encode(bwNeutrals, forKey: .bwNeutrals)
+    try c.encode(bwTone, forKey: .bwTone)
+    try c.encode(grain, forKey: .grain)
+    try c.encode(wbTemperature, forKey: .wbTemperature)
+    try c.encode(wbTint, forKey: .wbTint)
+    try c.encode(sharpenEdges, forKey: .sharpenEdges)
+    try c.encode(sharpenFalloff, forKey: .sharpenFalloff)
+    try c.encode(vignetteStrength, forKey: .vignetteStrength)
+    try c.encode(vignetteRadius, forKey: .vignetteRadius)
+    try c.encode(vignetteSoftness, forKey: .vignetteSoftness)
+  }
 }
 
 /// A named style preset plus intensity `0...100`. Style color science is our own
@@ -192,17 +299,58 @@ public struct NormalizedRect: Sendable, Codable, Equatable {
   }
 }
 
-public enum CropAspect: String, Sendable, Codable, CaseIterable {
-  case free, square = "1:1", threeTwo = "3:2", fourThree = "4:3", sixteenNine = "16:9", nineSixteen = "9:16"
+/// Crop orientation toggle for the Aspect list (WP-E E6): a preset ratio flips
+/// under portrait orientation (16:9 <-> 9:16, 4:3 <-> 3:4, …).
+public enum CropOrientation: String, Sendable, Codable, CaseIterable {
+  case landscape, portrait
+}
 
+public enum CropAspect: String, Sendable, Codable, CaseIterable {
+  case free
+  case original = "Original"
+  case square = "1:1"
+  case sixteenNine = "16:9"
+  case fourFive = "4:5"
+  case fiveSeven = "5:7"
+  case fourThree = "4:3"
+  case threeFive = "3:5"
+  case threeTwo = "3:2"
+  case nineSixteen = "9:16"
+  case custom = "Custom"
+
+  /// Landscape ratio (width / height), or nil when the rect is unconstrained
+  /// (free/custom) or source-defined (original).
   public var ratio: Double? {
     switch self {
-    case .free: return nil
+    case .free, .original, .custom: return nil
     case .square: return 1
-    case .threeTwo: return 3.0 / 2.0
-    case .fourThree: return 4.0 / 3.0
     case .sixteenNine: return 16.0 / 9.0
+    case .fourFive: return 4.0 / 5.0
+    case .fiveSeven: return 5.0 / 7.0
+    case .fourThree: return 4.0 / 3.0
+    case .threeFive: return 3.0 / 5.0
+    case .threeTwo: return 3.0 / 2.0
     case .nineSixteen: return 9.0 / 16.0
+    }
+  }
+
+  /// Ratio honoring the portrait/landscape toggle (portrait inverts the ratio).
+  public func ratio(orientation: CropOrientation) -> Double? {
+    guard let r = ratio else { return nil }
+    switch orientation {
+    case .landscape: return r >= 1 ? r : 1 / r
+    case .portrait: return r >= 1 ? 1 / r : r
+    }
+  }
+
+  /// Display name for the Aspect list (raw values stay stable for recipes).
+  public var displayName: String {
+    switch self {
+    case .free: return "Freeform"
+    case .original: return "Original"
+    case .square: return "Square"
+    case .custom: return "Custom…"
+    default: return rawValue
     }
   }
 }

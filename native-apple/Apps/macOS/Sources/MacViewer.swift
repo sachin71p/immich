@@ -38,7 +38,7 @@ struct MacViewerView: View {
   @State private var titlePlace: String?
   @State private var showingInspector = false
   @State private var showingMove = false
-  @State private var showingEdit = false
+  @State private var showingEditMode = false
   @State private var showingAddToAlbum = false
   @State private var error: String?
   @State private var liveTextEnabled = true
@@ -119,10 +119,30 @@ struct MacViewerView: View {
   }
 
   var body: some View {
+    // WP-E E1/E2: full-window edit mode replaces the viewer content (first click on
+    // Edit, Return, or the `HeirloomViewer.openEdit` notification).
+    if showingEditMode, let asset, let preview = editPreview {
+      MacEditModeView(
+        asset: asset, access: editAccess, preview: preview,
+        loadOriginalData: { try await downloadOriginal(asset) },
+        loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
+        persistence: RESTEditPersistence(
+          serverURL: state.serverURL,
+          token: { [connection = state.connection] in await connection.tokenStore.get() }),
+        isFavorite: asset.isFavorite,
+        onFavorite: { toggleFavorite() },
+        onDone: { _ in Task { await loadProgressive() } },
+        onExit: { showingEditMode = false })
+    } else {
+      viewerBody
+    }
+  }
+
+  private var viewerBody: some View {
     ZStack {
       if let asset, asset.type == .video {
         MacVideoPageView(asset: asset, state: state) {
-          if canEdit(asset) { showingEdit = true }
+          if canEdit(asset) { showingEditMode = true }
         }
       } else if let asset, let motionId = asset.livePhotoVideoId {
         MacLivePhotoPageView(asset: asset, motionAssetId: motionId, state: state)
@@ -187,7 +207,9 @@ struct MacViewerView: View {
           }
         }
         if let asset, canEdit(asset) {
-          Button { showingEdit = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+          // WP-E E1: a single click opens edit mode at once (no double-click).
+          Button { showingEditMode = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+            .accessibilityIdentifier(AXIDs.toolbarEdit)
         }
         Button { rotateClockwise() } label: { Label("Rotate", systemImage: "rotate.right") }
           .disabled(asset?.type == .video)
@@ -221,18 +243,10 @@ struct MacViewerView: View {
         MacAssetChangeCenter.shared.post(.albumsChanged)
       }
     }
-    .sheet(isPresented: $showingEdit) {
-      if let asset, let preview = editPreview {
-        MacEditView(
-          asset: asset, access: editAccess, preview: preview,
-          loadOriginalData: { try await downloadOriginal(asset) },
-          loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
-          persistence: RESTEditPersistence(
-            serverURL: state.serverURL,
-            token: { [connection = state.connection] in await connection.tokenStore.get() }),
-          onDone: { _ in Task { await loadProgressive() } })
-          .frame(minWidth: 900, minHeight: 640)
-      }
+    .onReceive(NotificationCenter.default.publisher(for: .heirloomOpenEdit)) { note in
+      // WP-E E1: open on the viewer notification (first click / Return route here).
+      if let id = note.userInfo?["assetId"] as? String, id != assetId { return }
+      if let asset, canEdit(asset) { showingEditMode = true }
     }
     .focusable()
     .focused($isFocused)
@@ -243,6 +257,12 @@ struct MacViewerView: View {
     // not by suppression — there is no grid handler left to suppress.
     .onKeyPress(.leftArrow) { page(by: -1); return .handled }
     .onKeyPress(.rightArrow) { page(by: 1); return .handled }
+    // WP-E E1: Return opens edit mode (first-click parity for keyboard).
+    .onKeyPress(.return) {
+      guard !showingEditMode, let asset, canEdit(asset) else { return .ignored }
+      showingEditMode = true
+      return .handled
+    }
     // Esc closes the inline viewer; the existing `onClose` callback returns to the
     // grid with the prior selection intact (WP5 item 8). Standalone viewer windows
     // (no `onClose`) keep the window-level close behavior.

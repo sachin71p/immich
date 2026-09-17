@@ -17,8 +17,44 @@ public enum EditStyle: String, Sendable, Codable, CaseIterable {
   case mono = "Mono"
   case silvertone = "Silvertone"
   case noir = "Noir"
+  // MARK: WP-E Undertone presets (2D pad Tone x Color + Palette + Intensity)
+  case undertoneStandard = "Standard"
+  case undertoneAmber = "Amber"
+  case undertoneGold = "Gold"
+  case undertoneRoseGold = "Rose Gold"
+  case undertoneBright = "Bright"
+  case undertoneNeutral = "Neutral"
+  case undertoneCoolRose = "Cool Rose"
+  // MARK: WP-E Mood presets
+  case moodVibrant = "Vibrant"
+  case moodNatural = "Natural"
+  case moodLuminous = "Luminous"
+  case moodDramatic = "Dramatic Mood"
+  case moodQuiet = "Quiet"
+  case moodCozy = "Cozy"
+  case moodEthereal = "Ethereal"
+  case moodMutedBW = "Muted B&W"
+  case moodStarkBW = "Stark B&W"
 
   public var displayName: String { rawValue }
+
+  /// Styles panel groups (WP-E E5): Undertone, Mood, and Classic. Existing filter
+  /// recipes (Vivid …, Noir) keep rendering and appear only in the Classic group,
+  /// shown when the current recipe uses one.
+  public static let undertonePresets: [EditStyle] = [
+    .undertoneStandard, .undertoneAmber, .undertoneGold, .undertoneRoseGold,
+    .undertoneBright, .undertoneNeutral, .undertoneCoolRose,
+  ]
+
+  public static let moodPresets: [EditStyle] = [
+    .moodVibrant, .moodNatural, .moodLuminous, .moodDramatic, .moodQuiet,
+    .moodCozy, .moodEthereal, .moodMutedBW, .moodStarkBW,
+  ]
+
+  public static let classicStyles: [EditStyle] = [
+    .vivid, .vividWarm, .vividCool, .dramatic, .dramaticWarm, .dramaticCool,
+    .mono, .silvertone, .noir,
+  ]
 
   /// Applies the style at full strength; callers blend toward the source for intensity < 100
   /// via `EditStyles.blend`.
@@ -66,6 +102,82 @@ public enum EditStyle: String, Sendable, Codable, CaseIterable {
         .controlled(saturation: 0, contrast: 1.45, brightness: -0.04)
         .toned(black: 0.14, white: 0.96)
         .vignetted(radius: 1.4, intensity: 0.8)
+    // MARK: WP-E Undertone presets (documented tone curve + color matrix + saturation)
+    case .undertoneStandard:
+      return image
+        .controlled(saturation: 1.08, contrast: 1.04)
+        .toned(black: 0.02, white: 0.99)
+    case .undertoneAmber:
+      return image
+        .controlled(saturation: 1.15, contrast: 1.03)
+        .warmed(temperature: 0.16)
+        .toned(black: 0.03, white: 0.98)
+    case .undertoneGold:
+      return image
+        .controlled(saturation: 1.22, contrast: 1.06, brightness: 0.015)
+        .warmed(temperature: 0.22)
+        .toned(black: 0.04, white: 0.97)
+    case .undertoneRoseGold:
+      return image
+        .controlled(saturation: 1.18, contrast: 1.04)
+        .warmed(temperature: 0.10)
+        .rosed(amount: 0.12)
+        .toned(black: 0.03, white: 0.98)
+    case .undertoneBright:
+      return image
+        .controlled(saturation: 1.12, contrast: 1.02, brightness: 0.05)
+        .toned(black: 0.0, white: 1.0)
+    case .undertoneNeutral:
+      return image
+        .controlled(saturation: 1.0, contrast: 1.03)
+        .toned(black: 0.02, white: 0.985)
+    case .undertoneCoolRose:
+      return image
+        .controlled(saturation: 1.14, contrast: 1.04)
+        .warmed(temperature: -0.10)
+        .rosed(amount: 0.10)
+        .toned(black: 0.03, white: 0.98)
+    // MARK: WP-E Mood presets
+    case .moodVibrant:
+      return image
+        .controlled(saturation: 1.45, contrast: 1.12, brightness: 0.01)
+        .toned(black: 0.03, white: 0.99)
+    case .moodNatural:
+      return image
+        .controlled(saturation: 1.05, contrast: 1.03)
+        .toned(black: 0.01, white: 0.995)
+    case .moodLuminous:
+      return image
+        .controlled(saturation: 1.10, contrast: 0.96, brightness: 0.07)
+        .toned(black: 0.0, white: 1.0)
+    case .moodDramatic:
+      return image
+        .controlled(saturation: 1.05, contrast: 1.38, brightness: -0.05)
+        .toned(black: 0.16, white: 0.92)
+        .vignetted(radius: 1.5, intensity: 0.65)
+    case .moodQuiet:
+      return image
+        .controlled(saturation: 0.82, contrast: 0.94, brightness: 0.02)
+        .toned(black: 0.05, white: 0.97)
+    case .moodCozy:
+      return image
+        .controlled(saturation: 1.10, contrast: 1.05, brightness: 0.02)
+        .warmed(temperature: 0.18)
+        .toned(black: 0.05, white: 0.97)
+        .vignetted(radius: 1.8, intensity: 0.35)
+    case .moodEthereal:
+      return image
+        .controlled(saturation: 0.92, contrast: 0.90, brightness: 0.08)
+        .warmed(temperature: -0.06)
+        .toned(black: 0.0, white: 1.0)
+    case .moodMutedBW:
+      return image
+        .controlled(saturation: 0, contrast: 1.02, brightness: 0.05)
+        .toned(black: 0.06, white: 0.97)
+    case .moodStarkBW:
+      return image
+        .controlled(saturation: 0, contrast: 1.60, brightness: -0.03)
+        .toned(black: 0.18, white: 0.94)
     }
   }
 }
@@ -139,6 +251,17 @@ private extension CIImage {
     let f = CIFilter(name: "CISepiaTone")
     f?.setValue(self, forKey: kCIInputImageKey)
     f?.setValue(intensity, forKey: kCIInputIntensityKey)
+    return f?.outputImage ?? self
+  }
+
+  /// Subtle rose push (red/blue lift, green dip) for the Rose Gold looks.
+  func rosed(amount: Double) -> CIImage {
+    let f = CIFilter(name: "CIColorMatrix")
+    f?.setValue(self, forKey: kCIInputImageKey)
+    f?.setValue(CIVector(x: 1 + amount, y: 0, z: 0, w: 0), forKey: "inputRVector")
+    f?.setValue(CIVector(x: 0, y: 1 - amount * 0.5, z: 0, w: 0), forKey: "inputGVector")
+    f?.setValue(CIVector(x: 0, y: 0, z: 1 + amount * 0.5, w: 0), forKey: "inputBVector")
+    f?.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputAVector")
     return f?.outputImage ?? self
   }
 }
