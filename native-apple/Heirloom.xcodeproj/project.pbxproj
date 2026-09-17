@@ -61,6 +61,7 @@
 		5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */; };
 		60B4AF936251E3716C5E102A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E3E22E15AF847EB8E62EE01 /* README.md */; };
 		695EF8BFB7841509B4E25CD0 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 1E53BF363D53907D6EAE51E5 /* CoreModel */; };
+		6B5016E8CF28C4A9CBA15068 /* MacUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */; };
 		6FF2BDB2A4E5F0541011EB25 /* HeirloomPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */; };
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
 		73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */; };
@@ -243,6 +244,7 @@
 		8D65FC4B1B649D178D8A4490 /* MacMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenus.swift; sourceTree = "<group>"; };
 		8ED7CA215B79373233B77B96 /* Heirloom-iOS-UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Heirloom-iOS-UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		938939017F03BF2906B018DD /* GestureInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureInputTests.swift; sourceTree = "<group>"; };
+		95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUITestSupport.swift; sourceTree = "<group>"; };
 		958BD68C3B16A152746D63A5 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		992CA42FB885FED500B3D213 /* MacMapPlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMapPlacesView.swift; sourceTree = "<group>"; };
 		9A200B4479469DD4C3817B69 /* BackupScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupScanner.swift; sourceTree = "<group>"; };
@@ -430,6 +432,7 @@
 				1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */,
 				1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */,
 				5418423DA37D1695A127DE89 /* MacSmokeTests.swift */,
+				95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */,
 			);
 			name = UITests;
 			path = Apps/macOS/UITests;
@@ -927,37 +930,37 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					0D85D641350A0972877BA40F = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					1687D3DFBCC71FF95AB63C24 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 						TestTargetID = E6E2BF7C79DF5ABC1FF5CACA;
 					};
 					22A3362055562D724946234D = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 						TestTargetID = 5AA476FDB0B8F81FFFEB1022;
 					};
 					278B2FEA8D40D4B9AC7EBC7C = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					5AA476FDB0B8F81FFFEB1022 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					684DE8B8868C09C81C09DDF0 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					9B35EFA422FCFD3E02A23CCE = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					BC47A3776A4147CF189475AB = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					BEFA62EBF592CE1BEC3D2747 = {
@@ -965,11 +968,11 @@
 						ProvisioningStyle = Automatic;
 					};
 					D84723B5E7BCA06F495A86D2 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 					E6E2BF7C79DF5ABC1FF5CACA = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = 599Z443923;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1044,6 +1047,7 @@
 				6FF2BDB2A4E5F0541011EB25 /* HeirloomPerfTests.swift in Sources */,
 				8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */,
 				1A928DD22CF697C8B5937F13 /* MacSmokeTests.swift in Sources */,
+				6B5016E8CF28C4A9CBA15068 /* MacUITestSupport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1300,7 +1304,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				DEVELOPMENT_TEAM = 599Z443923;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1367,7 +1371,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				DEVELOPMENT_TEAM = 599Z443923;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;

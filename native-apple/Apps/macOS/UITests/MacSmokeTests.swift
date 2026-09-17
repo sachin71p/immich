@@ -13,9 +13,10 @@ final class MacSmokeTests: XCTestCase {
     // Prevent AppKit from restoring a previous run's saved window state, which otherwise
     // races the fresh fixture-seeded content on repeat launches within one test session.
     // T0: the sized small fixture (~2k rows) + no-animation contract flag.
+    // "--ui-testing" enables the test-only AppKit foreground presenter (299a76c73).
     app.launchArguments = [
       "--fixture-seed", "-HeirloomFixture", "small", "-HeirloomUITestNoAnimation",
-      "-ApplePersistenceIgnoreState", "YES",
+      "--ui-testing", "-ApplePersistenceIgnoreState", "YES",
     ]
   }
 
@@ -29,7 +30,7 @@ final class MacSmokeTests: XCTestCase {
 
   /// Sidebar + grid render from the fixture DB.
   func testSidebarAndGridRender() {
-    app.launch()
+    app.launchForUIAutomation()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
 
     let sidebar = app.descendants(matching: .any)["sidebar"]
@@ -64,10 +65,24 @@ final class MacSmokeTests: XCTestCase {
     XCTAssertTrue(app.descendants(matching: .any)["library-switcher"].waitForExistence(timeout: 10))
   }
 
+  /// Regression: macOS can launch a UI-test target with its first window minimized.
+  /// The test-only AppKit presenter must make the window frontmost and hittable before
+  /// any automation starts interacting with its contents.
+  func testLaunchMakesMainWindowAccessible() {
+    app.launchForUIAutomation()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
+
+    let mainWindow = app.windows.firstMatch
+    XCTAssertTrue(mainWindow.waitForExistence(timeout: 30), "main window is created")
+    XCTAssertTrue(mainWindow.isHittable, "main window is frontmost and not minimized")
+    XCTAssertTrue(app.descendants(matching: .any)["sidebar"].waitForExistence(timeout: 30))
+    XCTAssertFalse(app.descendants(matching: .any)["toast"].exists, "fixture launch does not attempt a network sync")
+  }
+
   /// Keyboard selection (⌘A) then Move to… lists the allowed targets (AP-04: move sheet
   /// targets equal the `Rules.MoveTargets` expectations for the selection).
   func testKeyboardSelectionAndMoveTargets() {
-    app.launch()
+    app.launchForUIAutomation()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(app.descendants(matching: .any)["asset-grid"].waitForExistence(timeout: 30))
 
@@ -96,7 +111,7 @@ final class MacSmokeTests: XCTestCase {
 
   /// Library switcher filters the grid to one container (same options as iOS).
   func testLibrarySwitcherFiltersGrid() {
-    app.launch()
+    app.launchForUIAutomation()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(app.descendants(matching: .any)["asset-grid"].waitForExistence(timeout: 30))
 

@@ -16,9 +16,10 @@ final class MacFunctionalTests: XCTestCase {
     // Same fresh-state guard as MacSmokeTests: a previous run's restored window races
     // the fixture-seeded content on repeat launches within one test session.
     // T0: the sized small fixture (~2k rows) + no-animation contract flag.
+    // "--ui-testing" enables the test-only AppKit foreground presenter (299a76c73).
     app.launchArguments = [
       "--fixture-seed", "-HeirloomFixture", "small", "-HeirloomUITestNoAnimation",
-      "-ApplePersistenceIgnoreState", "YES",
+      "--ui-testing", "-ApplePersistenceIgnoreState", "YES",
     ]
   }
 
@@ -38,7 +39,7 @@ final class MacFunctionalTests: XCTestCase {
   }
 
   private func launchAndWaitForLibrary() {
-    app.launch()
+    app.launchForUIAutomation()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(el("sidebar").waitForExistence(timeout: 30), "sidebar renders")
     XCTAssertTrue(el("asset-grid").waitForExistence(timeout: 30), "grid renders")
