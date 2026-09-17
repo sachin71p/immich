@@ -133,55 +133,88 @@ final class ScreenshotTourUITests: XCTestCase {
   // MARK: - Library tab
 
   func tourLibrary() {
-    goTab("Library", expect: app.descendants(matching: .any)["library-grid"])
+    // Zoom persists across runs — normalize to All before expecting the grid.
+    goTab("Library", expect: app.descendants(matching: .any)["library-zoom"])
+    if tap(app.buttons["All Photos"], timeout: 10) {
+      sleep(1)
+    }
+    XCTAssertTrue(
+      app.descendants(matching: .any)["library-grid"].waitForExistence(timeout: 30))
     shot("01-library-all")
 
-    // Library switcher menu (Both / Personal / spaces / libraries / Show in Timeline…).
-    if tap(app.buttons["library-switcher"], timeout: 10) {
+    // Filter menu (Sort / Filter: / Media Types / Library View / View Options).
+    let filterMenu = app.descendants(matching: .any)["library-filter-menu"]
+    if tap(filterMenu, timeout: 10) {
       sleep(1)
-      shot("02-library-switcher-menu")
-      // While the menu is open its label leaves the hierarchy, so dismiss by picking
-      // the already-current source (a no-op reload) with a toggle fallback.
-      if !tap(app.buttons["Both Libraries"], timeout: 5) {
-        tap(app.buttons["library-switcher"], timeout: 5)
+      shot("02-library-filter-menu")
+      // Dismiss by picking the already-current filter (a no-op reload).
+      if !tap(app.buttons["filter-all-items"], timeout: 5) {
+        tap(filterMenu, timeout: 5)
       }
     }
 
-    // Zoom levels (segmented picker buttons; Days was removed in WP1).
-    for level in ["Years", "Months", "All Photos"] {
-      if tap(app.buttons[level], timeout: 5) {
+    // Zoom levels (glass Years · Months · All in the tab-bar accessory) + drill-down.
+    if tap(app.buttons["Years"], timeout: 5) {
+      sleep(1)
+      shot("03a-library-years")
+      let yearCard = app.descendants(matching: .any).matching(
+        NSPredicate(format: "identifier BEGINSWITH 'year-card-'")
+      ).firstMatch
+      if tap(yearCard, timeout: 10) {
         sleep(1)
-        shot("03-library-zoom-\(level.lowercased().replacingOccurrences(of: " ", with: "-"))")
+        shot("03b-library-months")
+        let dayCard = app.descendants(matching: .any).matching(
+          NSPredicate(format: "identifier BEGINSWITH 'day-card-'")
+        ).firstMatch
+        if tap(dayCard, timeout: 10) {
+          sleep(1)
+          shot("03c-library-day-to-all")
+        }
       }
     }
-    tap(app.buttons["Months"], timeout: 5)
 
-    // Select mode + selection action bar.
+    // Select mode: top filter + … + ✕, bottom Share / N Selected / Trash.
     if tap(app.buttons["Select"], timeout: 10) {
       sleep(1)
       shot("04-library-select-mode")
       tap(app.collectionViews.cells.firstMatch, timeout: 10)
       sleep(1)
       shot("05-library-selected-one")
-      // Move sheet (lists Rules.MoveTargets; Camera is eligible for the personal asset).
-      if tap(app.buttons["Move to…"], timeout: 10) {
-        XCTAssertTrue(
-          app.descendants(matching: .any)["move-targets"].waitForExistence(timeout: 10))
-        shot("06-library-move-sheet")
-        tap(app.buttons["Close"], timeout: 10)
+      // "…" menu (bulk actions) then Move sheet (Rules.MoveTargets).
+      if tap(app.descendants(matching: .any)["select-more-menu"], timeout: 10) {
+        sleep(1)
+        shot("05b-library-select-more-menu")
+        if tap(app.descendants(matching: .any)["select-action-move-to"], timeout: 10) {
+          XCTAssertTrue(
+            app.descendants(matching: .any)["move-targets"].waitForExistence(timeout: 10))
+          shot("06-library-move-sheet")
+          tap(app.buttons["Close"], timeout: 10)
+        }
       }
-      tap(app.buttons["Done"], timeout: 10)
+      tap(app.descendants(matching: .any)["select-exit"], timeout: 10)
     }
 
-    // Timeline Sources sheet (from the switcher menu's "Show in Timeline…" row).
-    if tap(app.buttons["library-switcher"], timeout: 10) {
-      if tap(app.buttons["Show in Timeline…"], timeout: 10) {
+    // Timeline Sources sheet (filter menu → Library View group → "Show in Timeline…",
+    // scrolling the tall menu if the row is below the fold).
+    if tap(filterMenu, timeout: 10) {
+      var openedSources = tap(
+        app.descendants(matching: .any)["libraryview-show-in-timeline"], timeout: 5)
+      if !openedSources {
+        // Coordinate drag: the menu isn't always `menus`-typed, and `swipeUp`
+        // doesn't move menu content anyway.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.7)).press(
+          forDuration: 0.05,
+          thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.3)))
+        openedSources = tap(
+          app.descendants(matching: .any)["libraryview-show-in-timeline"], timeout: 5)
+      }
+      if openedSources {
         XCTAssertTrue(
           app.descendants(matching: .any)["timeline-sources"].waitForExistence(timeout: 10))
         shot("07-library-timeline-sources")
         tap(app.buttons["Done"], timeout: 10)
-      } else if !tap(app.buttons["Both Libraries"], timeout: 5) {
-        tap(app.buttons["library-switcher"], timeout: 5)
+      } else if !tap(app.buttons["filter-all-items"], timeout: 5) {
+        tap(filterMenu, timeout: 5)
       }
     }
   }
