@@ -6,7 +6,7 @@ import Rules
 
 // MARK: - zoom levels (brief task 1)
 
-/// Apple-style grid zoom: Years → Months → Days → All Photos. Each level maps to a bucket
+/// Apple-style grid zoom: Years → Months → All. Each level maps to a bucket
 /// granularity (backed by `PhotosLocalStore.timelineBuckets`) and a default column count; pinch
 /// moves between column counts within and across levels.
 /// Zoom levels (WP2 owns the Years/Months views; Days is removed — All is the flat
@@ -19,7 +19,7 @@ enum LibraryZoomLevel: String, CaseIterable, Identifiable {
     switch self {
     case .years: return "Years"
     case .months: return "Months"
-    case .all: return "All Photos"
+    case .all: return "All"
     }
   }
 

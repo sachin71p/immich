@@ -8,7 +8,14 @@ final class ParityChromeUITests: XCTestCase {
     let app = Parity.launch()
     // C1/WP-C: library/segmented-control/search render in one bar element —
     // not a pills row above a separate tab bar.
-    Parity.require("chrome-floating-bar", in: app, gap: "C1", owner: "WP-C")
+    let bar = Parity.require("chrome-floating-bar", in: app, gap: "C1", owner: "WP-C")
+    // The bar must actually contain the three slots, not be an empty shell.
+    XCTAssertTrue(
+      bar.descendants(matching: .any)["library-zoom"].exists,
+      "C1/WP-C: the floating bar should contain the Years/Months/All control")
+    XCTAssertTrue(
+      bar.descendants(matching: .any)["chrome-search-circle"].exists,
+      "C1/WP-C: the floating bar should contain the search circle")
   }
 
   func test_chrome_allSegmentLabel_isAll() throws {

@@ -103,6 +103,14 @@ struct LibraryView: View {
             }
           }
         } else {
+          // C4: the item count lives in the header, not as a persistent line
+          // under the bottom pills (the `library-count` element is gone).
+          ToolbarItem(placement: .topBarLeading) {
+            Text(countLabel)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("chrome-header-count")
+          }
           ToolbarItem(placement: .topBarTrailing) {
             HStack(spacing: 10) {
               filterMenu
@@ -126,23 +134,41 @@ struct LibraryView: View {
           )
           .background(.thinMaterial)
         } else {
-          VStack(spacing: 2) {
+          // C1: one floating bar — [library] [Years │ Months │ All] [search] —
+          // instead of a pills row above the tab bar. C3: the search slot is
+          // the separate search circle. The `library-zoom` identifier is kept
+          // for the existing zoom tests; the select-mode branch above is
+          // WP-M's and is untouched.
+          HStack(spacing: 12) {
+            Button {
+              zoomRaw = LibraryZoomLevel.all.rawValue
+            } label: {
+              Image(systemName: "photo")
+            }
+            .accessibilityIdentifier("chrome-library-button")
             Picker("Zoom", selection: zoomBinding) {
               ForEach([LibraryZoomLevel.years, .months, .all]) { level in
                 Text(level.title).tag(level)
               }
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 320)
             .accessibilityIdentifier("library-zoom")
-            Text(countLabel)
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-              .accessibilityIdentifier("library-count")
+            Button {
+              session.requestedTab = "search"
+            } label: {
+              Image(systemName: "magnifyingglass")
+            }
+            .accessibilityIdentifier("chrome-search-circle")
           }
+          .padding(.horizontal, 14)
+          .padding(.vertical, 8)
+          .background(.thinMaterial, in: Capsule())
           .padding(.horizontal)
-          .padding(.vertical, 4)
-          .background(.thinMaterial)
+          // Container semantics: the bar keeps its own identifier AND exposes
+          // the segment control / search circle inside it (a bare identifier
+          // collapses the subtree into one element and hides the children).
+          .accessibilityElement(children: .contain)
+          .accessibilityIdentifier("chrome-floating-bar")
         }
       }
       .tabBarMinimizeBehavior(.onScrollDown)
