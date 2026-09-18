@@ -3,7 +3,11 @@ options:
   minimumXcodeGenVersion: 2.44.0
   deploymentTarget:
     iOS: '27.0'
-    macOS: '27.0'
+    # 26.6 floor: matches the Tart VM fleet (and README's macOS 26+ claim).
+    # Team-signed binaries are Gatekeeper-rejected on fresh VMs, so VM-bound
+    # test builds sign ad-hoc (see run-macos-ui-tests.sh); host/install
+    # builds keep automatic team signing.
+    macOS: '26.6'
 packages:
   PhotosCore:
     path: PhotosCore

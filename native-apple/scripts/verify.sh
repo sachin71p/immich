@@ -37,12 +37,19 @@ mac_build_cmd() {
     CODE_SIGN_ENTITLEMENTS="" DEVELOPMENT_TEAM="" "$@"
 }
 
+# UI-touching modes run in the isolated Tart VM by default (host desktop
+# untouched); RUN_ON_HOST=1 restores the legacy on-host path.
 mac() {
-  mac_prepare
-  mac_build_cmd build test
+  if [ "${RUN_ON_HOST:-0}" = "1" ]; then
+    mac_prepare
+    mac_build_cmd build test
+  else
+    "$root/scripts/run-macos-ui-tests.sh"
+  fi
 }
 
-# WP-T T1+T2: hosted macOS unit tests (fixture, gestures, snapshots).
+# WP-T T1+T2: hosted macOS unit tests (fixture, gestures, snapshots). Logic
+# bundle, no desktop contact — stays on the host.
 mac_unit() {
   mac_prepare
   mac_build_cmd -only-testing:Heirloom-macOS-Tests test
@@ -50,15 +57,23 @@ mac_unit() {
 
 # WP-T T0: XCUITest on the sized fixture (small).
 mac_ui() {
-  mac_prepare
-  mac_build_cmd -only-testing:Heirloom-macOS-UITests test
+  if [ "${RUN_ON_HOST:-0}" = "1" ]; then
+    mac_prepare
+    mac_build_cmd -only-testing:Heirloom-macOS-UITests test
+  else
+    "$root/scripts/run-macos-ui-tests.sh"
+  fi
 }
 
 # WP-T T6: perf scaffolding on the large fixture. Owner's Mac only; baselines
 # live in the scheme's .xcbaseline. Fails on median regression > 10% (WP-X §2).
 mac_perf() {
-  mac_prepare
-  mac_build_cmd -only-testing:Heirloom-macOS-UITests/HeirloomPerfTests test
+  if [ "${RUN_ON_HOST:-0}" = "1" ]; then
+    mac_prepare
+    mac_build_cmd -only-testing:Heirloom-macOS-UITests/HeirloomPerfTests test
+  else
+    "$root/scripts/run-macos-ui-tests.sh" --only-testing Heirloom-macOS-UITests/HeirloomPerfTests
+  fi
 }
 
 case "$mode" in

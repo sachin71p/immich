@@ -69,6 +69,7 @@
 		6FF2BDB2A4E5F0541011EB25 /* HeirloomPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */; };
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
 		73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */; };
+		73BF2872F74A70B284DC4276 /* ViewerPixelProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E75ECAFF7C0FC41BDAA375 /* ViewerPixelProbe.swift */; };
 		74E1521AB4E36AEC675EF355 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 6C16597F47DFD5A8BF513C1F /* CoreModel */; };
 		79D89EF062DDFD2CE8B71701 /* LaunchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */; };
 		7AE9781FE902087E5559F25F /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 37D0016B12D659C36170F7CE /* Upload */; };
@@ -308,6 +309,7 @@
 		E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		EC15EE8293446CD203DE97CC /* LockedMediaAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedMediaAuthentication.swift; sourceTree = "<group>"; };
 		F6932111B77827985EE3A89E /* LibraryGridLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryGridLoader.swift; sourceTree = "<group>"; };
+		F6E75ECAFF7C0FC41BDAA375 /* ViewerPixelProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerPixelProbe.swift; sourceTree = "<group>"; };
 		F7506ABF3A9E271B97CFA596 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
 		F8CE80512802A7567AED9D05 /* ViewerRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerRoute.swift; sourceTree = "<group>"; };
 		FAD06FF34A315C4624E74B70 /* ClusteredMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusteredMap.swift; sourceTree = "<group>"; };
@@ -460,6 +462,7 @@
 				1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */,
 				5418423DA37D1695A127DE89 /* MacSmokeTests.swift */,
 				95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */,
+				F6E75ECAFF7C0FC41BDAA375 /* ViewerPixelProbe.swift */,
 			);
 			name = UITests;
 			path = Apps/macOS/UITests;
@@ -1095,6 +1098,7 @@
 				8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */,
 				1A928DD22CF697C8B5937F13 /* MacSmokeTests.swift in Sources */,
 				6B5016E8CF28C4A9CBA15068 /* MacUITestSupport.swift in Sources */,
+				73BF2872F74A70B284DC4276 /* ViewerPixelProbe.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1382,7 +1386,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1443,7 +1447,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
