@@ -30,6 +30,12 @@ struct LibraryView: View {
   @State private var itemCount = 0
   @State private var visibleFirst: Date?
   @State private var visibleLast: Date?
+  /// WP-G G6: true while the All grid is being dragged or decelerating — the
+  /// header subtitle swaps between the item count (rest) and date range.
+  @State private var isGridScrolling = false
+  /// Dwell that keeps the range up briefly after the grid settles (cancels on
+  /// new activity).
+  @State private var scrollDwellTask: Task<Void, Never>?
   @State private var viewerRequest: ViewerRequest?
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
@@ -228,6 +234,21 @@ struct LibraryView: View {
         Text(actionError ?? "")
       }
     }
+    .overlay(alignment: .top) {
+      // WP-G parity mirrors (G6/G7): near-invisible 1pt texts carrying the
+      // header subtitle + time level for the parity tests. The visible header
+      // is the navigation subtitle (no stable AX handle); visible chrome is
+      // untouched — WP-C owns it.
+      VStack(spacing: 0) {
+        Text(librarySubtitle)
+          .accessibilityIdentifier("grid-header-subtitle")
+        Text(zoom.rawValue)
+          .accessibilityIdentifier("grid-time-level")
+          .accessibilityValue(zoom.rawValue)
+      }
+      .frame(width: 1, height: 1)
+      .opacity(0.01)
+    }
   }
 
   // MARK: - pieces
@@ -267,7 +288,24 @@ struct LibraryView: View {
             visibleLast = last
           },
           showsSectionHeaders: false,
-          reloadToken: session.timelineVersion
+          reloadToken: session.timelineVersion,
+          currentUserId: session.access.currentUserId,
+          onPinchEdge: handlePinchEdge,
+          onScrollActive: { active in
+            // WP-G G6 dwell: the range stays up through deceleration and for
+            // 2.5 s after settle (Photos-like lingering); cancelled by new
+            // activity. The dwell is what the scroll test observes.
+            scrollDwellTask?.cancel()
+            if active {
+              isGridScrolling = true
+            } else {
+              scrollDwellTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(2_500))
+                guard !Task.isCancelled else { return }
+                isGridScrolling = false
+              }
+            }
+          }
         )
         .accessibilityIdentifier("library-grid")
       } else {
@@ -277,19 +315,48 @@ struct LibraryView: View {
     }
   }
 
+  /// WP-G G6: the header subtitle is the item count at rest and swaps to the
+  /// visible date range while scrolling (Photos behaviour, pair 01). Syncing
+  /// keeps its existing treatment. The range arrives asynchronously from the
+  /// grid, so before it lands the count stands in — never "No Photos" while
+  /// the count says otherwise.
   private var librarySubtitle: String {
     if session.isSyncing, let first = visibleFirst, let last = visibleLast {
-      return
-        "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last)) · Syncing…"
+      return "\(rangeString(first: first, last: last)) · Syncing…"
     }
     if session.isSyncing { return "Syncing…" }
-    guard let first = visibleFirst, let last = visibleLast else {
-      // The range arrives asynchronously from the grid; never claim "No Photos"
-      // while the count says otherwise.
-      return itemCount == 0 ? "No Photos · Pull down to sync" : ""
+    if isGridScrolling, let first = visibleFirst, let last = visibleLast {
+      return rangeString(first: first, last: last)
     }
-    return
-      "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last))"
+    if itemCount == 0 {
+      return "No Photos · Pull down to sync"
+    }
+    return "\(itemCount.formatted()) Items"
+  }
+
+  private func rangeString(first: Date, last: Date) -> String {
+    "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last))"
+  }
+
+  /// WP-G G7: pinch-past-edge from the grid couples column density to the time
+  /// level — zooming out past max density steps All → Months → Years, zooming
+  /// back in reverses it — so the Years/Months/All pills move with the pinch
+  /// instead of staying pinned. Re-entering All lands dense (9 columns) to
+  /// continue the continuum rather than jumping to the persisted width.
+  private func handlePinchEdge(out: Bool) {
+    switch (zoom, out) {
+    case (.all, true):
+      zoomRaw = LibraryZoomLevel.months.rawValue
+    case (.months, true):
+      zoomRaw = LibraryZoomLevel.years.rawValue
+    case (.months, false):
+      columns = 9
+      zoomRaw = LibraryZoomLevel.all.rawValue
+    case (.years, false):
+      zoomRaw = LibraryZoomLevel.months.rawValue
+    default:
+      break
+    }
   }
 
   private var countLabel: String {

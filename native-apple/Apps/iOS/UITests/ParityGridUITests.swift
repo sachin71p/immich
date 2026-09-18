@@ -69,23 +69,82 @@ final class ParityGridUITests: XCTestCase {
 
   func test_grid_favouritedCellsShowHeartOverlay() throws {
     let app = Parity.launch()
-    // G2/WP-G: favourited cells expose a heart overlay (fixture seeds
-    // favourites).
-    let heart = app.descendants(matching: .any).matching(
-      NSPredicate(format: "identifier BEGINSWITH 'grid-favorite-heart'")).firstMatch
+    // G2/WP-G: favourited cells expose a heart overlay. The default fixture's
+    // in-scope favorite sits at the end of the grid (the other seeded favorite
+    // falls outside the default Library scope), so page down until one appears
+    // — bounded and density-independent (WP-G hardened: the no-scroll form
+    // could never go green once pinch tests left the grid dense).
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 60))
+    let hearts = app.descendants(matching: .any).matching(
+      NSPredicate(format: "identifier BEGINSWITH 'grid-favorite-heart'"))
+    let deadline = Date().addingTimeInterval(30)
+    while !hearts.firstMatch.exists, Date() < deadline {
+      grid.swipeUp(velocity: .fast)
+    }
     XCTAssertTrue(
-      heart.waitForExistence(timeout: 15),
+      hearts.firstMatch.waitForExistence(timeout: 5),
       "G2/WP-G: expected accessibilityIdentifier \"grid-favorite-heart*\" on favourited cells")
   }
 
   func test_grid_peopleBadgeIsSelectiveNotOnEveryCell() throws {
+    // G3/WP-G: the people badge must be selective — present on foreign
+    // shared-container cells, not painted on nearly every cell. Two gates:
+    // at least one badge exists (fails on base, where no badge exposes an
+    // identifier at all), and the badged fraction of the sampled cells stays
+    // under the ceiling. The default fixture's u2-owned space assets give the
+    // existence gate its foreign cells; the ceiling is a named constant so
+    // WP-G can calibrate it.
     let app = Parity.launch()
-    // G3/WP-G: the people badge must be selective, not painted on nearly
-    // every cell. Samples up to 30 visible cells; ceiling is a named
-    // constant so WP-G can calibrate it.
     let selectiveCeiling = 0.5
     let grid = app.collectionViews.firstMatch
     XCTAssertTrue(grid.waitForExistence(timeout: 60))
+    // Column density persists across runs (a leftover 1-column grid realizes
+    // only a couple of cells), so pin the grid to max density through the
+    // View Options stepper — twelve Zoom Ins from any state land on 13
+    // columns. The stepper touches columns only, never the time level, so
+    // this is safe on both sides of the G7 continuum (a pinch past the edge
+    // would not be).
+    // Drilled-in submenu leaves lose their identifiers on iOS 27 (verified by
+    // AX dump — see LibraryChromeUITests.submenuItemLabel), so the leaf is
+    // located by its visible label, reopening the menu each round since menu
+    // taps dismiss.
+    let zoomInLeaf = app.descendants(matching: .button).matching(
+      NSPredicate(format: "label == %@", "Zoom In"))
+    for _ in 0..<12 {
+      if zoomInLeaf.firstMatch.waitForExistence(timeout: 2) {
+        zoomInLeaf.firstMatch.tap()
+        continue
+      }
+      let menu = app.descendants(matching: .any)["library-filter-menu"]
+      guard menu.waitForExistence(timeout: 10) else {
+        XCTFail("G3: filter menu did not open while normalizing density")
+        return
+      }
+      menu.tap()
+      let submenu = app.descendants(matching: .any)["submenu-view-options"]
+      guard submenu.waitForExistence(timeout: 10) else {
+        XCTFail("G3: View Options submenu missing while normalizing density")
+        return
+      }
+      submenu.tap()
+      guard zoomInLeaf.firstMatch.waitForExistence(timeout: 10) else {
+        XCTFail("G3: Zoom In leaf missing while normalizing density")
+        return
+      }
+      zoomInLeaf.firstMatch.tap()
+    }
+    // Cells page in progressively — wait until the realized count stops growing
+    // (or hits the 30-cell window), or the fraction is measured on a stub grid.
+    let deadline = Date().addingTimeInterval(30)
+    var lastCount = -1
+    var stableSince = Date()
+    while Date() < deadline {
+      let count = grid.cells.count
+      if count != lastCount { lastCount = count; stableSince = Date() }
+      if count >= 30 || (count > 0 && Date().timeIntervalSince(stableSince) > 3) { break }
+      usleep(200_000)
+    }
     let sample = min(30, grid.cells.count)
     XCTAssertGreaterThan(sample, 0, "G3: grid should paint cells to sample")
     var badged = 0
@@ -93,6 +152,9 @@ final class ParityGridUITests: XCTestCase {
       let cell = grid.cells.element(boundBy: i)
       if cell.descendants(matching: .any)["grid-people-badge"].exists { badged += 1 }
     }
+    XCTAssertGreaterThan(
+      badged, 0,
+      "G3/WP-G: expected at least one selective people badge on foreign shared cells")
     let fraction = Double(badged) / Double(sample)
     XCTAssertLessThan(
       fraction, selectiveCeiling,
@@ -118,6 +180,43 @@ final class ParityGridUITests: XCTestCase {
     XCTAssertTrue(grid.waitForExistence(timeout: 60))
     grid.pinch(withScale: 2.0, velocity: 1.0)
     Parity.require("grid-time-level", in: app, gap: "G7", owner: "WP-G")
+  }
+
+  func test_gridHeader_showsDateRangeWhileScrolling() throws {
+    let app = Parity.launch()
+    // G6/WP-G (content half; the count-at-rest half lives in
+    // ParityChromeUITests): while the grid scrolls, the header subtitle must
+    // read as a date range, not the bare count. The element is resolved before
+    // swiping so no post-gesture lookup eats into the scroll-signal dwell; a
+    // second swipe extends the window. Polls past the 2.5 s dwell — the
+    // subtitle flips back to the count once the grid settles.
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 60))
+    let subtitle = app.descendants(matching: .any)["grid-header-subtitle"]
+    XCTAssertTrue(
+      subtitle.waitForExistence(timeout: 5),
+      "G6/WP-G: expected accessibilityIdentifier \"grid-header-subtitle\"")
+    grid.swipeUp(velocity: .fast)
+    grid.swipeUp(velocity: .fast)
+    let deadline = Date().addingTimeInterval(8)
+    var label = subtitle.label
+    while !(label.contains("–") || label.contains("-")), Date() < deadline {
+      usleep(100_000)
+      label = subtitle.label
+    }
+    XCTAssertTrue(
+      label.contains("–") || label.contains("-"),
+      "G6/WP-G: while scrolling the header subtitle should be a date range, found \"\(label)\"")
+  }
+
+  func test_gridPinch_timeLevelIsExposed() throws {
+    let app = Parity.launch()
+    // G7/WP-G: the current time level (years/months/all) is exposed for the
+    // density ↔ time-level continuum — the All grid rests on "all".
+    let level = Parity.require("grid-time-level", in: app, gap: "G7", owner: "WP-G")
+    XCTAssertEqual(
+      level.label, "all",
+      "G7/WP-G: the All grid should expose time level \"all\", found \"\(level.label)\"")
   }
 
   // MARK: - Regression (works today — must survive G7)
