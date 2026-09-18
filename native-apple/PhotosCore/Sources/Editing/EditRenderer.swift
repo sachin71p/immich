@@ -188,6 +188,82 @@ public final class EditRenderer: @unchecked Sendable {
         "CIVignette", img,
         ["inputIntensity": v > 0 ? v * 1.5 : v, "inputRadius": v > 0 ? 1.6 : 2.2])
     }
+    // MARK: WP-E section keys
+    if a.cast != 0 {
+      // Color > Cast: extra color shift after the legacy warmth/tint pair.
+      img = filtered(
+        "CITemperatureAndTint", img,
+        [
+          "inputNeutral": CIVector(x: 6500 + Double(a.cast) * 12, y: 0),
+          "inputTargetNeutral": CIVector(x: 6500, y: CGFloat(a.cast) * 2),
+        ])
+    }
+    if a.wbTemperature != 0 || a.wbTint != 0 {
+      // White Balance section: finer Temperature-Tint control.
+      img = filtered(
+        "CITemperatureAndTint", img,
+        [
+          "inputNeutral": CIVector(x: 6500 + Double(a.wbTemperature) * 25, y: 0),
+          "inputTargetNeutral": CIVector(x: 6500, y: CGFloat(a.wbTint) * 4),
+        ])
+    }
+    if a.bwIntensity != 0 {
+      // B&W Intensity: dissolve toward monochrome with a touch of contrast.
+      let t = min(1, max(0, abs(a.unit(a.bwIntensity))))
+      let mono = filtered("CIColorControls", img, ["inputSaturation": 0.0])
+      img = dissolve(foreground: mono, background: img, amount: a.bwIntensity > 0 ? t : 0)
+      if a.bwIntensity < 0 {
+        img = filtered("CIColorControls", img, ["inputSaturation": 1.0 + t * 0.5])
+      } else {
+        img = filtered("CIColorControls", img, ["inputContrast": 1.0 + t * 0.12])
+      }
+    }
+    if a.bwNeutrals != 0 {
+      // B&W Neutrals: midtone lift/cut on the (possibly desaturated) image.
+      img = toneCurve(img, black: -a.unit(a.bwNeutrals) * 0.05, white: a.unit(a.bwNeutrals) * 0.05)
+    }
+    if a.bwTone != 0 {
+      // B&W Tone: warm/cool split-tone push.
+      img = filtered(
+        "CITemperatureAndTint", img,
+        [
+          "inputNeutral": CIVector(x: 6500 + Double(a.bwTone) * 15, y: 0),
+          "inputTargetNeutral": CIVector(x: 6500, y: 0),
+        ])
+    }
+    if a.grain != 0 {
+      // Grain: deterministic high-frequency luminance texture (a fixed checkerboard
+      // dissolved over the image — same input always renders the same output,
+      // unlike CIRandomGenerator). Positive grain adds texture; negative smooths
+      // via the existing noise-reduction path.
+      let t = a.unit(a.grain)
+      if t > 0 {
+        img = grained(img, amount: t)
+      } else {
+        img = filtered(
+          "CINoiseReduction", img,
+          ["inputNoiseLevel": 0.02, "inputSharpness": max(0, 1.0 + t)])
+      }
+    }
+    if a.sharpenEdges != 0 || a.sharpenFalloff != 0 {
+      // Sharpen section: edge intensity + falloff (radius) around the legacy sharpness.
+      let edge = max(0, a.unit(a.sharpenEdges))
+      let falloff = a.unit(a.sharpenFalloff)
+      img = filtered("CISharpenLuminance", img, ["inputSharpness": edge * 2.0])
+      img = filtered(
+        "CIUnsharpMask", img,
+        ["inputIntensity": edge * 0.6, "inputRadius": max(0.5, 2.5 + falloff * 4.0)])
+    }
+    if a.vignetteStrength != 0 || a.vignetteRadius != 0 || a.vignetteSoftness != 0 {
+      // Vignette section detail: strength/radius/softness (softness widens the
+      // transition by lowering the effective intensity at a larger radius).
+      let s = a.unit(a.vignetteStrength)
+      let r = 1.0 + a.unit(a.vignetteRadius) * 1.5
+      let soft = a.unit(a.vignetteSoftness)
+      img = filtered(
+        "CIVignette", img,
+        ["inputIntensity": s * (1.0 - abs(soft) * 0.4), "inputRadius": max(0.3, r + soft)])
+    }
     return img
   }
 
@@ -309,6 +385,37 @@ public final class EditRenderer: @unchecked Sendable {
     f?.setValue(image, forKey: kCIInputImageKey)
     for (k, v) in values { f?.setValue(v, forKey: k) }
     return f?.outputImage ?? image
+  }
+
+  /// Cross-dissolve of `foreground` over `background` (exact blend for B&W intensity).
+  private func dissolve(foreground: CIImage, background: CIImage, amount: Double) -> CIImage {
+    guard amount > 0 else { return background }
+    guard amount < 1 else { return foreground }
+    let alpha = CIFilter(name: "CIColorMatrix")
+    alpha?.setValue(foreground, forKey: kCIInputImageKey)
+    alpha?.setValue(CIVector(x: 0, y: 0, z: 0, w: CGFloat(amount)), forKey: "inputAVector")
+    guard let faded = alpha?.outputImage else { return foreground }
+    let over = CIFilter(name: "CISourceOverCompositing")
+    over?.setValue(faded, forKey: kCIInputImageKey)
+    over?.setValue(background, forKey: kCIInputBackgroundImageKey)
+    return over?.outputImage ?? foreground
+  }
+
+  /// Deterministic grain: a fixed high-frequency checkerboard dissolved over the
+  /// image at low alpha. A fixed pattern (not `CIRandomGenerator`) keeps renders
+  /// deterministic for tests and export stability.
+  private func grained(_ image: CIImage, amount: Double) -> CIImage {
+    let checker = CIFilter(name: "CICheckerboardGenerator")
+    checker?.setValue(CIVector(x: 0, y: 0, z: 1.5, w: 0), forKey: "inputCenter")
+    checker?.setValue(CIColor(red: 0.5, green: 0.5, blue: 0.5), forKey: "inputColor0")
+    checker?.setValue(CIColor(red: 0.62, green: 0.62, blue: 0.62), forKey: "inputColor1")
+    checker?.setValue(1.5, forKey: "inputWidth")
+    checker?.setValue(0.0, forKey: "inputSharpness")
+    guard var pattern = checker?.outputImage else { return image }
+    let e = image.extent
+    pattern = pattern.cropped(to: CGRect(x: e.minX, y: e.minY, width: max(e.width, 2), height: max(e.height, 2)))
+    return dissolve(foreground: pattern, background: image, amount: min(0.35, amount * 0.25))
+      .cropped(to: e)
   }
 
   private func toneCurve(_ image: CIImage, black: Double, white: Double) -> CIImage {

@@ -86,6 +86,13 @@ enum AXIDs {
   static func editTab(_ name: String) -> String { "edit.tab.\(name)" }
   static let editDone = "edit.done"
   static let editCancel = "edit.cancel"
+  static let editCompare = "edit.compare"
+  static let editRevert = "edit.revert"
+  static let editZoom = "edit.zoomSlider"
+  static let editMore = "edit.more"
+
+  static func editSlider(_ key: String) -> String { "edit.slider.\(key)" }
+  static func editSectionOptions(_ section: String) -> String { "edit.section.options.\(section)" }
 
   // MARK: - connect (WP-F F3: signed-in launch never shows the form)
 

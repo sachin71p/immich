@@ -37,6 +37,7 @@ public struct MacEditView: View {
   @State private var markupText = "Caption"
   @State private var elements: [MacMarkupElement] = []
   @State private var hasLoadedRecipe = false
+  @State private var showDiscardConfirm = false
   @Environment(\.dismiss) private var dismiss
 
   private let renderer = EditRenderer()
@@ -67,7 +68,9 @@ public struct MacEditView: View {
     }
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }.disabled(saving).keyboardShortcut(.cancelAction)
+        // WP-E E1: Escape = Cancel, with a discard confirm when dirty.
+        Button("Cancel") { history.isDirty ? showDiscardConfirm = true : dismiss() }
+          .disabled(saving).keyboardShortcut(.cancelAction)
       }
       ToolbarItemGroup {
         Button { history.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
@@ -93,6 +96,12 @@ public struct MacEditView: View {
       Button("OK") { saveError = nil }
     } message: {
       Text(saveError ?? "")
+    }
+    .alert("Discard changes?", isPresented: $showDiscardConfirm) {
+      Button("Discard", role: .destructive) { dismiss() }
+      Button("Keep editing", role: .cancel) {}
+    } message: {
+      Text("Your edits have not been saved.")
     }
     .task { await initialLoad() }
     .onChange(of: history.current) { _, _ in rerenderPreview() }
@@ -483,6 +492,9 @@ public struct MacEditView: View {
         ForEach(MacMarkupTool.allCases, id: \.self) { t in Text(t.title).tag(t) }
       }
       .pickerStyle(.segmented)
+      // WP-E E1 clip fix: keep intrinsic sizes in the 280–340 pt panel at 1280×800.
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(minWidth: 260)
       HStack {
         Text("Color").font(.caption)
         ForEach(["#FFCC00", "#FF3B30", "#0A84FF", "#30D158", "#FFFFFF", "#000000"], id: \.self) { hex in
@@ -495,11 +507,13 @@ public struct MacEditView: View {
           .buttonStyle(.plain)
         }
       }
+      .frame(minWidth: 260)
       HStack {
         Text("Width").font(.caption)
         Slider(value: $markupWidth, in: 1...20)
         Text("\(Int(markupWidth))").font(.caption).monospacedDigit()
       }
+      .frame(minWidth: 260)
       if markupTool == .text {
         TextField("Caption", text: $markupText)
           .textFieldStyle(.roundedBorder)

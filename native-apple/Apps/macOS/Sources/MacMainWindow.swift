@@ -99,25 +99,34 @@ struct MacLibraryBrowser: View {
   @State private var pendingDropMove: (ids: [String], target: MoveTarget)?
   @State private var viewingAssetId: String?
   @State private var sharingInProgress = false
+  /// WP-E E2: edit mode collapses the sidebar (restored on exit).
+  @State private var editModeActive = false
   @Environment(\.openWindow) private var openWindow
   @SceneStorage("MacSidebar.selection") private var restoredSelection: String?
 
-  var body: some View {
-    NavigationSplitView {
-      MacSidebarView(
-        state: state,
-        selection: Binding(
-          get: { selection },
-          set: {
-            selectDestination($0)
-          }
-        ),
-        onDropAssets: handleSidebarDrop,
-        onNewSpace: { showingNewSpace = true },
-        onNewAlbum: { showingNewAlbum = true }
-      )
-      .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-    } detail: {
+  // WP-E E2: sidebar/detail extracted so the body expression stays within the
+  // inference budget.
+  private var mainSidebar: some View {
+    MacSidebarView(
+      state: state,
+      selection: Binding(
+        get: { selection },
+        set: {
+          selectDestination($0)
+        }
+      ),
+      onDropAssets: handleSidebarDrop,
+      onNewSpace: { showingNewSpace = true },
+      onNewAlbum: { showingNewAlbum = true }
+    )
+    // WP-E E2: full-window edit mode collapses the sidebar (restored on exit).
+    .navigationSplitViewColumnWidth(
+      min: editModeActive ? 0 : 200, ideal: editModeActive ? 0 : 240,
+      max: editModeActive ? 0 : 320)
+  }
+
+  private var mainDetail: some View {
+    Group {
       // A plain click/double-click opens the asset in the detail pane, sidebar still visible —
       // matching native Photos. `File > New Viewer Window` still opens a real second NSWindow
       // via `MacWindow.viewer(id)` for anyone who explicitly wants a standalone window.
@@ -130,12 +139,23 @@ struct MacLibraryBrowser: View {
       } else {
         detailView
           .navigationTitle(resolvedTitle)
-        .toolbar { toolbarContent }
+          .toolbar { toolbarContent }
           .onDrop(of: [.fileURL], isTargeted: nil, perform: handleFileDrop)
           .onReceive(NotificationCenter.default.publisher(for: .macDismissSheetsForQuit)) { _ in
             dismissSheetsForQuit()
           }
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .heirloomEditModeActive)) { note in
+      editModeActive = note.userInfo?["active"] as? Bool ?? false
+    }
+  }
+
+  var body: some View {
+    NavigationSplitView {
+      mainSidebar
+    } detail: {
+      mainDetail
     }
     .focusedValue(\.macAssetActions, gridActions)
     .onReceive(NotificationCenter.default.publisher(for: .macSyncNow)) { _ in

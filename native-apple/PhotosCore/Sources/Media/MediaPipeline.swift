@@ -125,9 +125,25 @@ public actor MediaPipeline {
   }
 
   /// Default pipeline: a dedicated Nuke pipeline whose memory cache is sized to the device.
-  public static func makeDefault(diskCache: TieredMediaCache, server: MediaServer) -> MediaPipeline {
+  ///
+  /// - parameter protocolClasses: extra `URLProtocol` classes prepended to the private
+  ///   `URLSession` Nuke loads through. A global `URLProtocol.registerClass` does NOT
+  ///   intercept a session Nuke creates itself, so the fixture stub must be injected here —
+  ///   otherwise every fixture media load fails DNS, the stream yields no tier, and the
+  ///   viewer (and grid) stays imageless.
+  public static func makeDefault(
+    diskCache: TieredMediaCache,
+    server: MediaServer,
+    protocolClasses: [AnyClass] = []
+  ) -> MediaPipeline {
     var configuration = ImagePipeline.Configuration()
     configuration.imageCache = ImageCache(costLimit: memoryCacheCostLimit())
+    if !protocolClasses.isEmpty {
+      let sessionConfiguration = DataLoader.defaultConfiguration
+      sessionConfiguration.protocolClasses =
+        protocolClasses + (sessionConfiguration.protocolClasses ?? [])
+      configuration.dataLoader = DataLoader(configuration: sessionConfiguration)
+    }
     let pipeline = ImagePipeline(configuration: configuration)
     return MediaPipeline(
       service: NukeMediaImageService(pipeline: pipeline), diskCache: diskCache, server: server)

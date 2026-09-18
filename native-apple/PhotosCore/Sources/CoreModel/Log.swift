@@ -46,6 +46,8 @@ public enum HeirloomSignpost {
   public static let pageFirstPaint: StaticString = "Page.FirstPaint"
   /// WP-F F2: store timeline/filter query interval (cold ≤ 1.5 s, warm ≤ 300 ms).
   public static let timelineQuery: StaticString = "Timeline.Query"
+  /// WP-E E2/E7: chrome + proxy on screen (budget: 300 ms; the original loads async after).
+  public static let editOpen: StaticString = "EditOpen"
 
   private static let signposter = OSSignposter(subsystem: "com.immich.heirloom", category: "timeline")
 
