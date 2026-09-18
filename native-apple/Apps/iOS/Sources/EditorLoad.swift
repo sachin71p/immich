@@ -33,6 +33,11 @@ public enum EditorLoadBudget {
 /// loader closures) that a `@Sendable` task-group child cannot touch. Both
 /// halves run MainActor-confined, so the first-settled guard needs no extra
 /// synchronization. Foundation-only, verifiable off-device.
+///
+/// On timeout this stops *waiting* but never cancels the loser: cancelling an
+/// in-flight `AVAsset.load` can poison the shared asset and fail the player
+/// item itself with a cancellation-flavored error (F2's "Operation Stopped").
+/// A late result is ignored by the first-settled guard.
 @MainActor
 public func withMainActorTimeout<T: Sendable>(
   seconds: Double,
@@ -55,7 +60,6 @@ public func withMainActorTimeout<T: Sendable>(
     }
     Task { @MainActor in
       try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-      probe.cancel()
       settle(.failure(EditorLoadError.timedOut(seconds: seconds)))
     }
   }
