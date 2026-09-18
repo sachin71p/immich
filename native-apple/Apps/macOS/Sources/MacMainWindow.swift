@@ -85,6 +85,9 @@ struct MacLibraryBrowser: View {
   @State private var isSelecting = false
   @State private var didRequestInitialSync = false
   @State private var loader = MacGridLoader()
+  /// Timeline version at the last load: seed/sync bump it when the store moves
+  /// outside the change center, which no loader cache entry can observe.
+  @State private var lastDataVersion = -1
   @State private var presentationTask: Task<Void, Never>?
   @State private var selectionModel = GridSelectionModel()
   @State private var toast: String?
@@ -667,6 +670,14 @@ struct MacLibraryBrowser: View {
 
   private func reload() async {
     guard let userId = state.userId, let selection else { return }
+    // The store moved under the loader (seed batch landed, sync delta applied)
+    // since the last load: cached snapshots predate it, so force revalidation.
+    // Stale entries still render synchronously inside `load`; only the clean-hit
+    // early return is skipped. Navigations without a bump keep full F1 caching.
+    if state.timelineVersion != lastDataVersion {
+      lastDataVersion = state.timelineVersion
+      loader.markSnapshotsDirty()
+    }
     loader.pipeline = state.pipeline
     // Sync the presentation before the fetch so `load` freezes the current order,
     // filters and userId. Unchanged input is a no-op inside `setPresentation`.

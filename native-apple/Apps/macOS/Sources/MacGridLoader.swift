@@ -95,6 +95,17 @@ final class MacGridLoader {
   /// Set by the view so edited rows can evict stale cache entries.
   @ObservationIgnored var pipeline: MediaPipeline?
 
+  /// Data-currency signal: the store moved outside the change center (fixture seed,
+  /// sync delta — neither posts change events, they only bump the view's timeline
+  /// version), so every cached snapshot is stale by construction. Entries go dirty,
+  /// not away: the next load still renders them synchronously, then always
+  /// revalidates with a fetch. Without this, a clean hit built from a still-empty
+  /// store (first load racing the large-fixture seed) early-returns forever and the
+  /// grid never fills even after all 102k rows land.
+  func markSnapshotsDirty() {
+    snapshotCache.markAllDirty()
+  }
+
   /// Launch-signpost emitter for the WP0/WP7 harness. A local signposter (same
   /// subsystem/category as `HeirloomSignpost`, whose `interval()` helpers can't take this
   /// MainActor-isolated loader's closures under Swift 6 region isolation) emitting the exact
@@ -183,8 +194,15 @@ final class MacGridLoader {
         // WP-F F1+F3: publish to the memory cache and persist the compact columns
         // for the next launch. Disk writes are best-effort and never fail a load.
         self.snapshotCache.store(built, for: key)
-        try? TimelineDiskSnapshot(snapshot: built, scopeID: key.scope)
-          .save(scopeID: key.scope, directory: Self.timelineSnapshotDirectory)
+        // An empty build never overwrites the disk snapshot: the first load racing a
+        // still-seeding store would otherwise clobber the previous launch's full
+        // snapshot with an empty file, defeating the F3 cold-launch fast path on
+        // every subsequent launch. Legit-empty destinations (trash, locked) simply
+        // re-fetch on the next cold start — a millisecond query either way.
+        if !built.rows.isEmpty {
+          try? TimelineDiskSnapshot(snapshot: built, scopeID: key.scope)
+            .save(scopeID: key.scope, directory: Self.timelineSnapshotDirectory)
+        }
       } catch is CancellationError {
         // Cancellation is not an error: keep the current snapshot, show nothing.
         return

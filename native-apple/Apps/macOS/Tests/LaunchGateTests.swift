@@ -51,4 +51,33 @@ final class LaunchGateTests: XCTestCase {
   func testConnectFormIdentifierContract() {
     XCTAssertEqual(AXIDs.connectForm, "connect.form")
   }
+
+  func testLaunchTimeoutPassesFastOperation() async throws {
+    let value = try await LaunchGate.withLaunchTimeout(seconds: 5) { "ok" }
+    XCTAssertEqual(value, "ok")
+  }
+
+  func testLaunchTimeoutThrowsOnStalledOperation() async {
+    do {
+      try await LaunchGate.withLaunchTimeout(seconds: 0.05) {
+        try await Task.sleep(for: .seconds(30))
+        return "never"
+      }
+      XCTFail("stalled operation must time out")
+    } catch {
+      XCTAssertTrue(error is LaunchGate.TimeoutError, "timed out, got \(error)")
+    }
+  }
+
+  func testLaunchTimeoutPropagatesOperationError() async {
+    struct Boom: Error {}
+    do {
+      let _: String = try await LaunchGate.withLaunchTimeout(seconds: 5) { throw Boom() }
+      XCTFail("operation error must propagate")
+    } catch is LaunchGate.TimeoutError {
+      XCTFail("operation error, not a timeout, must propagate")
+    } catch {
+      XCTAssertTrue(error is Boom, "operation error propagates, got \(error)")
+    }
+  }
 }

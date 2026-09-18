@@ -111,6 +111,24 @@ final class FixtureSeedTests: XCTestCase {
     XCTAssertEqual(batches.flatMap { $0 }.count, all.count)
   }
 
+  /// First paint doesn't wait for the full seed: `seedForSmoke` publishes after
+  /// the first 10k batch, so that batch must carry every curated base row (the
+  /// cells the smoke/functional suites address without scrolling).
+  func testSizedFirstBatchCarriesCuratedBase() {
+    let all = FixtureSeed.sizedChanges(assetTarget: FixtureSeed.largeAssetTarget)
+    let first = Array(all.prefix(10_000))
+    let ids = Set(first.compactMap { change -> String? in
+      if case .asset(let asset) = change { return asset.id }
+      return nil
+    })
+    for id in [
+      "asset-personal-1", "asset-personal-2", "asset-space-video", "asset-space-shot",
+      "asset-library-1", "asset-base-beach-1",
+    ] {
+      XCTAssertTrue(ids.contains(id), "first batch carries curated \(id)")
+    }
+  }
+
   /// The full large fixture applies in-memory in well under the 20 s budget,
   /// in 10k-row transactions (the chunking the app seed path uses).
   func testLargeFixtureSeedsUnder20Seconds() async throws {

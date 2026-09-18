@@ -53,6 +53,10 @@ final class MacAppState {
   /// clears) it on appear. A plain String is safe on `@Observable` (PLAN rule 5 covers
   /// large Equatable collections only).
   var pendingSearchQuery: String?
+  /// Launch-gate bound for server session validation (`revalidateSession`,
+  /// `adoptKeychainSession`): generous for one small GET on a slow link, tight
+  /// enough that a dead network degrades to the offline session in seconds.
+  static let sessionValidationTimeoutSeconds = 8.0
   /// Bumped by `syncNow` only when the session warrants a grid reload (see
   /// `SyncCoordinator.SyncResult.shouldReloadTimeline`). The applied-changes signal is
   /// `SyncResult.appliedChanges` — true when the session called `PhotosLocalStore.apply`
@@ -134,8 +138,17 @@ final class MacAppState {
     // Chunked (one SQLite transaction per batch): bounds peak memory on the large
     // fixture and avoids a single all-or-nothing apply of 100k+ rows whose throw
     // the app-shell call site would swallow (`try?`), leaving an empty grid.
-    for batch in FixtureSeed.batchedChanges() {
+    let batches = FixtureSeed.batchedChanges()
+    for (index, batch) in batches.enumerated() {
       try await store.apply(batch, currentUserId: FixtureSeed.userId)
+      // First paint doesn't wait for the full 102k seed: the base batch carries
+      // every curated row, so publish the moment it lands — the grid appears in
+      // seconds while the bulk backfills underneath, and the closing bump below
+      // converges on the full set. Single-batch seeds (small fixture) skip this;
+      // their closing bump already paints everything at once.
+      if index == 0 && batches.count > 1 {
+        timelineVersion += 1
+      }
     }
     // Mirror the hydrated `getLibrary` state (A1): the Archive library accepts uploads,
     // so DECISIONS §6 rule 4 offers it as a move target in the seeded world.
@@ -184,13 +197,18 @@ final class MacAppState {
   /// Revalidates a synchronously restored session against the server without ever
   /// flashing the connect screen: on network failure the restored (offline) session
   /// stays — the local DB is the UI's data source — and only a confirmed identity
-  /// change replaces the user id.
+  /// change replaces the user id. Bounded: a blackholed network must not stall
+  /// launch past the gate timeout (URLSession's own timeouts run to 60 s+).
   func revalidateSession() async {
     guard userId != nil else {
       await adoptKeychainSession()
       return
     }
-    if let id = try? await connection.currentUserId() {
+    let connection = connection
+    if let id = try? await LaunchGate.withLaunchTimeout(
+      seconds: Self.sessionValidationTimeoutSeconds,
+      operation: { try await connection.currentUserId() })
+    {
       userId = id
       SharedContainer.setSavedUserID(id)
       await refresh()
@@ -199,10 +217,15 @@ final class MacAppState {
 
   /// Relaunch: a Keychain token from a previous session restores the user without
   /// showing the connect screen (network failure just leaves the connect screen up).
+  /// Bounded like `revalidateSession` above.
   func adoptKeychainSession() async {
     guard userId == nil else { return }
     if await connection.tokenStore.get() == nil { return }
-    if let id = try? await connection.currentUserId() {
+    let connection = connection
+    if let id = try? await LaunchGate.withLaunchTimeout(
+      seconds: Self.sessionValidationTimeoutSeconds,
+      operation: { try await connection.currentUserId() })
+    {
       userId = id
       SharedContainer.setSavedUserID(id)
       await refresh()

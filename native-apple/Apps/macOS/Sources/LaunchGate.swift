@@ -21,6 +21,29 @@ enum LaunchGate {
     return true
   }
 
+  /// Launch-gate timeout: bounds an async launch operation (server session
+  /// validation) so a blackholed network degrades to the offline path instead of
+  /// stalling launch on URLSession's own 60 s+ timeouts. The loser is cancelled;
+  /// a win by the sleeper throws `TimeoutError.timedOut`.
+  enum TimeoutError: Error {
+    case timedOut
+  }
+
+  static func withLaunchTimeout<T: Sendable>(
+    seconds: Double, operation: @Sendable @escaping () async throws -> T
+  ) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+      group.addTask { try await operation() }
+      group.addTask {
+        try await Task.sleep(for: .seconds(seconds))
+        throw TimeoutError.timedOut
+      }
+      guard let first = try await group.next() else { throw TimeoutError.timedOut }
+      group.cancelAll()
+      return first
+    }
+  }
+
   /// Footer counts text, or nil when the footer must show a spinner instead.
   /// The footer never reads "0 Photos" while the first snapshot is still loading:
   /// with no rows yet and a load in flight there is no count to report — only the
