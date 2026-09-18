@@ -167,6 +167,39 @@ final class EditUITests: XCTestCase {
     assertEditClosed("Discard exits edit mode")
   }
 
+  // MARK: - D1 Selective Color swatches
+
+  /// The swatch picker selects a hue and its sliders drive the per-hue keys:
+  /// picking Oranges reveals the oranges sliders, moving Saturation marks the
+  /// recipe dirty (the Discard confirm on Escape proves the new keys
+  /// participate in dirty tracking). Done-save itself stays fixture-gated
+  /// (E7): Done is disabled with no server original.
+  func testSelectiveColorSwatchSelectAndSlidersMove() {
+    openViewer()
+    openEdit()
+    let options = el("edit.section.options.selectiveColor")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Selective Color Options renders")
+    options.click()
+    let reds = el("edit.slider.sel-swatch-reds")
+    XCTAssertTrue(reds.waitForExistence(timeout: 10), "reds swatch renders")
+    let oranges = el("edit.slider.sel-swatch-oranges")
+    XCTAssertTrue(oranges.waitForExistence(timeout: 10), "oranges swatch renders")
+    oranges.click()
+    let saturation = el("edit.slider.sel-oranges-saturation")
+    XCTAssertTrue(saturation.waitForExistence(timeout: 10), "oranges saturation slider renders")
+    saturation.adjust(toNormalizedSliderPosition: 0.75)
+    XCTAssertTrue(el("edit.slider.sel-oranges-hue").exists, "hue slider renders for the picked swatch")
+    XCTAssertTrue(el("edit.slider.sel-oranges-range").exists, "range slider renders for the picked swatch")
+    // The drag leaves focus on the slider, which eats Escape as cancelOperation:
+    // click the canvas first so Escape reaches the mode handler.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    app.typeKey(.escape, modifierFlags: [])
+    let discard = app.sheets.buttons["Discard"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5), "dirty Escape shows Discard confirm")
+    discard.click()
+    assertEditClosed("Discard exits edit mode")
+  }
+
   // MARK: - E7 Done gating
 
   func testDoneGatedWhileOriginalLoads() {

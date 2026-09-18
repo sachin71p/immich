@@ -110,6 +110,85 @@ import Testing
     #expect(leveled != plain)
   }
 
+  // MARK: - Selective Color (D1)
+
+  @Test("[D1] Selective keys default to neutral; clamping holds")
+  func selectiveDefaults() {
+    let a = AdjustRecipe()
+    #expect(
+      a.selRedHue == 0 && a.selRedSat == 0 && a.selRedLum == 0 && a.selRedRange == 0)
+    #expect(
+      a.selBlueHue == 0 && a.selBlueSat == 0 && a.selBlueLum == 0 && a.selBlueRange == 0)
+    #expect(!a.isSelectiveActive)
+    #expect(AdjustRecipe(selRedSat: 500).selRedSat == 100)
+    #expect(AdjustRecipe(selGreenLum: -500).selGreenLum == -100)
+    #expect(AdjustRecipe(selBlueRange: 500).selBlueRange == 100)
+    #expect(AdjustRecipe(selBlueRange: -50).selBlueRange == 0)
+  }
+
+  @Test("[D1] Selective keys round-trip; missing keys decode to neutral identity")
+  func selectiveCodable() throws {
+    var a = AdjustRecipe()
+    a.selRedSat = 40
+    a.selRedRange = 60
+    a.selBlueHue = -30
+    let data = try JSONEncoder().encode(EditRecipe(adjust: a))
+    let back = try JSONDecoder().decode(EditRecipe.self, from: data).adjust
+    #expect(back.selRedSat == 40 && back.selRedRange == 60)
+    #expect(back.selBlueHue == -30)
+    #expect(back.selGreenSat == 0 && back.selGreenRange == 0)
+    // Legacy payload without the new keys: neutral selective, still inactive.
+    let legacy = #"{"exposure":25}"#.data(using: .utf8)!
+    let old = try JSONDecoder().decode(AdjustRecipe.self, from: legacy)
+    #expect(old.exposure == 25)
+    #expect(old.selRedSat == 0 && old.selBlueHue == 0 && old.selMagentaRange == 0)
+    #expect(!old.isSelectiveActive)
+    // Range-only payloads stay inactive (range shapes a shift, never applies one).
+    var rangeOnly = AdjustRecipe()
+    rangeOnly.selRedRange = 100
+    #expect(!rangeOnly.isSelectiveActive)
+  }
+
+  @Test("[D1] Identity selective renders pixel-identical (kernel path is a no-op at defaults)")
+  func selectiveIdentityNoOp() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let identity = renderer.pixelHash(source: src, recipe: EditRecipe(adjust: AdjustRecipe()))
+    else { return }
+    #expect(identity == plain)
+  }
+
+  @Test("[D1] Non-default selective shift changes pixels")
+  func selectiveChangePixels() {
+    let renderer = EditRenderer()
+    let red = CIImage(color: CIColor(red: 0.8, green: 0.1, blue: 0.1))
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    guard let plain = renderer.pixelHash(source: red, recipe: EditRecipe()),
+      let shifted = renderer.pixelHash(
+        source: red,
+        recipe: EditRecipe(adjust: AdjustRecipe(selRedSat: 100, selRedRange: 100)))
+    else { return }
+    #expect(shifted != plain)
+  }
+
+  @Test("[D1] Per-hue isolation: a red shift touches red pixels, spares blue ones")
+  func selectivePerHueIsolation() {
+    let renderer = EditRenderer()
+    let red = CIImage(color: CIColor(red: 0.8, green: 0.1, blue: 0.1))
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    let blue = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.8))
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    let recipe = EditRecipe(adjust: AdjustRecipe(selRedLum: 100, selRedRange: 100))
+    guard let redPlain = renderer.pixelHash(source: red, recipe: EditRecipe()),
+      let redShifted = renderer.pixelHash(source: red, recipe: recipe),
+      let bluePlain = renderer.pixelHash(source: blue, recipe: EditRecipe()),
+      let blueShifted = renderer.pixelHash(source: blue, recipe: recipe)
+    else { return }
+    #expect(redShifted != redPlain)
+    #expect(blueShifted == bluePlain)
+  }
+
   @Test("Recipe KV key and payload format tag are pinned")
   func recipeKeyPinned() throws {
     #expect(EditRecipeKey.current == "fork.editRecipe.v1")

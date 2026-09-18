@@ -870,8 +870,9 @@ extension MacEditModeView {
 
 /// One Adjust section: header row (title, AUTO, reset, enable toggle), a smart
 /// filmstrip slider for the headline param, and an Options disclosure with fine
-/// sliders. Sections without dedicated recipe keys (curves freeform, levels
-/// handles, per-hue selective color, red-eye) expose honest macros or a
+/// sliders. Sections with dedicated UI (D3 levels handles, D1 selective-color
+/// swatches) render it instead of fine sliders; sections still without
+/// dedicated keys (curves freeform, red-eye) expose honest macros or a
 /// deferred note — see `deferredNote`.
 enum EditAdjustSection: String, CaseIterable {
   case light, color, blackWhite, whiteBalance, curves, levels, definition
@@ -923,7 +924,15 @@ enum EditAdjustSection: String, CaseIterable {
     case .curves: return [\.highlights, \.shadows, \.contrast, \.blackPoint, \.brightness]
     case .levels: return [\.levelsInBlack, \.levelsInWhite, \.levelsOutBlack, \.levelsOutWhite]
     case .definition: return [\.definition]
-    case .selectiveColor: return [\.vibrance, \.cast]
+    case .selectiveColor:
+      return [
+        \.selRedHue, \.selRedSat, \.selRedLum, \.selRedRange,
+        \.selOrangeHue, \.selOrangeSat, \.selOrangeLum, \.selOrangeRange,
+        \.selYellowHue, \.selYellowSat, \.selYellowLum, \.selYellowRange,
+        \.selGreenHue, \.selGreenSat, \.selGreenLum, \.selGreenRange,
+        \.selBlueHue, \.selBlueSat, \.selBlueLum, \.selBlueRange,
+        \.selMagentaHue, \.selMagentaSat, \.selMagentaLum, \.selMagentaRange,
+      ]
     case .noiseReduction: return [\.noiseReduction]
     case .sharpen: return [\.sharpness, \.sharpenEdges, \.sharpenFalloff]
     case .vignette: return [\.vignette, \.vignetteStrength, \.vignetteRadius, \.vignetteSoftness]
@@ -947,7 +956,7 @@ enum EditAdjustSection: String, CaseIterable {
       return [("Highlights", \.highlights), ("Shadows", \.shadows), ("Contrast", \.contrast)]
     case .levels: return []
     case .definition: return [("Definition", \.definition)]
-    case .selectiveColor: return [("Saturation", \.vibrance), ("Cast", \.cast)]
+    case .selectiveColor: return []
     case .noiseReduction: return [("Noise Reduction", \.noiseReduction)]
     case .sharpen:
       return [("Intensity", \.sharpness), ("Edges", \.sharpenEdges), ("Falloff", \.sharpenFalloff)]
@@ -981,7 +990,7 @@ enum EditAdjustSection: String, CaseIterable {
     case .levels:
       return nil
     case .selectiveColor:
-      return "Global saturation/cast macros. Per-hue (6 swatches × Hue / Saturation / Luminance / Range) editing is deferred to owner decision."
+      return nil
     case .redEye:
       return "Red-Eye removal (P2) is deferred to owner decision."
     default: return nil
@@ -999,6 +1008,7 @@ private struct EditAdjustSectionView: View {
   @State private var sectionActive = true
   @State private var sectionExpanded = true
   @State private var optionsExpanded = false
+  @State private var selectiveHue = 0
 
   var body: some View {
     // Sections default expanded: the filmstrip headline and Options rows are the
@@ -1028,6 +1038,9 @@ private struct EditAdjustSectionView: View {
             }
             if section == .levels {
               levelsHandles
+            }
+            if section == .selectiveColor {
+              selectiveColorSection
             }
             if let note = section.deferredNote {
               Text(note).font(.caption2).foregroundStyle(.secondary)
@@ -1184,6 +1197,37 @@ private struct EditAdjustSectionView: View {
     }
   }
 
+  /// Swatch picker + per-hue sliders (D1): six hue swatches, each with
+  /// Hue/Saturation/Luminance/Range sliders over the dedicated recipe keys.
+  /// Every control carries an `AXIDs.editSlider`-style contract ID
+  /// (`sel-swatch-<id>`, `sel-<id>-hue|saturation|luminance|range`).
+  private var selectiveColorSection: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        ForEach(SelectiveHue.allCases) { hue in
+          Button {
+            selectiveHue = hue.rawValue
+          } label: {
+            Circle()
+              .fill(hue.color)
+              .frame(width: 22, height: 22)
+              .overlay(
+                Circle()
+                  .stroke(selectiveHue == hue.rawValue ? .yellow : .clear, lineWidth: 2))
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier(AXIDs.editSlider("sel-swatch-\(hue.axID)"))
+          .accessibilityLabel("\(hue.title) swatch")
+        }
+      }
+      let hue = SelectiveHue(rawValue: selectiveHue) ?? .reds
+      fineSlider(label: "Hue", key: hue.hueKey, axKey: "sel-\(hue.axID)-hue")
+      fineSlider(label: "Saturation", key: hue.satKey, axKey: "sel-\(hue.axID)-saturation")
+      fineSlider(label: "Luminance", key: hue.lumKey, axKey: "sel-\(hue.axID)-luminance")
+      fineSlider(label: "Range", key: hue.rangeKey, axKey: "sel-\(hue.axID)-range")
+    }
+  }
+
   private var curvePresets: some View {
     HStack {
       Text("Preset").font(.caption)
@@ -1270,6 +1314,83 @@ private struct DualThumbSlider: View {
       .accessibilityIdentifier(ax)
       .accessibilityLabel(label)
       .accessibilityValue("\(value)")
+  }
+}
+
+/// The six Selective Color swatches (D1), in hue order. Each maps to its four
+/// recipe keys; `color` is the picker dot only (never sampled by the renderer,
+/// which computes hue from the pixel itself).
+private enum SelectiveHue: Int, CaseIterable, Identifiable {
+  case reds, oranges, yellows, greens, blues, magentas
+
+  var id: Int { rawValue }
+
+  var axID: String {
+    switch self {
+    case .reds: return "reds"
+    case .oranges: return "oranges"
+    case .yellows: return "yellows"
+    case .greens: return "greens"
+    case .blues: return "blues"
+    case .magentas: return "magentas"
+    }
+  }
+
+  var title: String { axID.capitalized }
+
+  var color: Color {
+    switch self {
+    case .reds: return .red
+    case .oranges: return .orange
+    case .yellows: return .yellow
+    case .greens: return .green
+    case .blues: return .blue
+    case .magentas: return .purple
+    }
+  }
+
+  var hueKey: WritableKeyPath<AdjustRecipe, Int> {
+    switch self {
+    case .reds: return \.selRedHue
+    case .oranges: return \.selOrangeHue
+    case .yellows: return \.selYellowHue
+    case .greens: return \.selGreenHue
+    case .blues: return \.selBlueHue
+    case .magentas: return \.selMagentaHue
+    }
+  }
+
+  var satKey: WritableKeyPath<AdjustRecipe, Int> {
+    switch self {
+    case .reds: return \.selRedSat
+    case .oranges: return \.selOrangeSat
+    case .yellows: return \.selYellowSat
+    case .greens: return \.selGreenSat
+    case .blues: return \.selBlueSat
+    case .magentas: return \.selMagentaSat
+    }
+  }
+
+  var lumKey: WritableKeyPath<AdjustRecipe, Int> {
+    switch self {
+    case .reds: return \.selRedLum
+    case .oranges: return \.selOrangeLum
+    case .yellows: return \.selYellowLum
+    case .greens: return \.selGreenLum
+    case .blues: return \.selBlueLum
+    case .magentas: return \.selMagentaLum
+    }
+  }
+
+  var rangeKey: WritableKeyPath<AdjustRecipe, Int> {
+    switch self {
+    case .reds: return \.selRedRange
+    case .oranges: return \.selOrangeRange
+    case .yellows: return \.selYellowRange
+    case .greens: return \.selGreenRange
+    case .blues: return \.selBlueRange
+    case .magentas: return \.selMagentaRange
+    }
   }
 }
 

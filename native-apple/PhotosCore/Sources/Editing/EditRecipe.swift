@@ -111,6 +111,34 @@ public struct AdjustRecipe: Sendable, Equatable {
   public var levelsInWhite: Int
   public var levelsOutBlack: Int
   public var levelsOutWhite: Int
+  /// Selective Color section (D1): 6 hue swatches × Hue/Saturation/Luminance/
+  /// Range. Hue/Saturation/Luminance are -100...100 (neutral 0); Range is
+  /// 0...100 (default 0 = narrowest falloff, so the generic section
+  /// reset-to-0 restores defaults and `isEmpty` stays exact).
+  public var selRedHue: Int
+  public var selRedSat: Int
+  public var selRedLum: Int
+  public var selRedRange: Int
+  public var selOrangeHue: Int
+  public var selOrangeSat: Int
+  public var selOrangeLum: Int
+  public var selOrangeRange: Int
+  public var selYellowHue: Int
+  public var selYellowSat: Int
+  public var selYellowLum: Int
+  public var selYellowRange: Int
+  public var selGreenHue: Int
+  public var selGreenSat: Int
+  public var selGreenLum: Int
+  public var selGreenRange: Int
+  public var selBlueHue: Int
+  public var selBlueSat: Int
+  public var selBlueLum: Int
+  public var selBlueRange: Int
+  public var selMagentaHue: Int
+  public var selMagentaSat: Int
+  public var selMagentaLum: Int
+  public var selMagentaRange: Int
   /// Recipe/pipeline versions (on-device-AI §13.2; full v2 migration is E1's).
   /// 0 = legacy unversioned payload; new saves write 1.
   public var recipeVersion: Int
@@ -126,6 +154,12 @@ public struct AdjustRecipe: Sendable, Equatable {
     vignetteStrength: Int = 0, vignetteRadius: Int = 0, vignetteSoftness: Int = 0,
     levelsInBlack: Int = 0, levelsInWhite: Int = 100,
     levelsOutBlack: Int = 0, levelsOutWhite: Int = 100,
+    selRedHue: Int = 0, selRedSat: Int = 0, selRedLum: Int = 0, selRedRange: Int = 0,
+    selOrangeHue: Int = 0, selOrangeSat: Int = 0, selOrangeLum: Int = 0, selOrangeRange: Int = 0,
+    selYellowHue: Int = 0, selYellowSat: Int = 0, selYellowLum: Int = 0, selYellowRange: Int = 0,
+    selGreenHue: Int = 0, selGreenSat: Int = 0, selGreenLum: Int = 0, selGreenRange: Int = 0,
+    selBlueHue: Int = 0, selBlueSat: Int = 0, selBlueLum: Int = 0, selBlueRange: Int = 0,
+    selMagentaHue: Int = 0, selMagentaSat: Int = 0, selMagentaLum: Int = 0, selMagentaRange: Int = 0,
     recipeVersion: Int = 1, rendererVersion: Int = 1
   ) {
     self.exposure = Self.clamp(exposure)
@@ -160,16 +194,54 @@ public struct AdjustRecipe: Sendable, Equatable {
     self.levelsInWhite = Self.clamp(levelsInWhite)
     self.levelsOutBlack = Self.clamp(levelsOutBlack)
     self.levelsOutWhite = Self.clamp(levelsOutWhite)
+    self.selRedHue = Self.clamp(selRedHue)
+    self.selRedSat = Self.clamp(selRedSat)
+    self.selRedLum = Self.clamp(selRedLum)
+    self.selRedRange = Self.clampRange(selRedRange)
+    self.selOrangeHue = Self.clamp(selOrangeHue)
+    self.selOrangeSat = Self.clamp(selOrangeSat)
+    self.selOrangeLum = Self.clamp(selOrangeLum)
+    self.selOrangeRange = Self.clampRange(selOrangeRange)
+    self.selYellowHue = Self.clamp(selYellowHue)
+    self.selYellowSat = Self.clamp(selYellowSat)
+    self.selYellowLum = Self.clamp(selYellowLum)
+    self.selYellowRange = Self.clampRange(selYellowRange)
+    self.selGreenHue = Self.clamp(selGreenHue)
+    self.selGreenSat = Self.clamp(selGreenSat)
+    self.selGreenLum = Self.clamp(selGreenLum)
+    self.selGreenRange = Self.clampRange(selGreenRange)
+    self.selBlueHue = Self.clamp(selBlueHue)
+    self.selBlueSat = Self.clamp(selBlueSat)
+    self.selBlueLum = Self.clamp(selBlueLum)
+    self.selBlueRange = Self.clampRange(selBlueRange)
+    self.selMagentaHue = Self.clamp(selMagentaHue)
+    self.selMagentaSat = Self.clamp(selMagentaSat)
+    self.selMagentaLum = Self.clamp(selMagentaLum)
+    self.selMagentaRange = Self.clampRange(selMagentaRange)
     self.recipeVersion = recipeVersion
     self.rendererVersion = rendererVersion
   }
 
   public static func clamp(_ v: Int) -> Int { min(100, max(-100, v)) }
 
+  /// 0...100 clamp for Selective Color Range keys.
+  public static func clampRange(_ v: Int) -> Int { min(100, max(0, v)) }
+
   public var isEmpty: Bool { self == AdjustRecipe() }
 
   /// Slider value -> unit float in `-1...1`.
   public func unit(_ v: Int) -> Double { Double(v) / 100.0 }
+
+  /// True when any Selective Color (D1) shift is non-zero. Range keys alone
+  /// never trigger the kernel — they only shape the falloff of a shift.
+  public var isSelectiveActive: Bool {
+    selRedHue != 0 || selRedSat != 0 || selRedLum != 0
+      || selOrangeHue != 0 || selOrangeSat != 0 || selOrangeLum != 0
+      || selYellowHue != 0 || selYellowSat != 0 || selYellowLum != 0
+      || selGreenHue != 0 || selGreenSat != 0 || selGreenLum != 0
+      || selBlueHue != 0 || selBlueSat != 0 || selBlueLum != 0
+      || selMagentaHue != 0 || selMagentaSat != 0 || selMagentaLum != 0
+  }
 }
 
 extension AdjustRecipe: Codable {
@@ -179,6 +251,12 @@ extension AdjustRecipe: Codable {
       autoEnhance, cast, bwIntensity, bwNeutrals, bwTone, grain, wbTemperature, wbTint,
       sharpenEdges, sharpenFalloff, vignetteStrength, vignetteRadius, vignetteSoftness,
       levelsInBlack, levelsInWhite, levelsOutBlack, levelsOutWhite,
+      selRedHue, selRedSat, selRedLum, selRedRange,
+      selOrangeHue, selOrangeSat, selOrangeLum, selOrangeRange,
+      selYellowHue, selYellowSat, selYellowLum, selYellowRange,
+      selGreenHue, selGreenSat, selGreenLum, selGreenRange,
+      selBlueHue, selBlueSat, selBlueLum, selBlueRange,
+      selMagentaHue, selMagentaSat, selMagentaLum, selMagentaRange,
       recipeVersion, rendererVersion
   }
 
@@ -212,6 +290,18 @@ extension AdjustRecipe: Codable {
       vignetteSoftness: v(.vignetteSoftness),
       levelsInBlack: v(.levelsInBlack), levelsInWhite: vd(.levelsInWhite, dflt: 100),
       levelsOutBlack: v(.levelsOutBlack), levelsOutWhite: vd(.levelsOutWhite, dflt: 100),
+      selRedHue: v(.selRedHue), selRedSat: v(.selRedSat), selRedLum: v(.selRedLum),
+      selRedRange: v(.selRedRange),
+      selOrangeHue: v(.selOrangeHue), selOrangeSat: v(.selOrangeSat), selOrangeLum: v(.selOrangeLum),
+      selOrangeRange: v(.selOrangeRange),
+      selYellowHue: v(.selYellowHue), selYellowSat: v(.selYellowSat), selYellowLum: v(.selYellowLum),
+      selYellowRange: v(.selYellowRange),
+      selGreenHue: v(.selGreenHue), selGreenSat: v(.selGreenSat), selGreenLum: v(.selGreenLum),
+      selGreenRange: v(.selGreenRange),
+      selBlueHue: v(.selBlueHue), selBlueSat: v(.selBlueSat), selBlueLum: v(.selBlueLum),
+      selBlueRange: v(.selBlueRange),
+      selMagentaHue: v(.selMagentaHue), selMagentaSat: v(.selMagentaSat),
+      selMagentaLum: v(.selMagentaLum), selMagentaRange: v(.selMagentaRange),
       recipeVersion: v(.recipeVersion), rendererVersion: v(.rendererVersion))
   }
 
@@ -249,6 +339,30 @@ extension AdjustRecipe: Codable {
     try c.encode(levelsInWhite, forKey: .levelsInWhite)
     try c.encode(levelsOutBlack, forKey: .levelsOutBlack)
     try c.encode(levelsOutWhite, forKey: .levelsOutWhite)
+    try c.encode(selRedHue, forKey: .selRedHue)
+    try c.encode(selRedSat, forKey: .selRedSat)
+    try c.encode(selRedLum, forKey: .selRedLum)
+    try c.encode(selRedRange, forKey: .selRedRange)
+    try c.encode(selOrangeHue, forKey: .selOrangeHue)
+    try c.encode(selOrangeSat, forKey: .selOrangeSat)
+    try c.encode(selOrangeLum, forKey: .selOrangeLum)
+    try c.encode(selOrangeRange, forKey: .selOrangeRange)
+    try c.encode(selYellowHue, forKey: .selYellowHue)
+    try c.encode(selYellowSat, forKey: .selYellowSat)
+    try c.encode(selYellowLum, forKey: .selYellowLum)
+    try c.encode(selYellowRange, forKey: .selYellowRange)
+    try c.encode(selGreenHue, forKey: .selGreenHue)
+    try c.encode(selGreenSat, forKey: .selGreenSat)
+    try c.encode(selGreenLum, forKey: .selGreenLum)
+    try c.encode(selGreenRange, forKey: .selGreenRange)
+    try c.encode(selBlueHue, forKey: .selBlueHue)
+    try c.encode(selBlueSat, forKey: .selBlueSat)
+    try c.encode(selBlueLum, forKey: .selBlueLum)
+    try c.encode(selBlueRange, forKey: .selBlueRange)
+    try c.encode(selMagentaHue, forKey: .selMagentaHue)
+    try c.encode(selMagentaSat, forKey: .selMagentaSat)
+    try c.encode(selMagentaLum, forKey: .selMagentaLum)
+    try c.encode(selMagentaRange, forKey: .selMagentaRange)
     try c.encode(recipeVersion, forKey: .recipeVersion)
     try c.encode(rendererVersion, forKey: .rendererVersion)
   }

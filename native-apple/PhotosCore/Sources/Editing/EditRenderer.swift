@@ -205,6 +205,9 @@ public final class EditRenderer: @unchecked Sendable {
           "inputTargetNeutral": CIVector(x: 6500, y: CGFloat(a.cast) * 2),
         ])
     }
+    if a.isSelectiveActive {
+      img = selectiveColor(img, a: a)
+    }
     if a.wbTemperature != 0 || a.wbTint != 0 {
       // White Balance section: finer Temperature-Tint control.
       img = filtered(
@@ -458,6 +461,87 @@ public final class EditRenderer: @unchecked Sendable {
     }
     return img
   }
+
+  /// Selective Color (D1): per-hue Hue/Saturation/Luminance shifts with a
+  /// Range-shaped falloff, via one custom `CIColorKernel` (on-device-AI §13
+  /// Tier B — Core Image only, no custom CPU pixel code). Each pixel's hue
+  /// weights the six swatches by circular hue distance against the swatch's
+  /// Range half-width; achromatic pixels (near-zero saturation) pass through.
+  /// A nil kernel (uncompilable source) falls back to the input image.
+  private func selectiveColor(_ image: CIImage, a: AdjustRecipe) -> CIImage {
+    guard let kernel = Self.selectiveKernel else { return image }
+    let args: [Any] = [
+      image,
+      CIVector(x: CGFloat(a.unit(a.selRedHue)), y: CGFloat(a.unit(a.selOrangeHue)),
+        z: CGFloat(a.unit(a.selYellowHue)), w: CGFloat(a.unit(a.selGreenHue))),
+      CIVector(x: CGFloat(a.unit(a.selBlueHue)), y: CGFloat(a.unit(a.selMagentaHue)), z: 0, w: 0),
+      CIVector(x: CGFloat(a.unit(a.selRedSat)), y: CGFloat(a.unit(a.selOrangeSat)),
+        z: CGFloat(a.unit(a.selYellowSat)), w: CGFloat(a.unit(a.selGreenSat))),
+      CIVector(x: CGFloat(a.unit(a.selBlueSat)), y: CGFloat(a.unit(a.selMagentaSat)), z: 0, w: 0),
+      CIVector(x: CGFloat(a.unit(a.selRedLum)), y: CGFloat(a.unit(a.selOrangeLum)),
+        z: CGFloat(a.unit(a.selYellowLum)), w: CGFloat(a.unit(a.selGreenLum))),
+      CIVector(x: CGFloat(a.unit(a.selBlueLum)), y: CGFloat(a.unit(a.selMagentaLum)), z: 0, w: 0),
+      CIVector(x: CGFloat(a.selRedRange), y: CGFloat(a.selOrangeRange),
+        z: CGFloat(a.selYellowRange), w: CGFloat(a.selGreenRange)),
+      CIVector(x: CGFloat(a.selBlueRange), y: CGFloat(a.selMagentaRange), z: 0, w: 0),
+    ]
+    return kernel.apply(extent: image.extent, arguments: args) ?? image
+  }
+
+  private static let selectiveKernel: CIColorKernel? = CIColorKernel(source:
+    """
+    vec3 sel_hsl2rgb(float h, float s, float l) {
+      float c = (1.0 - abs(2.0 * l - 1.0)) * s;
+      float hp = h * 6.0;
+      float x = c * (1.0 - abs(mod(hp, 2.0) - 1.0));
+      vec3 rgb = vec3(0.0);
+      if (hp < 1.0) { rgb = vec3(c, x, 0.0); }
+      else if (hp < 2.0) { rgb = vec3(x, c, 0.0); }
+      else if (hp < 3.0) { rgb = vec3(0.0, c, x); }
+      else if (hp < 4.0) { rgb = vec3(0.0, x, c); }
+      else if (hp < 5.0) { rgb = vec3(x, 0.0, c); }
+      else { rgb = vec3(c, 0.0, x); }
+      return rgb + vec3(l - c * 0.5);
+    }
+    float sel_weight(float h, float center, float range) {
+      float dd = abs(h - center);
+      dd = min(dd, 1.0 - dd);
+      float halfWidth = 0.02 + (clamp(range, 0.0, 100.0) / 100.0) * 0.12;
+      return 1.0 - smoothstep(0.0, halfWidth, dd);
+    }
+    kernel vec4 selectiveColor(__sample s, vec4 hueA, vec4 hueB, vec4 satA, vec4 satB,
+        vec4 lumA, vec4 lumB, vec4 rangeA, vec4 rangeB) {
+      vec3 rgb = s.rgb;
+      float mx = max(rgb.r, max(rgb.g, rgb.b));
+      float mn = min(rgb.r, min(rgb.g, rgb.b));
+      float l = (mx + mn) * 0.5;
+      float d = mx - mn;
+      if (d < 1e-4) { return s; }
+      float sat = l > 0.5 ? d / max(1e-4, 2.0 - mx - mn) : d / max(1e-4, mx + mn);
+      float h = 0.0;
+      if (mx == rgb.r) { h = (rgb.g - rgb.b) / d + (rgb.g < rgb.b ? 6.0 : 0.0); }
+      else if (mx == rgb.g) { h = (rgb.b - rgb.r) / d + 2.0; }
+      else { h = (rgb.r - rgb.g) / d + 4.0; }
+      h = h / 6.0;
+      float w0 = sel_weight(h, 0.0, rangeA.x);
+      float w1 = sel_weight(h, 0.0833, rangeA.y);
+      float w2 = sel_weight(h, 0.1667, rangeA.z);
+      float w3 = sel_weight(h, 0.3333, rangeA.w);
+      float w4 = sel_weight(h, 0.6667, rangeB.x);
+      float w5 = sel_weight(h, 0.8333, rangeB.y);
+      float hueShift = w0 * hueA.x + w1 * hueA.y + w2 * hueA.z + w3 * hueA.w
+        + w4 * hueB.x + w5 * hueB.y;
+      float satShift = w0 * satA.x + w1 * satA.y + w2 * satA.z + w3 * satA.w
+        + w4 * satB.x + w5 * satB.y;
+      float lumShift = w0 * lumA.x + w1 * lumA.y + w2 * lumA.z + w3 * lumA.w
+        + w4 * lumB.x + w5 * lumB.y;
+      if (abs(hueShift) < 1e-6 && abs(satShift) < 1e-6 && abs(lumShift) < 1e-6) { return s; }
+      h = fract(h + hueShift * 0.5);
+      sat = clamp(sat * (1.0 + satShift), 0.0, 1.0);
+      l = clamp(l + lumShift * 0.5, 0.0, 1.0);
+      return vec4(sel_hsl2rgb(h, sat, l), s.a);
+    }
+    """)
 
   private func toneCurve(_ image: CIImage, black: Double, white: Double) -> CIImage {
     let f = CIFilter(name: "CIToneCurve")
