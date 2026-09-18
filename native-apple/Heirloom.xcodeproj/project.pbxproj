@@ -27,6 +27,7 @@
 		1DEF534C241A37CDAD61CF01 /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 6708CA2AEC0807474C198792 /* SyncEngine */; };
 		1FBEDBC92C2A1E64917F2FC5 /* MacSidebarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5059E39F92B118B91DB141F6 /* MacSidebarModel.swift */; };
 		2043120048B38CFB6245002A /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 168420A922E85CB950B4AE95 /* ImmichAPI */; };
+		20D55EAF420401A19B9AECB1 /* GridPrefetchPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A1F880F7852BD5F7F429FC /* GridPrefetchPolicyTests.swift */; };
 		22328826F00AB80090B9DBE6 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 952D308CC84C144B2BC179A7 /* LocalStore */; };
 		23D25F7E4E774F4695B170E1 /* ErrorFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */; };
 		26D2C31B3ABC77106FBF1674 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AA815EE14B97B0CBB0477F0 /* SearchView.swift */; };
@@ -110,6 +111,7 @@
 		AB034DACF8D205272A697724 /* HeirloomAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AEC1F2E0350651E6C9C7E7F /* HeirloomAgent.swift */; };
 		AD13E92873E276DFAF7170A7 /* MacTimelineLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488287F582CF2DB28F7C2A0F /* MacTimelineLayout.swift */; };
 		AEB202A11B28EBAF089DEF08 /* ParityHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FBC7B8A7F3F52B90B87AC5 /* ParityHarness.swift */; };
+		AF7D28916704CC5133FD8D95 /* GridPrefetchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */; };
 		B1B00CECEF067ED5E8EF8703 /* Media in Frameworks */ = {isa = PBXBuildFile; productRef = 6279A9067853BAACD2E54D99 /* Media */; };
 		B27032EFFEBC3A6E2CE4683A /* MoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958BD68C3B16A152746D63A5 /* MoveSheet.swift */; };
 		B2E232FB0CFF801B0281E2B6 /* BackupScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A200B4479469DD4C3817B69 /* BackupScanner.swift */; };
@@ -132,6 +134,7 @@
 		CA0727D769971F8DA20E364B /* FreeUpSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F8C9D9FECBF534C26B94DC2 /* FreeUpSpaceView.swift */; };
 		CB8D8A8C1B250E5C7240C58B /* HeirloomIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC84EEBDF5622F30FB15AD60 /* HeirloomIOSApp.swift */; };
 		CC4BFFF8B418543542B8A16D /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65A7D706A05D55D17A8429E0 /* ShareViewController.swift */; };
+		CDAFB670B121C9578D09A09C /* GridPrefetchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */; };
 		CE9BC1526C0AB36E16C9A850 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B46BD5E10FDEFE9A7D967C7 /* PhotoGridCell.swift */; };
 		CFE6D0BD60A82F54DDE04E44 /* Spaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE2BCF0B71A5320D0EE96B4 /* Spaces.swift */; };
 		CFEE33158BF0E7C74F7C24EF /* HeirloomMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14131A6D7F58E899A3F0DF12 /* HeirloomMacOSApp.swift */; };
@@ -251,6 +254,7 @@
 		71607B706C614A1C8A0A6D54 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
 		71A54903BAEFFF522B2BF7AB /* WidgetsExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetsExtension.swift; sourceTree = "<group>"; };
 		71AE2ECC214496244BF961D9 /* ParityViewerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityViewerUITests.swift; sourceTree = "<group>"; };
+		74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPrefetchPolicy.swift; sourceTree = "<group>"; };
 		750C8B9A3ACE145BE464F6C0 /* CollectionTiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionTiles.swift; sourceTree = "<group>"; };
 		7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMemoriesView.swift; sourceTree = "<group>"; };
 		794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGridHeaderView.swift; sourceTree = "<group>"; };
@@ -288,6 +292,7 @@
 		C56C16B1936C90D10B70F230 /* LiveVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveVideo.swift; sourceTree = "<group>"; };
 		C58EDC43D9AE8A1595B8AFA4 /* ParityCollectionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityCollectionsUITests.swift; sourceTree = "<group>"; };
 		C5FBC7B8A7F3F52B90B87AC5 /* ParityHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityHarness.swift; sourceTree = "<group>"; };
+		C6A1F880F7852BD5F7F429FC /* GridPrefetchPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPrefetchPolicyTests.swift; sourceTree = "<group>"; };
 		CA3A24A3184D6A5D800A2BE6 /* BackupScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupScheduler.swift; sourceTree = "<group>"; };
 		CABCD8D76B4011545D9D9ED5 /* MacSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettings.swift; sourceTree = "<group>"; };
 		CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorFilter.swift; sourceTree = "<group>"; };
@@ -515,6 +520,7 @@
 				2F4055DBB1FA5FBDB97972C9 /* ContextMenuUITests.swift */,
 				6BDAB6FF9FD9FE202BF68BEB /* EditorUITests.swift */,
 				36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */,
+				C6A1F880F7852BD5F7F429FC /* GridPrefetchPolicyTests.swift */,
 				B796775C088DF86CE5035271 /* InfoPanelUITests.swift */,
 				8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */,
 				05DC4A4509FEA7127C178009 /* ParityCanvasSelfTests.swift */,
@@ -547,6 +553,7 @@
 				2926BA269E6027FC436CF9C2 /* AssetGridView.swift */,
 				2BC2B330D0AB7D07343EBF7B /* BucketHeaderView.swift */,
 				173F9A53CF69350E161F685F /* FastScroller.swift */,
+				74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */,
 				58B7A0F588ED12A3BF26CC38 /* GridSelectionModel.swift */,
 				46E69169F9C526F6242FC0CD /* GridSnapshot.swift */,
 				55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */,
@@ -1063,6 +1070,8 @@
 				53CC6118ADBC7C6C36AAEBE4 /* ContextMenuUITests.swift in Sources */,
 				5B913F49488BCF88490E327B /* EditorUITests.swift in Sources */,
 				C959FE40D592B0F2D6380C2D /* GridPerfUITests.swift in Sources */,
+				AF7D28916704CC5133FD8D95 /* GridPrefetchPolicy.swift in Sources */,
+				20D55EAF420401A19B9AECB1 /* GridPrefetchPolicyTests.swift in Sources */,
 				61343E2590E7623A978A85E2 /* InfoPanelUITests.swift in Sources */,
 				6A46C8A4B3FAA6E9F8F9599E /* LibraryChromeUITests.swift in Sources */,
 				105FEC7964FFA5BCF58C7677 /* ParityCanvasSelfTests.swift in Sources */,
@@ -1175,6 +1184,7 @@
 				56ABB8722262A613B915AAFF /* FixtureArtwork.swift in Sources */,
 				8B42ECF6B1AF7C434B602742 /* FixtureSeed.swift in Sources */,
 				CA0727D769971F8DA20E364B /* FreeUpSpaceView.swift in Sources */,
+				CDAFB670B121C9578D09A09C /* GridPrefetchPolicy.swift in Sources */,
 				E6DED1853529ACA4D2511877 /* GridSelectionModel.swift in Sources */,
 				EB27BEF28DAA01723107CBB0 /* GridSnapshot.swift in Sources */,
 				5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */,
