@@ -31,6 +31,10 @@ final class PhotoGridViewController: UIViewController {
   var onVisibleRange: ((Date?, Date?) -> Void)?
   /// Fires once, on the first non-empty snapshot apply (perf gate).
   var onFirstPaint: (() -> Void)?
+  /// WP-M (G4): long-press menu provider. Nil until the menu owner vends a
+  /// controller for an asset id + cell frame; nil keeps today's tap-to-open
+  /// behavior byte-for-byte (no recognizer effect, no visual change).
+  var menuProvider: ((String, CGRect) -> UIViewController?)?
 
   /// Row/flag/date lookups into the loader's cache (O(1), main-thread safe).
   var rowProvider: ((String) -> TimelineRow?)?
@@ -68,6 +72,9 @@ final class PhotoGridViewController: UIViewController {
   /// bubble (that one only shows while dragging the handle).
   private let floatingDateBadge = UILabel()
   private var floatingBadgeHideWork: DispatchWorkItem?
+  /// WP-M (G4): set when a long-press presents the menu, so the follow-up
+  /// touch-up doesn't fall through to `didSelectItemAt` and open the viewer.
+  private var suppressSelectAfterMenu = false
 
   // MARK: - cheap setters (WP1 §5: compare-then-act, never redundant work)
 
@@ -250,6 +257,12 @@ final class PhotoGridViewController: UIViewController {
     let pan = UIPanGestureRecognizer(target: self, action: #selector(didPanSelect(_:)))
     pan.delegate = self
     collectionView.addGestureRecognizer(pan)
+
+    // WP-M (G4): long-press presents the context menu. No-op until
+    // `menuProvider` is set, so today's tap/scroll/pinch are untouched.
+    let menuPress = UILongPressGestureRecognizer(target: self, action: #selector(didLongPressMenu(_:)))
+    menuPress.minimumPressDuration = 0.5
+    collectionView.addGestureRecognizer(menuPress)
 
     scroller = FastScroller(frame: scrollerFrame())
     scroller.autoresizingMask = [.flexibleHeight, .flexibleLeftMargin]
@@ -534,10 +547,37 @@ final class PhotoGridViewController: UIViewController {
     collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
     onSelectionChange?(selectedIds)
   }
+
+  /// WP-M (G4): grid long-press presents the context menu instead of opening
+  /// the viewer. Only `.began` acts (one presentation per press); presses on
+  /// empty areas or with no provider are ignored.
+  @objc private func didLongPressMenu(_ gesture: UILongPressGestureRecognizer) {
+    guard gesture.state == .began, let provider = menuProvider else { return }
+    let point = gesture.location(in: collectionView)
+    guard let indexPath = collectionView.indexPathForItem(at: point),
+      let id = dataSource.itemIdentifier(for: indexPath),
+      let cellRect = collectionView.layoutAttributesForItem(at: indexPath)?.frame,
+      let menu = provider(id, cellRect)
+    else { return }
+    suppressSelectAfterMenu = true
+    menu.modalPresentationStyle = .popover
+    if let popover = menu.popoverPresentationController {
+      popover.sourceView = collectionView
+      popover.sourceRect = cellRect
+      popover.permittedArrowDirections = .any
+    }
+    present(menu, animated: true)
+  }
 }
 
 extension PhotoGridViewController: UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    // WP-M (G4): the touch-up ending a menu long-press must not open the viewer.
+    if suppressSelectAfterMenu {
+      suppressSelectAfterMenu = false
+      collectionView.deselectItem(at: indexPath, animated: false)
+      return
+    }
     guard let id = dataSource.itemIdentifier(for: indexPath) else { return }
     if currentEditMode {
       selectedIds.insert(id)

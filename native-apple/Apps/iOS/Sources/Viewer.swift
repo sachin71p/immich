@@ -22,6 +22,10 @@ struct ZoomableImageView: UIViewRepresentable {
   var image: UIImage?
   var analysis: ImageAnalysis?
   var onSingleTap: (() -> Void)? = nil
+  /// WP-M (V6): page-local long-press. A SwiftUI `.onLongPressGesture` on the
+  /// UIKit-hosted pager never sees the touch, so the recognizer sits here, on
+  /// the image view itself, next to the existing tap recognizers.
+  var onLongPress: (() -> Void)? = nil
 
   func makeUIView(context: Context) -> UIScrollView {
     let scroll = UIScrollView()
@@ -41,12 +45,23 @@ struct ZoomableImageView: UIViewRepresentable {
     let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
     singleTap.require(toFail: doubleTap)
     imageView.addGestureRecognizer(singleTap)
+    // 0.35 s, not the usual 0.5 s: this view also hosts VisionKit's
+    // subject-lift long-press (see the interaction above), and two
+    // long-presses on one touch race — the shorter one recognizes first and
+    // fails the other (no simultaneous recognition by default). The menu must
+    // win that race deterministically; when VisionKit has nothing liftable
+    // under the touch its recognizer stays out of the way on its own.
+    let longPress = UILongPressGestureRecognizer(
+      target: context.coordinator, action: #selector(Coordinator.longPressed(_:)))
+    longPress.minimumPressDuration = 0.35
+    imageView.addGestureRecognizer(longPress)
     return scroll
   }
 
   func updateUIView(_ scroll: UIScrollView, context: Context) {
     context.coordinator.imageView?.image = image
     context.coordinator.onSingleTap = onSingleTap
+    context.coordinator.onLongPress = onLongPress
     if context.coordinator.appliedAnalysis !== analysis {
       context.coordinator.appliedAnalysis = analysis
       context.coordinator.interaction.analysis = analysis
@@ -62,6 +77,7 @@ struct ZoomableImageView: UIViewRepresentable {
   final class Coordinator: NSObject, UIScrollViewDelegate {
     var imageView: UIImageView?
     var onSingleTap: (() -> Void)?
+    var onLongPress: (() -> Void)?
     let interaction = ImageAnalysisInteraction()
     var appliedAnalysis: ImageAnalysis?
 
@@ -73,6 +89,11 @@ struct ZoomableImageView: UIViewRepresentable {
     }
 
     @objc func tapped() { onSingleTap?() }
+
+    @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
+      guard gesture.state == .began else { return }
+      onLongPress?()
+    }
   }
 }
 
@@ -87,6 +108,11 @@ struct ViewerPage: View {
   @State private var asset: Asset?
   @State private var image: UIImage?
   @State private var liveText: ImageAnalysis?
+  /// WP-M (V6): page-local long-press menu (stills only — video/live pages
+  /// live in `LiveVideo.swift`, outside WP-M's allowance; see the report).
+  @State private var showLongPressMenu = false
+  @State private var showAlbumPicker = false
+  @State private var actionError: String?
 
   var body: some View {
     ZStack {
@@ -98,7 +124,9 @@ struct ViewerPage: View {
           asset: asset, motionAssetId: motionId,
           onSingleTap: onSingleTap, playRequest: livePlay)
       } else if let image {
-        ZoomableImageView(image: image, analysis: liveText, onSingleTap: onSingleTap)
+        ZoomableImageView(
+          image: image, analysis: liveText, onSingleTap: onSingleTap,
+          onLongPress: { showLongPressMenu = true })
       } else {
         ProgressView()
           .tint(.white)
@@ -107,6 +135,32 @@ struct ViewerPage: View {
     }
     .task(id: assetId) {
       await load()
+    }
+    // Page-local menu sheet: Delete confirms inside the menu and only then
+    // trashes, so automation asserts presence without tapping through (§0.5).
+    .sheet(isPresented: $showLongPressMenu) {
+      if let asset {
+        ViewerLongPressMenu(
+          asset: asset, access: session.access,
+          preview: image,
+          onShare: { share(asset) },
+          onFavorite: { toggleFavorite(asset) },
+          onCopy: { copyAsset(asset) },
+          onAddToAlbum: { showAlbumPicker = true },
+          onHide: { setHidden(asset) },
+          onTrash: { trash(asset) })
+      }
+    }
+    .sheet(isPresented: $showAlbumPicker) {
+      AlbumPickerSheet(assetIds: [assetId])
+        .environmentObject(session)
+    }
+    .alert("Action failed", isPresented: Binding(
+      get: { actionError != nil }, set: { if !$0 { actionError = nil } })
+    ) {
+      Button("OK") { actionError = nil }
+    } message: {
+      Text(actionError ?? "")
     }
   }
 
@@ -132,6 +186,80 @@ struct ViewerPage: View {
         if tier == .fullsize { break }
       } catch {
         break
+      }
+    }
+  }
+
+  /// WP-M (V6): page-local menu actions. Session-direct (the page owns no
+  /// chrome helpers): same mutation-then-refresh pattern as the grid menu, and
+  /// the same guarded share/copy paths as `ViewerView`. Failures surface in
+  /// the page alert; cancellations never do.
+  private func toggleFavorite(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.setFavorite(ids: [asset.id], isFavorite: !asset.isFavorite)
+    }
+  }
+
+  private func setHidden(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.setHidden(ids: [asset.id], isHidden: asset.visibility != .hidden)
+    }
+  }
+
+  private func trash(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.trash(ids: [asset.id])
+    }
+  }
+
+  private func share(_ asset: Asset) {
+    Task {
+      guard let base = session.apiBaseURL,
+        let token = await session.bearerToken(),
+        let window = UIApplication.shared.connectedScenes
+          .compactMap({ $0 as? UIWindowScene }).first?.windows.first
+      else { return }
+      do {
+        var request = URLRequest(
+          url: MediaEndpoint(serverURL: base, assetID: asset.id).originalURL())
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(asset.originalFileName)
+        try data.write(to: tmp)
+        let activity = UIActivityViewController(activityItems: [tmp], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+          popover.sourceView = window
+        }
+        window.rootViewController?.present(activity, animated: true)
+      } catch {
+        if !error.isCancellation { actionError = error.localizedDescription }
+      }
+    }
+  }
+
+  private func copyAsset(_ asset: Asset) {
+    Task {
+      guard let pipeline = session.pipeline,
+        let result = try? await pipeline.load(asset: asset, tier: .preview)
+      else { return }
+      switch result.content {
+      case .placeholder(let img), .tier(_, let img, _):
+        UIPasteboard.general.images = [img]
+      }
+    }
+  }
+
+  private func mutate(_ work: @escaping () async throws -> Void) {
+    Task {
+      do {
+        try await work()
+        try await session.refresh()
+        await load()
+      } catch {
+        if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
   }
@@ -305,6 +433,9 @@ struct ViewerView: View {
             .environmentObject(session)
         }
       }
+      // (WP-M V6 lives page-locally in `ViewerPage` below — a SwiftUI
+      // `.onLongPressGesture` on the UIKit-hosted pager never sees the touch,
+      // so the recognizer sits on the page's own image view.)
       // WP-R (F3b): item-based cover. The previous `isPresented` + captured-
       // `self` content could present a stale snapshot (empty canvas, chrome
       // only after a scene-phase re-sync). The item carries fresh values as

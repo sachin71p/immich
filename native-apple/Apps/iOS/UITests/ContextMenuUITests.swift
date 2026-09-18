@@ -10,13 +10,19 @@ final class ContextMenuUITests: XCTestCase {
     let app = Parity.launch()
     // G4/WP-M: long-press presents preview + the Photos action set. Today a
     // long-press opens the photo instead — red on base.
+    //
+    // Feasible set (WP-M): Duplicate is NOT required — `AssetMutations`
+    // exposes no duplicate operation and the server has no asset-duplicate
+    // endpoint, so a Duplicate button would be dead (same precedent as
+    // `SelectMoreMenu`, which omits Duplicate/Adjust-Date). Copy and Hide
+    // hold the strictness instead.
     let firstCell = app.collectionViews.cells.firstMatch
     XCTAssertTrue(firstCell.waitForExistence(timeout: 30))
     firstCell.press(forDuration: 0.8)
     Parity.require("grid-context-menu", in: app, gap: "G4", owner: "WP-M")
     for action in [
-      "grid-context-duplicate", "grid-context-share", "grid-context-favorite",
-      "grid-context-addto", "grid-context-delete",
+      "grid-context-copy", "grid-context-hide", "grid-context-share",
+      "grid-context-favorite", "grid-context-addto", "grid-context-delete",
     ] {
       Parity.require(action, in: app, gap: "G4", owner: "WP-M")
     }
@@ -31,6 +37,15 @@ final class ContextMenuUITests: XCTestCase {
     // V6/WP-M: long-press in the viewer is a documented no-op today.
     let pager = app.descendants(matching: .any)["viewer-pager"]
     XCTAssertTrue(pager.waitForExistence(timeout: 10))
+    // Sync on the photo itself, not just the pager: pressing while the page
+    // still shows its loading spinner races image decode (no image view, no
+    // gesture) and proves nothing about the menu.
+    let loading = app.descendants(matching: .any)["viewer-loading"]
+    if loading.waitForExistence(timeout: 5) {
+      let gone = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == false"), object: loading)
+      _ = XCTWaiter.wait(for: [gone], timeout: 15)
+    }
     pager.press(forDuration: 0.8)
     Parity.require("viewer-context-menu", in: app, gap: "V6", owner: "WP-M")
   }
