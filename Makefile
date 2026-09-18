@@ -23,7 +23,7 @@ CONFIGURATION ?= Release
 .DEFAULT_GOAL := help
 
 .PHONY: help xcodegen build-ios build-macos build-macos-debug check-ios-device install-ios install-ios-release install-macos \
-        test-core test-ios-ui test-macos-ui \
+        test-core test-ios-ui test-ios-ui-remote test-macos-ui \
         mock-server mock-server-down mock-server-logs ios-sim clean
 
 help:
@@ -36,6 +36,7 @@ help:
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
 	@echo "  make test-core          Run the PhotosCore SwiftPM test suite"
 	@echo "  make test-ios-ui        Run the iOS UI tests (Heirloom-iOS-UITests, Simulator)"
+	@echo "  make test-ios-ui-remote Run the iOS UI tests in the bridged VM (same TEST_FILTER)"
 	@echo "  make test-macos-ui      Run the macOS UI tests (Heirloom-macOS-UITests)"
 	@echo "  make mock-server        Start the local Heirloom server via Docker (built from source)"
 	@echo "  make mock-server-down   Stop the local Docker server"
@@ -173,6 +174,14 @@ test-ios-ui: xcodegen
 		-skipPackagePluginValidation \
 		-allowProvisioningUpdates \
 		-only-testing:Heirloom-iOS-UITests$(if $(TEST_FILTER),/$(TEST_FILTER))
+
+# Remote-VM variant of test-ios-ui (from shared-libraries bd501a8da, retargeted
+# so this branch's local TEST_FILTER workflow keeps working). Same scope
+# conventions: TEST_FILTER narrows (e.g. ParityViewerUITests), SIMULATOR_NAME
+# picks the guest simulator. Perf budgets stay gated on host/device (guest sim
+# graphics are software-rendered).
+test-ios-ui-remote:
+	cd $(NATIVE_DIR) && SIMULATOR_NAME="$(SIMULATOR_NAME)" ONLY_TESTING="Heirloom-iOS-UITests$(if $(TEST_FILTER),/$(TEST_FILTER))" ./scripts/run-ios-ui-tests.sh $(if $(GUEST),--guest $(GUEST))
 
 test-macos-ui: xcodegen
 	@mkdir -p $(MODULE_CACHE)
