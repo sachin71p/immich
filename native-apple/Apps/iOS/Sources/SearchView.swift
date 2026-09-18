@@ -386,7 +386,7 @@ struct SearchView: View {
       // Offline instant results first — the grid paints from the mirror even with no network.
       let localRows = try await store.filterAssets(filter.local, scope: resolved)
       guard generation == searchGeneration else { return }
-      if filter.wantsServerSearch, !session.isFixture, let serverURL = session.serverURL {
+      if filter.wantsServerSearch, !session.isFixture, let serverURL = session.apiBaseURL {
         let tokenStore = session.connection?.tokenStore
         let service = SearchService(
           baseURL: serverURL,

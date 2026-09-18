@@ -17,7 +17,7 @@ enum SearchSuggestionLoader {
     if let local = try? await localSuggestions(for: kind, session: session), !local.isEmpty {
       return local
     }
-    guard !session.isFixture, let serverURL = session.serverURL else { return [] }
+    guard !session.isFixture, let serverURL = session.apiBaseURL else { return [] }
     let service = SearchService(
       baseURL: serverURL, tokenProvider: session.searchTokenProvider())
     return (try? await service.suggestions(kind: kind, scope: uiScope)) ?? []

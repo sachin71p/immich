@@ -310,7 +310,7 @@ struct ViewerView: View {
       // only after a scene-phase re-sync). The item carries fresh values as
       // parameters, so the content can never go stale.
       .fullScreenCover(item: $editRequest) { request in
-        if let base = session.serverURL {
+        if let base = session.apiBaseURL {
           EditView(
             asset: request.asset, access: session.access, preview: request.preview,
             loadOriginalData: { [asset = request.asset] in try await downloadOriginal(asset) },
@@ -443,7 +443,7 @@ struct ViewerView: View {
 
   private func share(_ asset: Asset) {
     Task {
-      guard let base = session.serverURL,
+      guard let base = session.apiBaseURL,
         let token = await session.bearerToken(),
         let window = UIApplication.shared.connectedScenes
           .compactMap({ $0 as? UIWindowScene }).first?.windows.first
@@ -469,7 +469,7 @@ struct ViewerView: View {
 
   private func copyAsset(_ asset: Asset) {
     Task {
-      guard let base = session.serverURL,
+      guard let base = session.apiBaseURL,
         let token = await session.bearerToken()
       else { return }
       do {
@@ -571,7 +571,7 @@ struct ViewerView: View {
   }
 
   private func downloadOriginal(_ asset: Asset) async throws -> Data {
-    guard let base = session.serverURL, let token = await session.bearerToken() else {
+    guard let base = session.apiBaseURL, let token = await session.bearerToken() else {
       throw EditAccessError.notPermitted
     }
     var request = URLRequest(

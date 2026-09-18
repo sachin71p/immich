@@ -48,7 +48,7 @@ struct LivePhotoPageView: View {
   }
 
   private func load() async {
-    guard let base = session.serverURL,
+    guard let base = session.apiBaseURL,
       let token = await session.bearerToken()
     else {
       failed = true
@@ -274,7 +274,7 @@ struct VideoPage: View {
     if durationSeconds <= 0, let known = asset.durationSeconds, known > 0 {
       durationSeconds = Double(known)
     }
-    guard let base = session.serverURL,
+    guard let base = session.apiBaseURL,
       let token = await session.bearerToken()
     else { return }
     let url = MediaEndpoint(serverURL: base, assetID: asset.id).videoPlaybackURL()
