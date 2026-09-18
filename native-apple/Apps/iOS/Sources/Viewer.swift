@@ -1,5 +1,7 @@
 import AVFoundation
 import AVKit
+import CoreGraphics
+import CoreImage
 import CoreModel
 import Editing
 import LocalStore
@@ -26,12 +28,22 @@ struct ZoomableImageView: UIViewRepresentable {
   /// UIKit-hosted pager never sees the touch, so the recognizer sits here, on
   /// the image view itself, next to the existing tap recognizers.
   var onLongPress: (() -> Void)? = nil
+  /// WP-V (V8): pinch-in at minimum zoom dismisses back to the grid. Kept as a
+  /// separate recognizer (not the scroll view's zoom) so zooming while zoomed
+  /// in is unaffected — it only fires when the page ends at min zoom.
+  var onPinchDismiss: (() -> Void)? = nil
 
   func makeUIView(context: Context) -> UIScrollView {
     let scroll = UIScrollView()
     scroll.minimumZoomScale = 1
     scroll.maximumZoomScale = 6
     scroll.delegate = context.coordinator
+    let pinch = UIPinchGestureRecognizer(
+      target: context.coordinator, action: #selector(Coordinator.pinched(_:)))
+    // Never steal: the scroll view keeps full ownership of the zoom gesture.
+    pinch.cancelsTouchesInView = false
+    pinch.delegate = context.coordinator
+    scroll.addGestureRecognizer(pinch)
     let imageView = UIImageView()
     imageView.contentMode = .scaleAspectFit
     imageView.isUserInteractionEnabled = true
@@ -62,6 +74,7 @@ struct ZoomableImageView: UIViewRepresentable {
     context.coordinator.imageView?.image = image
     context.coordinator.onSingleTap = onSingleTap
     context.coordinator.onLongPress = onLongPress
+    context.coordinator.onPinchDismiss = onPinchDismiss
     if context.coordinator.appliedAnalysis !== analysis {
       context.coordinator.appliedAnalysis = analysis
       context.coordinator.interaction.analysis = analysis
@@ -74,14 +87,24 @@ struct ZoomableImageView: UIViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
-  final class Coordinator: NSObject, UIScrollViewDelegate {
+  final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     var imageView: UIImageView?
     var onSingleTap: (() -> Void)?
     var onLongPress: (() -> Void)?
+    var onPinchDismiss: (() -> Void)?
     let interaction = ImageAnalysisInteraction()
     var appliedAnalysis: ImageAnalysis?
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+
+    /// Alongside the scroll view's own zoom recognizer (which keeps working —
+    /// this never cancels its touches).
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      true
+    }
 
     @objc func zoomToggle(_ gesture: UITapGestureRecognizer) {
       guard let scroll = gesture.view?.superview as? UIScrollView else { return }
@@ -94,6 +117,39 @@ struct ZoomableImageView: UIViewRepresentable {
       guard gesture.state == .began else { return }
       onLongPress?()
     }
+
+    /// WP-V (V8): a pinch-in that ends at minimum zoom dismisses to the grid.
+    /// Pinch-outs (scale > 1) and anything ending zoomed in stay zooms — the
+    /// 0.85 gate keeps two-finger taps and jitter from dismissing.
+    @objc func pinched(_ gesture: UIPinchGestureRecognizer) {
+      guard gesture.state == .ended,
+        let scroll = gesture.view as? UIScrollView,
+        scroll.zoomScale <= 1.02,
+        gesture.scale < 0.85
+      else { return }
+      onPinchDismiss?()
+    }
+  }
+}
+
+/// WP-V (V2): display-only auto-enhance preview for the viewer still. Runs
+/// Core Image's auto-adjustment filters over the already-decoded display image
+/// (never the asset, never persisted) — the toggle in the top bar flips back
+/// to the untouched image.
+enum EnhancePreview {
+  /// Renders on a background task; the caller wraps the result in a `UIImage`.
+  /// Takes the `CGImage` (Sendable) so callers never ship a `UIImage` across
+  /// an actor boundary.
+  static func enhancedCG(_ cg: CGImage) -> CGImage? {
+    let input = CIImage(cgImage: cg)
+    var result = input
+    for filter in input.autoAdjustmentFilters() {
+      filter.setValue(result, forKey: kCIInputImageKey)
+      if let output = filter.outputImage { result = output }
+    }
+    // No adjustment applied: keep the original pixels, not a re-render.
+    if result === input { return cg }
+    return CIContext(options: nil).createCGImage(result, from: result.extent)
   }
 }
 
@@ -104,10 +160,20 @@ struct ViewerPage: View {
   var assetId: String
   var onSingleTap: (() -> Void)? = nil
   var livePlay: LivePlayRequest
+  /// WP-V (V2): shared enhance toggle (reference — the chrome flips it after
+  /// this page is built, so it must be observed, not a snapshot).
+  /// Video/live pages ignore it; stills preview it.
+  @ObservedObject var enhance: EnhanceState = EnhanceState()
+  /// WP-V (V8): pinch-in at min zoom dismisses (wired to the pager dismiss).
+  var onPinchDismiss: (() -> Void)? = nil
 
   @State private var asset: Asset?
   @State private var image: UIImage?
   @State private var liveText: ImageAnalysis?
+  /// WP-V (V2): enhanced render of the current `image` (nil while computing or
+  /// off — the body falls back to the untouched image, never a placeholder).
+  @State private var enhancedImage: UIImage?
+  @State private var enhanceGen = 0
   /// WP-M (V6): page-local long-press menu (stills only — video/live pages
   /// live in `LiveVideo.swift`, outside WP-M's allowance; see the report).
   @State private var showLongPressMenu = false
@@ -126,8 +192,9 @@ struct ViewerPage: View {
           onSingleTap: onSingleTap, playRequest: livePlay)
       } else if let image {
         ZoomableImageView(
-          image: image, analysis: liveText, onSingleTap: onSingleTap,
-          onLongPress: { showLongPressMenu = true })
+          image: displayImage ?? image, analysis: liveText, onSingleTap: onSingleTap,
+          onLongPress: { showLongPressMenu = true },
+          onPinchDismiss: onPinchDismiss)
       } else {
         ProgressView()
           .tint(HeirloomAppearance.viewerLoadingTint)
@@ -136,6 +203,11 @@ struct ViewerPage: View {
     }
     .task(id: assetId) {
       await load()
+    }
+    // WP-V (V2): the chrome's enhance toggle flips after this page is built —
+    // recompute the preview from whatever tier is current.
+    .onChange(of: enhance.on) {
+      Task { await updateEnhanced() }
     }
     // Page-local menu sheet: Delete confirms inside the menu and only then
     // trashes, so automation asserts presence without tapping through (§0.5).
@@ -165,6 +237,33 @@ struct ViewerPage: View {
     }
   }
 
+  /// WP-V (V2): what the zoom view paints — the enhanced render while the
+  /// toggle is on and ready, else the untouched tier image.
+  private var displayImage: UIImage? {
+    enhance.on ? (enhancedImage ?? image) : image
+  }
+
+  /// WP-V (V2): (re)build the enhanced preview off-main when the toggle is on.
+  /// Generation-guarded: a tier upgrade or toggle-off invalidates in-flight
+  /// work instead of flashing a stale render. Never synthesizes an image —
+  /// failure leaves the untouched pixels up.
+  private func updateEnhanced() async {
+    enhanceGen += 1
+    let gen = enhanceGen
+    guard enhance.on, let base = image else {
+      if !enhance.on { enhancedImage = nil }
+      return
+    }
+    let scale = base.scale
+    let orientation = base.imageOrientation
+    guard let cg = base.cgImage else { return }
+    let rendered = await Task.detached(priority: .userInitiated) {
+      EnhancePreview.enhancedCG(cg)
+    }.value
+    guard gen == enhanceGen else { return }
+    enhancedImage = rendered.map { UIImage(cgImage: $0, scale: scale, orientation: orientation) }
+  }
+
   private func load() async {
     guard let store = session.store else { return }
     asset = try? await store.asset(id: assetId)
@@ -180,6 +279,8 @@ struct ViewerPage: View {
         }
         if let next {
           image = next
+          // WP-V (V2): keep the preview in step with tier upgrades while on.
+          await updateEnhanced()
           // Live Text runs once, on the full tier only (P6: per-tier analysis on the
           // main actor stalled the viewer under load).
           if tier == .fullsize { await analyzeLiveText(next) }
@@ -308,8 +409,12 @@ struct ViewerView: View {
   @State private var openMs: Double?
   @State private var exif: AssetExif?
   @State private var ownerName: String?
+  /// V1 people badge: names depicting the current asset (empty hides it).
+  @State private var titlePeople: [String] = []
   @State private var showTrashConfirm = false
   @StateObject private var livePlay = LivePlayRequest()
+  /// V2 display-only enhance preview (never persisted — see `EnhancePreview`).
+  @StateObject private var enhanceState = EnhanceState()
   @Environment(\.dismiss) private var dismiss
   private let openStart = Date()
 
@@ -343,9 +448,11 @@ struct ViewerView: View {
         ViewerPager(
           ids: ids, session: session, currentIndex: $currentIndex,
           livePlay: livePlay,
+          enhance: enhanceState,
           dismissEnabled: !showInfo,
           onSingleTap: { showChrome.toggle() },
           onDismiss: { dismiss() },
+          onPinchDismiss: { dismiss() },
           onSwipeUp: { showInfo = true })
       }
       if showInfo, let asset {
@@ -378,10 +485,15 @@ struct ViewerView: View {
           ViewerTopBar(
             line1: pillLines.0, line2: pillLines.1,
             menu: AnyView(moreMenu),
-            onBack: { dismiss() })
+            onBack: { dismiss() },
+            // V2 enhance: stills only — video/live pages have no still to preview.
+            showEnhance: asset?.type == .image && asset?.livePhotoVideoId == nil,
+            enhanceOn: enhanceState.on,
+            onEnhance: { enhanceState.on.toggle() })
           ViewerBadgeRow(
             isLive: asset?.livePhotoVideoId != nil,
             ownerName: ownerName,
+            peopleNames: titlePeople,
             onPlayLive: { livePlay.token += 1 })
         }
         .padding(.horizontal, 12)
@@ -489,6 +601,8 @@ struct ViewerView: View {
       .onChange(of: currentIndex) { _, index in
         if ids.indices.contains(index) {
           currentId = ids[index]
+          // V2: the preview belongs to one photo — never leak it onto the next.
+          enhanceState.on = false
         }
       }
   }
@@ -748,6 +862,7 @@ struct ViewerView: View {
     guard let asset else {
       exif = nil
       ownerName = nil
+      titlePeople = []
       return
     }
     exif = try? await store.exif(for: asset.id)
@@ -757,6 +872,27 @@ struct ViewerView: View {
     {
       ownerName = user.name
     }
+    // V1 people badge: same matched-people pattern as the info panel (indexed
+    // per-person membership checks); runs per page change, off-main, and an
+    // empty result simply hides the badge.
+    titlePeople = await matchedPeople(for: asset, store: store)
+  }
+
+  /// Names depicting `asset`, deduplicated. Shared nothing with the panel's own
+  /// copy — the title badge must follow paging while the panel loads on open.
+  private func matchedPeople(for asset: Asset, store: PhotosLocalStore) async -> [String] {
+    let mine = (try? await store.peopleForOwner(session.userId)) ?? []
+    let others =
+      asset.ownerId == session.userId
+      ? [] : ((try? await store.peopleForOwner(asset.ownerId)) ?? [])
+    var names: [String] = []
+    for person in mine + others where !names.contains(person.name) {
+      let ids = try? await store.assetIds(forPerson: person.id, limit: 500)
+      if ids?.contains(asset.id) == true, !person.name.isEmpty {
+        names.append(person.name)
+      }
+    }
+    return names
   }
 }
 

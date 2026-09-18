@@ -170,13 +170,21 @@ struct VideoPage: View {
   /// WP-R/F2-diag: exact player error surfaced in the failure UI (no device
   /// log streaming available; the owner reads it off the screen).
   @State private var playbackError: String?
+  /// WP-V (V7): filmstrip slots (`nil` = placeholder awaiting its frame) plus
+  /// the closed-caption control state. The strip container renders as soon as
+  /// generation starts — frames stream in progressively, so a slow asset never
+  /// blocks the chrome.
+  @State private var filmstripActive = false
+  @State private var filmstripThumbs: [UIImage?] = []
+  @State private var ccAvailable = false
+  @State private var ccOn = false
 
   var body: some View {
     ZStack {
       Group {
         if let player {
           PlayerControllerView(player: player)
-            .accessibilityIdentifier("videoPlayerCanvas")
+            .accessibilityIdentifier("video-player-canvas")
             .onTapGesture { onSingleTap?() }
         } else if playbackFailed {
           VStack(spacing: 12) {
@@ -197,6 +205,11 @@ struct VideoPage: View {
       .task(id: "\(asset.id)-\(attempt)") {
         await makePlayer()
       }
+      // WP-V (V7): thumbnail generation runs beside playback (F2's player,
+      // retry, and error states below are untouched).
+      .task(id: "filmstrip-\(asset.id)-\(attempt)") {
+        await buildFilmstrip()
+      }
       .onDisappear {
         stopObserving()
         player?.pause()
@@ -204,38 +217,66 @@ struct VideoPage: View {
       }
       VStack {
         Spacer()
-        // Glass scrubber pill (spec native-11): play/pause, progress, mute. It
-        // reserves the chrome's bottom space so it always sits above the bar.
+        // Glass scrubber pill (V7, pair `09`): frame-thumbnail filmstrip over
+        // play · progress · time · CC · mute. It reserves the chrome's bottom
+        // space so it always sits above the bar.
         if player != nil {
-          HStack(spacing: 12) {
-            Button {
-              togglePlay()
-            } label: {
-              Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                .font(.title3)
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
+          VStack(spacing: 8) {
+            if filmstripActive {
+              VideoFilmstrip(
+                thumbs: filmstripThumbs, progress: progress,
+                onSeek: { seek(to: $0) }
+              )
             }
-            .accessibilityLabel(isPlaying ? "Pause" : "Play")
-            Slider(value: $progress, in: 0...1, onEditingChanged: endScrub)
-              .tint(.white)
-              .accessibilityLabel("Seek")
-            Button {
-              isMuted.toggle()
-              player?.isMuted = isMuted
-            } label: {
-              Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.fill")
-                .font(.title3)
-                .foregroundStyle(.white.opacity(isMuted ? 0.6 : 1))
-                .frame(width: 30, height: 30)
+            HStack(spacing: 12) {
+              Button {
+                togglePlay()
+              } label: {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                  .font(.title3)
+                  .foregroundStyle(.white)
+                  .frame(width: 30, height: 30)
+              }
+              .accessibilityLabel(isPlaying ? "Pause" : "Play")
+              Slider(value: $progress, in: 0...1, onEditingChanged: endScrub)
+                .tint(.white)
+                .accessibilityLabel("Seek")
+              Text(scrubTimeLabel)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.8))
+              Button {
+                setCC(!ccOn)
+              } label: {
+                Image(systemName: ccOn ? "captions.bubble.fill" : "captions.bubble")
+                  .font(.title3)
+                  .foregroundStyle(.white.opacity(ccAvailable ? (ccOn ? 1 : 0.8) : 0.4))
+                  .frame(width: 30, height: 30)
+              }
+              .accessibilityLabel("Closed Captions")
+              .accessibilityValue(ccOn ? "On" : "Off")
+              .accessibilityIdentifier("video-scrubber-cc")
+              .disabled(!ccAvailable)
+              Button {
+                isMuted.toggle()
+                player?.isMuted = isMuted
+              } label: {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.fill")
+                  .font(.title3)
+                  .foregroundStyle(.white.opacity(isMuted ? 0.6 : 1))
+                  .frame(width: 30, height: 30)
+              }
+              .accessibilityLabel(isMuted ? "Unmute" : "Mute")
+              .accessibilityIdentifier("video-scrubber-mute")
             }
-            .accessibilityLabel(isMuted ? "Unmute" : "Mute")
           }
           .padding(.horizontal, 16)
           .padding(.vertical, 10)
           .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
           .padding(.horizontal, 20)
           .padding(.bottom, ViewerLayout.bottomReserve)
+          // Containment first: without it this pill id floods the controls and
+          // the CC/mute ids stop resolving (same lesson as `video-page`).
+          .accessibilityElement(children: .contain)
           .accessibilityIdentifier("video-scrubber")
         }
       }
@@ -261,6 +302,11 @@ struct VideoPage: View {
         }
       }
     }
+    // WP-V (V7): explicit containment BEFORE the identifier (the codebase
+    // convention — `viewer-chrome-surface`, info panel). Reversed, the root's
+    // identifier propagates onto every child and the chrome's own ids stop
+    // resolving.
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("video-page")
   }
 
@@ -389,6 +435,167 @@ struct VideoPage: View {
     guard let player, durationSeconds > 0 else { return }
     progress = fraction
     player.seek(to: CMTime(seconds: fraction * durationSeconds, preferredTimescale: 600))
+  }
+
+  /// WP-V (V7): `elapsed / total` for the scrub row (fixture 0:07 reads `0:00 / 0:07`).
+  private var scrubTimeLabel: String {
+    let total = max(0, Int(durationSeconds.rounded()))
+    let elapsed = min(total, max(0, Int((progress * durationSeconds).rounded())))
+    return "\(VideoDurationFormat.string(seconds: elapsed)) / \(VideoDurationFormat.string(seconds: total))"
+  }
+
+  /// WP-V (V7): frame thumbnails for the filmstrip, generated from the same
+  /// authed playback asset the player streams (F2 postmortem: `apiBaseURL`,
+  /// never the raw server URL). Frames stream into their slots as they decode
+  /// — the container is already up, so a long asset never blocks the chrome.
+  /// Cancels with the view (task id) via `cancelAllCGImageGeneration`.
+  private func buildFilmstrip() async {
+    filmstripActive = false
+    filmstripThumbs = []
+    ccAvailable = false
+    ccOn = false
+    var total = Double(asset.durationSeconds ?? 0)
+    if total <= 0 {
+      // No record duration: wait briefly for the player's probe (F2 seeds this
+      // first, so this loop rarely spins).
+      for _ in 0..<50 {
+        if Task.isCancelled { return }
+        if durationSeconds > 0 { total = durationSeconds; break }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+      }
+    }
+    guard total > 0, !Task.isCancelled else { return }
+    guard let base = session.apiBaseURL,
+      let token = await session.bearerToken()
+    else { return }
+    let urlAsset = AVURLAsset(
+      url: MediaEndpoint(serverURL: base, assetID: asset.id).videoPlaybackURL(),
+      options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
+    let generator = AVAssetImageGenerator(asset: urlAsset)
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: 160, height: 160)
+    let count = 12
+    let times = (0..<count).map { i in
+      NSValue(time: CMTime(
+        seconds: total * (Double(i) + 0.5) / Double(count), preferredTimescale: 600))
+    }
+    // Slots first: the strip paints placeholders immediately, frames fill in.
+    filmstripThumbs = [UIImage?](repeating: nil, count: count)
+    filmstripActive = true
+    // The generator calls back off-main: collect `CGImage`s (Sendable) across
+    // the boundary and wrap them in `UIImage`s back on the main actor.
+    struct GeneratorHolder: @unchecked Sendable { let generator: AVAssetImageGenerator }
+    let holder = GeneratorHolder(generator: generator)
+    // The completion handler is `@Sendable`: mutable accumulation lives in a
+    // locked box, never in captured locals.
+    final class FilmstripCollector: @unchecked Sendable {
+      private let lock = NSLock()
+      private var collected: [(Int, CGImage)] = []
+      private var received = 0
+      func append(_ item: (Int, CGImage)?, total: Int) -> [(Int, CGImage)]? {
+        lock.withLock {
+          if let item { collected.append(item) }
+          received += 1
+          return received >= total ? collected : nil
+        }
+      }
+    }
+    let collector = FilmstripCollector()
+    let slots = await withTaskCancellationHandler {
+      await withCheckedContinuation { (continuation: CheckedContinuation<[(Int, CGImage)], Never>) in
+        generator.generateCGImagesAsynchronously(forTimes: times) {
+          requestedTime, cgImage, _, result, _ in
+          let item: (Int, CGImage)? =
+            if let cgImage, result == .succeeded,
+              let index = times.firstIndex(where: { $0.timeValue == requestedTime })
+            {
+              (index, cgImage)
+            } else {
+              nil
+            }
+          if let done = collector.append(item, total: count) {
+            continuation.resume(returning: done)
+          }
+        }
+      }
+    } onCancel: {
+      holder.generator.cancelAllCGImageGeneration()
+    }
+    if Task.isCancelled { return }
+    for (index, cgImage) in slots where filmstripThumbs.indices.contains(index) {
+      filmstripThumbs[index] = UIImage(cgImage: cgImage)
+    }
+    // Captions ride on the now-loaded asset: a real toggle when tracks exist,
+    // honestly disabled when they don't (never a dead button).
+    if let group = urlAsset.mediaSelectionGroup(forMediaCharacteristic: .legible),
+      !group.options.isEmpty
+    {
+      ccAvailable = true
+    }
+  }
+
+  /// WP-V (V7): toggle the legible track; no-op when the asset has none (the
+  /// button is disabled there, so this is a backstop, not a path).
+  private func setCC(_ on: Bool) {
+    guard let item = player?.currentItem,
+      let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
+      !group.options.isEmpty
+    else { return }
+    if on {
+      if let option = group.options.first { item.select(option, in: group) }
+    } else {
+      item.select(nil, in: group)
+    }
+    ccOn = on
+  }
+}
+
+/// WP-V (V7): frame-thumbnail scrub strip (pair `09`). Tap seeks; the white
+/// playhead tracks `progress` while playing. Tap-only (never a drag) so the
+/// pager's own gestures — swipe down to dismiss, swipe up for info, sideways
+/// to page — keep every touch that moves: the Slider below stays the
+/// drag-scrub surface, as before.
+private struct VideoFilmstrip: View {
+  var thumbs: [UIImage?]
+  var progress: Double
+  var onSeek: (_ fraction: Double) -> Void
+
+  var body: some View {
+    GeometryReader { geo in
+      HStack(spacing: 2) {
+        ForEach(thumbs.indices, id: \.self) { index in
+          Group {
+            if let image = thumbs[index] {
+              Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+            } else {
+              Rectangle().fill(.white.opacity(0.15))
+            }
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .clipped()
+          .clipShape(RoundedRectangle(cornerRadius: 4))
+          .accessibilityIdentifier("video-scrubber-frame")
+        }
+      }
+      .overlay(alignment: .leading) {
+        Rectangle()
+          .fill(.white)
+          .frame(width: 2)
+          .offset(x: min(max(progress, 0), 1) * geo.size.width)
+      }
+      .onTapGesture(coordinateSpace: .local) { location in
+        let width = max(geo.size.width, 1)
+        onSeek(min(max(location.x / width, 0), 1))
+      }
+    }
+    .frame(height: 44)
+    .accessibilityLabel("Video filmstrip scrubber")
+    // Containment BEFORE the identifier (codebase convention): the strip keeps
+    // its own id and the per-frame ids keep theirs.
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("video-scrubber-filmstrip")
   }
 }
 
