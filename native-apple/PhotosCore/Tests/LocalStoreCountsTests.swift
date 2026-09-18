@@ -77,4 +77,76 @@ struct LocalStoreCountsTests {
     #expect(
       try await store.nativeCollectionCount(scope: Self.scope(), collection: .selfies) == 0)
   }
+
+  @Test("captured/archive/locked counts match their destinations")
+  func utilityCounts() async throws {
+    let store = try PhotosLocalStore(inMemory: true)
+    try await Self.seed(into: store)
+    // Owner-based: all 5 seeded assets are alice's; a-trash is excluded
+    // (trashed) while a-hidden counts (only locked is excluded).
+    #expect(try await store.capturedByMeCount(userId: "user-alice", scope: Self.scope()) == 4)
+    #expect(try await store.capturedByMeCount(userId: "nobody", scope: Self.scope()) == 0)
+    #expect(try await store.archiveCount(scope: Self.scope()) == 0)
+    #expect(try await store.lockedCount(userId: "user-alice") == 0)
+  }
+
+  @Test("dayAssetIds mirrors the day bucket predicate, date desc")
+  func recentDayIds() async throws {
+    let store = try PhotosLocalStore(inMemory: true)
+    try await Self.seed(into: store)
+    #expect(try await store.dayAssetIds(scope: Self.scope(), dayKey: "2024-06-01") == ["a-photo"])
+    #expect(try await store.dayAssetIds(scope: Self.scope(), dayKey: "2024-06-02") == ["a-video"])
+    #expect(try await store.dayAssetIds(scope: Self.scope(), dayKey: "2024-01-01") == [])
+  }
+
+  // MARK: - C1a (WP4): why person counts read 0 with empty names
+
+  /// Verifies the C1a hypothesis on fixture-shaped data: the person↔asset link is
+  /// the `face` join (`face.personId` set + `isVisible`), so a named person with a
+  /// visible face counts 1; an unassigned face (`personId == nil`, the clustered /
+  /// unconfirmed state the server syncs) attributes to nobody; and an unnamed
+  /// person with no faces is returned with count 0 — the row the UI must hide
+  /// (hide unnamed AND zero-asset), not a mapping bug to fix in sync.
+  @Test("C1a: person counts come from the face join; unassigned faces count nowhere")
+  func personCountsComeFromFaceJoin() async throws {
+    let store = try PhotosLocalStore(inMemory: true)
+    try await Self.seed(into: store)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    try await store.apply(
+      [
+        .person(
+          Person(
+            id: "p-bob", createdAt: now, updatedAt: now, ownerId: "user-alice",
+            name: "Bob", faceAssetId: "a-photo")),
+        .face(
+          Face(
+            id: "f1", assetId: "a-photo", personId: "p-bob", imageWidth: 100,
+            imageHeight: 200, boundingBoxX1: 1, boundingBoxY1: 2, boundingBoxX2: 3,
+            boundingBoxY2: 4, sourceType: "machine")),
+        // Clustered but unconfirmed face: no personId, so it joins to nobody.
+        .face(
+          Face(
+            id: "f2", assetId: "a-video", personId: nil, imageWidth: 100,
+            imageHeight: 200, boundingBoxX1: 1, boundingBoxY1: 2, boundingBoxX2: 3,
+            boundingBoxY2: 4, sourceType: "machine")),
+        // Unnamed person with no faces: the "Unnamed · 0" row from the audit.
+        .person(
+          Person(
+            id: "p-ghost", createdAt: now, updatedAt: now, ownerId: "user-alice",
+            name: "")),
+      ],
+      currentUserId: "user-alice"
+    )
+    let summaries = try await store.peopleSummaries(userId: "user-alice")
+    let bob = summaries.first { $0.id == "p-bob" }
+    #expect(bob?.assetCount == 1)
+    #expect(bob?.name == "Bob")
+    // The unassigned face attributes to nobody: total attributed faces stays 1.
+    #expect(summaries.reduce(0) { $0 + $1.assetCount } == 1)
+    let ghost = summaries.first { $0.id == "p-ghost" }
+    #expect(ghost?.name == "")
+    #expect(ghost?.assetCount == 0)
+    // And the id path agrees with the summary count.
+    #expect(try await store.assetIds(forPerson: "p-bob") == ["a-photo"])
+  }
 }

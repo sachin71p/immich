@@ -129,6 +129,20 @@ extension PhotosLocalStore {
     }
   }
 
+  /// Albums containing one asset (viewer info panel): a single indexed join over
+  /// `albumAsset_on_assetId` — never a per-album asset scan.
+  public func albumsContaining(assetId: String) async throws -> [Album] {
+    try await dbQueue.read { db in
+      try AlbumRecord
+        .filter(
+          sql: "id IN (SELECT albumId FROM albumAsset WHERE assetId = ?)", arguments: [assetId]
+        )
+        .order(Column("updatedAt").desc)
+        .fetchAll(db)
+        .map(\.model)
+    }
+  }
+
   // MARK: - asset details for the viewer
 
   public func exif(for assetId: String) async throws -> AssetExif? {

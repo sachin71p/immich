@@ -1,5 +1,6 @@
 import CoreModel
 import LocalStore
+import Rules
 import SwiftUI
 
 // MARK: - shared libraries (brief task 6, DECISIONS §4 + §8)
@@ -67,16 +68,19 @@ struct SpaceCreateSheet: View {
   }
 }
 
-/// Space detail: timeline scoped by spaceId (DECISIONS §9 explicit filter), rename, members
-/// (add/remove, leave, transfer), delete with the §8 consequences text.
+// MARK: - space detail (WP4 §7: hero cover + grid, date desc)
+
+// Space timeline scoped by spaceId (DECISIONS §9 explicit filter), rendered by the
+// WP1 grid over a live `.timeline` scope — date desc comes from the index (C5).
+// Rename/members/delete keep the §4 + §8 behaviours below the grid.
 struct SpaceDetailView: View {
   @EnvironmentObject var session: AppSession
   var spaceId: String
 
   @State private var space: Space?
   @State private var members: [SpaceMember] = []
-  @State private var rows: [TimelineRow] = []
-  @State private var viewerRequest: ViewerRequest?
+  @State private var scope: ContainerScope?
+  @State private var coverId: String?
   @State private var showRename = false
   @State private var showAddMember = false
   @State private var showTransfer = false
@@ -84,67 +88,20 @@ struct SpaceDetailView: View {
   @State private var error: String?
 
   var body: some View {
-    List {
-      Section("Timeline") {
-        if rows.isEmpty {
-          Text("No assets yet.").foregroundStyle(.secondary)
-        } else {
-          ForEach(rows) { row in
-            Button {
-              viewerRequest = ViewerRequest(ids: rows.map(\.id), initialId: row.id)
-            } label: {
-              HStack {
-                RowThumbnail(rowId: row.id)
-                  .frame(width: 44, height: 44)
-                  .clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
-                  .font(.subheadline)
-                Spacer()
-                if row.isFavorite { Image(systemName: "heart.fill").foregroundStyle(.red) }
-              }
-            }
-          }
-        }
-      }
-      Section("Members (\(members.count))") {
-        ForEach(members, id: \.userId) { member in
-          HStack {
-            Text(member.userId == session.userId ? "You" : member.userId)
-            Spacer()
-            Text(member.role.rawValue)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-            // Owner and contributors alike may add/remove contributors (DECISIONS §4); only the
-            // owner row and one's own row are protected here (leave covers self-removal).
-            if isMember && member.userId != session.userId && member.role == .contributor {
-              Button("Remove") { removeMember(member.userId) }
-                .font(.caption)
-            }
-          }
-        }
-        if isMember {
-          Button("Add Members") { showAddMember = true }
-        }
-      }
-      if isMember {
-        Section("Manage") {
-          Button("Rename") { showRename = true }
-          if isOwner {
-            Button("Transfer Ownership…") { showTransfer = true }
-            Button("Delete Shared Library…", role: .destructive) { showDelete = true }
-          } else {
-            // Contributors may leave; the owner must delete or transfer first (§4).
-            Button("Leave", role: .destructive) { leave() }
-          }
-        }
-      }
-      if let error {
-        Section { Text(error).foregroundStyle(.red).font(.caption) }
+    Group {
+      if let scope {
+        GridDetailView(
+          title: space?.name ?? "Shared Library",
+          source: .timeline(scope: scope, granularity: .day),
+          header: AnyView(HeroCoverHeader(
+            coverId: coverId, title: space?.name ?? "Shared Library",
+            subtitle: "\(members.count) Members")))
+      } else {
+        ProgressView().navigationTitle("Shared Library")
       }
     }
-    .navigationTitle(space?.name ?? "Shared Library")
-    .refreshable { await reload() }
     .task { await reload() }
+    .refreshable { await reload() }
     .sheet(isPresented: $showRename) {
       SpaceRenameSheet(spaceId: spaceId, currentName: space?.name ?? "")
         .environmentObject(session)
@@ -172,8 +129,8 @@ struct SpaceDetailView: View {
       Text(
         "All its assets return to each contributor's personal library. Albums are untouched.")
     }
-    .fullScreenCover(item: $viewerRequest) { request in
-      ViewerView(ids: request.ids, initialId: request.initialId)
+    .safeAreaInset(edge: .bottom) {
+      spaceMemberBar
     }
   }
 
@@ -185,15 +142,52 @@ struct SpaceDetailView: View {
     members.first { $0.userId == session.userId }?.role == .owner
   }
 
+  @ViewBuilder
+  private var spaceMemberBar: some View {
+    Menu {
+      Section("Members (\(members.count))") {
+        ForEach(members, id: \.userId) { member in
+          Text("\(member.userId == session.userId ? "You" : member.userId) · \(member.role.rawValue)")
+        }
+      }
+      if isMember {
+        Button("Add Members") { showAddMember = true }
+        Button("Rename") { showRename = true }
+        if isOwner {
+          Button("Transfer Ownership…") { showTransfer = true }
+          Button("Delete Shared Library…", role: .destructive) { showDelete = true }
+        } else {
+          // Contributors may leave; the owner must delete or transfer first (§4).
+          Button("Leave", role: .destructive) { leave() }
+        }
+      }
+    } label: {
+      HStack {
+        Image(systemName: "person.2.fill").font(.caption)
+        Text("\(members.count) Members").font(.caption)
+        Spacer()
+        if let error {
+          Text(error).font(.caption2).foregroundStyle(.red).lineLimit(1)
+        }
+      }
+      .padding(.horizontal)
+      .padding(.vertical, 8)
+      .background(.thinMaterial)
+    }
+    .accessibilityIdentifier("space-members")
+  }
+
   private func reload() async {
     guard let store = session.store else { return }
     do {
       space = try await store.space(id: spaceId)
       members = try await store.membersOfSpace(spaceId)
-      // Timeline scoped by spaceId — the explicit filter overrides preferences (§9), access-checked
-      // by Rules.TimelineScope (non-members resolve to an empty scope).
-      let scope = try await session.timelineScope(explicit: .space(spaceId))
-      rows = try await store.recentAssets(scope: scope)
+      // Timeline scoped by spaceId — the explicit filter overrides preferences (§9),
+      // access-checked by Rules.TimelineScope (non-members resolve to an empty scope).
+      scope = try await session.timelineScope(explicit: .space(spaceId))
+      if let scope {
+        coverId = try await store.recentAssets(scope: scope, limit: 1).first?.id
+      }
     } catch {
       self.error = error.localizedDescription
     }
@@ -378,24 +372,30 @@ struct SpaceTransferSheet: View {
 struct LibraryDetailView: View {
   @EnvironmentObject var session: AppSession
   var library: Library
-  @State private var rows: [TimelineRow] = []
+  @State private var scope: ContainerScope?
+  @State private var coverId: String?
 
   var body: some View {
-    List(rows) { row in
-      HStack {
-        RowThumbnail(rowId: row.id)
-          .frame(width: 44, height: 44)
-          .clipShape(RoundedRectangle(cornerRadius: 6))
-        Text(row.localDateTime?.formatted(date: .abbreviated, time: .shortened) ?? "No date")
-          .font(.subheadline)
+    Group {
+      if let scope {
+        GridDetailView(
+          title: library.name,
+          source: .timeline(scope: scope, granularity: .day),
+          header: AnyView(HeroCoverHeader(
+            coverId: coverId, title: library.name,
+            subtitle: "External Library")))
+      } else {
+        ProgressView().navigationTitle(library.name)
       }
     }
-    .navigationTitle(library.name)
-    .task {
-      guard let store = session.store else { return }
-      if let scope = try? await session.timelineScope(explicit: .library(library.id)) {
-        rows = (try? await store.recentAssets(scope: scope)) ?? []
-      }
-    }
+    .task { await load() }
+    .refreshable { await load() }
+  }
+
+  private func load() async {
+    guard let store = session.store else { return }
+    guard let scope = try? await session.timelineScope(explicit: .library(library.id)) else { return }
+    self.scope = scope
+    coverId = try? await store.recentAssets(scope: scope, limit: 1).first?.id
   }
 }

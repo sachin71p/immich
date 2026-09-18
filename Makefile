@@ -6,6 +6,12 @@ DOCKER_DIR     := docker
 DERIVED_DATA   := $(NATIVE_DIR)/.build/DerivedData
 MODULE_CACHE   := $(NATIVE_DIR)/.build/clang-module-cache
 SIMULATOR_NAME ?= iPhone 17 Pro Max
+IOS_DEVICE      ?=
+# Connected-device aliases. Pass a literal device name or UDID to IOS_DEVICE
+# when working with a device not listed here.
+IOS_DEVICE_spatel := 00008150-0002604111A1401C
+IOS_DEVICE_bpatel := 00008150-00183958148B401C
+IOS_DEVICE_UDID  := $(or $(IOS_DEVICE_$(IOS_DEVICE)),$(IOS_DEVICE))
 IOS_BUNDLE_ID  := com.immich.heirloom.ios
 SERVER_URL     := http://localhost:2283
 DEVELOPMENT_TEAM ?= 599Z443923
@@ -16,13 +22,14 @@ CONFIGURATION ?= Release
 
 .DEFAULT_GOAL := help
 
-.PHONY: help xcodegen build-ios build-macos build-macos-debug install-macos \
+.PHONY: help xcodegen build-ios build-macos build-macos-debug check-ios-device install-ios install-macos \
         test-core test-macos-ui \
         mock-server mock-server-down mock-server-logs ios-sim clean
 
 help:
 	@echo "Heirloom native app targets:"
 	@echo "  make build-ios          Build the iOS app for the Simulator"
+	@echo "  make install-ios        Build, install, and launch the iOS app on a connected iPhone"
 	@echo "  make build-macos        Build the macOS app (CONFIGURATION=$(CONFIGURATION), default Release)"
 	@echo "  make build-macos-debug  Build the macOS app in Debug (developer iteration)"
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
@@ -35,6 +42,8 @@ help:
 	@echo "  make clean              Remove native-apple build output"
 	@echo ""
 	@echo "Override SIMULATOR_NAME=\"iPhone ...\" to target a different simulator."
+	@echo "Use IOS_DEVICE=spatel or IOS_DEVICE=bpatel with install-ios."
+	@echo "A literal iPhone name or UDID also works for IOS_DEVICE."
 
 xcodegen:
 	cd $(NATIVE_DIR) && xcodegen generate
@@ -50,6 +59,33 @@ build-ios: xcodegen
 		-derivedDataPath .build/DerivedData \
 		-skipPackagePluginValidation \
 		build
+
+# Build a signed device bundle rather than the Simulator bundle produced by
+# build-ios, then install and launch it using Xcode's CoreDevice CLI.  Building
+# for a generic device keeps IOS_DEVICE usable as either an alias, a friendly
+# device name, or a UDID when devicectl performs the install.
+check-ios-device:
+	@if [ -z "$(IOS_DEVICE)" ]; then echo "error: set IOS_DEVICE to a connected iPhone name or UDID (find it with: xcrun devicectl list devices)" >&2; exit 2; fi
+
+install-ios: check-ios-device xcodegen
+	@mkdir -p $(MODULE_CACHE)
+	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild \
+		-project Heirloom.xcodeproj \
+		-scheme Heirloom-iOS \
+		-configuration Debug \
+		-destination 'generic/platform=iOS' \
+		-derivedDataPath .build/DerivedData \
+		-skipPackagePluginValidation \
+		-allowProvisioningUpdates \
+		-allowProvisioningDeviceRegistration \
+		build
+	@set -e; \
+	app="$(DERIVED_DATA)/Build/Products/Debug-iphoneos/Heirloom-iOS.app"; \
+	if [ ! -d "$$app" ]; then echo "error: $$app not found after device build" >&2; exit 1; fi; \
+	xcrun devicectl device install app --device "$(IOS_DEVICE_UDID)" "$$app"; \
+	xcrun devicectl device process launch --device "$(IOS_DEVICE_UDID)" --terminate-existing $(IOS_BUNDLE_ID); \
+	echo ""; \
+	echo "Heirloom is running on $(IOS_DEVICE)."
 
 # Uses the project's own (automatic) signing config, unlike verify.sh's ad-hoc
 # CI build, so the installed app keeps its App Group entitlement and the

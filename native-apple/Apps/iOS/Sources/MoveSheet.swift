@@ -5,74 +5,64 @@ import Rules
 import SwiftUI
 import UIKit
 
-// MARK: - selection action bar (brief task 5)
+// MARK: - selection action bar (WP2 §4: native bottom select toolbar)
 
-/// Multi-select action bar: share, favorite, add to album, move to…, archive, delete.
-/// Every action is gated by `Rules.Permissions` (brief task 9) — unavailable actions are hidden,
-/// never offered-then-rejected.
+// Native select-mode bottom toolbar (spec native-09/10): it replaces the tab bar
+// while selecting. Share on the left (the existing export implementation),
+// a centre "N Selected" label ("Select Items" when empty), Trash on the right
+// with a confirmation. Favorite/Add-to-Album/Move/Archive/Hide live in the top
+// "…" menu (`SelectMoreMenu`); ✕ in the top bar exits. Every action is gated by
+// `Rules.Permissions` — unavailable actions hide, never offered-then-rejected.
 struct SelectionActionBar: View {
   @EnvironmentObject var session: AppSession
   var selectedIds: Set<String>
   var onClear: () -> Void
-  var onMove: () -> Void
   var onError: (String) -> Void
 
   @State private var assets: [Asset] = []
-  @State private var showAlbumPicker = false
+  @State private var showTrashConfirm = false
 
   var body: some View {
-    VStack(spacing: 2) {
-      Text("\(selectedIds.count) selected")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 16) {
-          if canShare {
-            Button("Share") { shareSelected() }
-          }
-          if canFavorite {
-            Button("Favorite") {
-              mutate {
-                guard let mutations = session.assetMutations else { return }
-                try await mutations.setFavorite(ids: ids, isFavorite: true)
-              }
-            }
-          }
-          if canEdit {
-            Button("Add to Album") { showAlbumPicker = true }
-            Button("Archive") {
-              mutate {
-                guard let mutations = session.assetMutations else { return }
-                try await mutations.setArchived(ids: ids, isArchived: true)
-              }
-            }
-          }
-          if canMove {
-            Button("Move to…") { onMove() }
-          }
-          if canDelete {
-            Button("Delete", role: .destructive) {
-              mutate {
-                guard let mutations = session.assetMutations else { return }
-                try await mutations.trash(ids: ids)
-              }
-            }
-          }
-          Button("Clear") { onClear() }
+    HStack {
+      if canShare {
+        Button {
+          shareSelected()
+        } label: {
+          Label("Share", systemImage: "square.and.arrow.up")
         }
-        .buttonStyle(.bordered)
-        .padding(.horizontal)
+        .accessibilityIdentifier("select-share")
+      }
+      Spacer()
+      Text(selectedIds.isEmpty ? "Select Items" : "\(selectedIds.count) Selected")
+        .font(.headline)
+        .accessibilityIdentifier("select-count")
+      Spacer()
+      if canDelete {
+        Button(role: .destructive) {
+          showTrashConfirm = true
+        } label: {
+          Label("Delete", systemImage: "trash")
+        }
+        .accessibilityIdentifier("select-trash")
       }
     }
-    .padding(.vertical, 6)
+    .padding(.horizontal)
+    .padding(.vertical, 10)
     .task(id: selectedIds) {
       if let store = session.store {
         assets = (try? await store.assets(ids: ids)) ?? []
       }
     }
-    .sheet(isPresented: $showAlbumPicker) {
-      AlbumPickerSheet(assetIds: ids)
-        .environmentObject(session)
+    .alert("Move \(selectedIds.count) item(s) to Trash?", isPresented: $showTrashConfirm) {
+      Button("Cancel", role: .cancel) {}
+        .accessibilityIdentifier("trash-cancel")
+      Button("Move to Trash", role: .destructive) {
+        mutate {
+          guard let mutations = session.assetMutations else { return }
+          try await mutations.trash(ids: ids)
+        }
+      }
+      .accessibilityIdentifier("trash-confirm")
     }
   }
 
@@ -82,18 +72,6 @@ struct SelectionActionBar: View {
 
   private var canShare: Bool {
     !assets.isEmpty && assets.allSatisfy { Permissions.hasContainerAccess($0.container, in: ctx) }
-  }
-
-  private var canFavorite: Bool {
-    !assets.isEmpty && assets.allSatisfy { Permissions.canFavorite($0, in: ctx) }
-  }
-
-  private var canEdit: Bool {
-    !assets.isEmpty && assets.allSatisfy { Permissions.canEdit($0, in: ctx) }
-  }
-
-  private var canMove: Bool {
-    !assets.isEmpty && assets.contains { !MoveTargets.allowed(for: $0, in: ctx).isEmpty }
   }
 
   private var canDelete: Bool {
@@ -136,6 +114,7 @@ struct SelectionActionBar: View {
       do {
         try await work()
         try await session.refresh()
+        onClear()
       } catch {
         // L2: cancellation is never a user-facing error.
         if !error.isCancellation { onError(error.localizedDescription) }

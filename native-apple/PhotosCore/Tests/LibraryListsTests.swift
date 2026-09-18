@@ -85,6 +85,15 @@ struct LibraryListsTests {
     #expect(try await store.assetIds(inAlbum: "album-trip") == ["a-space", "a-personal"])
   }
 
+  @Test func albumsContainingAsset() async throws {
+    let store = try PhotosLocalStore(inMemory: true)
+    try await Self.seed(into: store)
+    #expect(try await store.albumsContaining(assetId: "a-personal").map(\.id) == ["album-trip"])
+    #expect(try await store.albumsContaining(assetId: "a-space").map(\.id) == ["album-trip"])
+    #expect(try await store.albumsContaining(assetId: "a-bob-space").isEmpty)
+    #expect(try await store.albumsContaining(assetId: "no-such-asset").isEmpty)
+  }
+
   @Test func utilitiesQueries() async throws {
     let store = try PhotosLocalStore(inMemory: true)
     try await Self.seed(into: store)

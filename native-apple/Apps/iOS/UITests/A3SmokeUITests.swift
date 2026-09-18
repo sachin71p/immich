@@ -9,10 +9,12 @@ final class A3SmokeUITests: XCTestCase {
     app.launchArguments += ["-useFixtureStore"]
     app.launch()
 
-    // Grid renders from the fixture DB.
+    // Grid renders from the fixture DB (normalize a possibly-persisted zoom first).
+    let allPhotos = app.buttons["All Photos"]
+    if allPhotos.waitForExistence(timeout: 10) { allPhotos.tap() }
     XCTAssertTrue(
-      app.buttons["library-switcher"].waitForExistence(timeout: 30),
-      "library switcher (and grid) should render from the fixture DB")
+      app.descendants(matching: .any)["library-grid"].waitForExistence(timeout: 30),
+      "library grid should render from the fixture DB")
 
     // Open the viewer by tapping the first grid cell.
     let firstCell = app.collectionViews.cells.firstMatch
@@ -21,12 +23,19 @@ final class A3SmokeUITests: XCTestCase {
     XCTAssertTrue(
       app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 10),
       "tapping a grid cell should open the viewer")
-    app.buttons["Close"].tap()
+    // WP3 chrome: the ✕ Close became a glass back chevron (swipe-down also works).
+    if !app.buttons["viewer-back"].waitForExistence(timeout: 10) {
+      app.swipeDown()
+    } else {
+      app.buttons["viewer-back"].tap()
+    }
 
-    // Select + move sheet lists the Rules.MoveTargets for the selection.
+    // Select + "…" menu + move sheet lists the Rules.MoveTargets for the selection.
+    // (WP2: bulk actions moved from the bottom bar into the top "…" menu.)
     app.buttons["Select"].tap()
     app.collectionViews.cells.firstMatch.tap()
-    app.buttons["Move to…"].tap()
+    app.descendants(matching: .any)["select-more-menu"].tap()
+    app.descendants(matching: .any)["select-action-move-to"].tap()
     XCTAssertTrue(
       app.descendants(matching: .any)["move-targets"].waitForExistence(timeout: 10),
       "move sheet should list correct targets for the selection")
