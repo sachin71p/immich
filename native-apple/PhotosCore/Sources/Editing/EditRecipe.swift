@@ -5,16 +5,22 @@ import Foundation
 /// The metadata-KV key holding the fork's edit recipe. The stored value is always a JSON
 /// object (`PUT /assets/:id/metadata` requires object values — server/src/dtos/asset.dto.ts
 /// `AssetMetadataUpsertItemSchema`):
-/// `{ "format": "fork.editRecipe.v1", "sourceAssetId": ..., "savedAt": ...,
+/// `{ "format": "fork.editRecipe.v2", "sourceAssetId": ..., "savedAt": ...,
 ///    "recipe": {...}, "renderedAssetId": ...? }` — see `EditPersistencePayload`.
+///
+/// E1 v2: reads try `.current` first and fall back to `.legacy` (decoded with identity
+/// defaults for missing keys, as before); saves write `.current` only and delete `.legacy`
+/// after a successful write (lazy migration on touch — no standalone migration job).
 public enum EditRecipeKey {
-  public static let current = "fork.editRecipe.v1"
+  public static let current = "fork.editRecipe.v2"
+  public static let legacy = "fork.editRecipe.v1"
 }
 
 /// A full non-destructive edit description. The original bytes are never modified: operations
 /// upstream supports (crop rectangle, quarter-turn rotation, flips) are ALSO sent to
 /// `PUT /assets/:id/edits`, while this recipe is the source of truth for everything else and
-/// for the client-side full-resolution render that is uploaded as a NEW asset.
+/// for the client-side full-resolution render that is PUT as the asset's rendition
+/// (`PUT /assets/:id/rendition`) on the same asset — no separate asset is ever created.
 public struct EditRecipe: Sendable, Codable, Equatable {
   public static let schemaVersion = 1
 

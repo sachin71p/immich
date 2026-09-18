@@ -16,7 +16,8 @@ import Foundation
 /// persisted versions — including ones lacking D1–D4 keys (sibling
 /// workstreams) — decode with identity defaults and render identically.
 public enum EditVersionKey {
-  public static let current = "fork.editVersions.v1"
+  public static let current = "fork.editVersions.v2"
+  public static let legacy = "fork.editVersions.v1"
 }
 
 /// One persisted Done: the full recipe plus when it was saved.
@@ -159,12 +160,24 @@ public struct EditVersionPayload: Sendable, Codable, Equatable {
 }
 
 extension RESTEditPersistence {
-  // MARK: - Version stack KV (`/assets/:id/metadata`, beside the recipe key)
+  // MARK: - Version stack KV (`/assets/:id/metadata`, beside the recipe key, v2 with v1 dual-read)
 
   public func fetchVersions(assetId: String) async throws -> EditVersionPayload? {
-    let key = EditVersionKey.current.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-      ?? EditVersionKey.current
-    let (data, status) = try await get(path: "assets/\(assetId)/metadata/\(key)")
+    if let payload = try await fetchVersions(assetId: assetId, key: EditVersionKey.current) {
+      return payload
+    }
+    // E1 dual-read fallback: v1 versions decode with identity defaults (as today) and
+    // normalize to the v2 format tag in memory; the next save persists v2 and deletes v1.
+    guard var legacy = try await fetchVersions(assetId: assetId, key: EditVersionKey.legacy) else {
+      return nil
+    }
+    legacy.format = EditVersionKey.current
+    return legacy
+  }
+
+  private func fetchVersions(assetId: String, key: String) async throws -> EditVersionPayload? {
+    let encoded = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
+    let (data, status) = try await get(path: "assets/\(assetId)/metadata/\(encoded)")
     guard status != 404 else { return nil }
     try Self.check(status: status, data: data)
     struct Entry: Decodable { var value: EditVersionPayload }
@@ -176,10 +189,14 @@ extension RESTEditPersistence {
   }
 
   public func saveVersions(_ payload: EditVersionPayload) async throws {
+    var tagged = payload
+    tagged.format = EditVersionKey.current
     struct Item: Encodable { var key: String; var value: EditVersionPayload }
     struct Body: Encodable { var items: [Item] }
-    let body = try JSONEncoder().encode(Body(items: [Item(key: EditVersionKey.current, value: payload)]))
-    let (data, status) = try await put(path: "assets/\(payload.sourceAssetId)/metadata", json: body)
+    let body = try JSONEncoder().encode(Body(items: [Item(key: EditVersionKey.current, value: tagged)]))
+    let (data, status) = try await put(path: "assets/\(tagged.sourceAssetId)/metadata", json: body)
     try Self.check(status: status, data: data)
+    // Lazy migration hygiene, mirroring saveRecipe (best-effort; v2 is the source of truth).
+    try? await deleteMetadataKey(assetId: tagged.sourceAssetId, key: EditVersionKey.legacy)
   }
 }

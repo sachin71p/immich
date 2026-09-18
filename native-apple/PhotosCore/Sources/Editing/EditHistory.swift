@@ -54,13 +54,16 @@ public struct EditHistory: Sendable, Equatable {
   // MARK: - Copy/paste between assets
 
   /// Serializes the current recipe for the pasteboard (stable, sorted-keys JSON).
+  /// The format tag is the v2 recipe key and moves with it.
   public func copiedData() throws -> Data {
     let enc = JSONEncoder()
     enc.outputFormatting = [.sortedKeys]
     return try enc.encode(CopiedEdits(format: EditRecipeKey.current, recipe: current))
   }
 
-  /// Parses pasteboard data. Foreign/unknown payloads throw `EditHistoryError.incompatiblePaste`.
+  /// Parses pasteboard data. Foreign/unknown AND legacy (v1) payloads throw
+  /// `EditHistoryError.incompatiblePaste` — pasteboard copies are ephemeral, so paste does
+  /// not migrate (migration happens on the KV read path); only the exact v2 tag is accepted.
   /// The format tag is checked before the recipe body decodes: `EditRecipe` requires its
   /// `adjust` section, so decoding the full payload first would surface a `DecodingError`
   /// for foreign payloads instead of the documented `incompatiblePaste`.

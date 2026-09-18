@@ -3,7 +3,7 @@ import Foundation
 
 /// The upstream edit actions the server understands (`PUT /assets/:id/edits` —
 /// server/src/dtos/editing.dto.ts `AssetEditAction`): crop, rotate, mirror. Anything else
-/// lives in the recipe KV + rendered upload.
+/// lives in the recipe KV + rendition PUT.
 public enum UpstreamEditAction: String, Sendable, Codable {
   case crop, rotate, mirror
 }
@@ -66,7 +66,7 @@ public struct UpstreamEditItem: Sendable, Codable, Equatable {
 public struct EditSplit: Sendable, Equatable {
   /// Items for `PUT /assets/:id/edits` (empty when the recipe has no upstream-expressible ops).
   public var upstream: [UpstreamEditItem]
-  /// True when the recipe KV + rendered upload path is required.
+  /// True when the recipe KV + rendition PUT path is required.
   public var needsClientRender: Bool
 
   public init(upstream: [UpstreamEditItem], needsClientRender: Bool) {

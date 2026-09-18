@@ -2007,7 +2007,6 @@ extension MacEditModeView {
     let size = srcCI.extent.size
     let split = try EditSplitter.split(recipe, imageSize: size)
     try await persistence.applyUpstreamEdits(assetId: asset.id, items: split.upstream)
-    var renderedId: String?
     if split.needsClientRender {
       let overlay = renderMarkupOverlay(elements, pixelSize: size)
       let report = try renderer.export(
@@ -2022,15 +2021,16 @@ extension MacEditModeView {
         contentType: isHeic ? "image/heic" : "image/jpeg",
         fileCreatedAt: asset.fileCreatedAt ?? Date(), fileModifiedAt: asset.fileModifiedAt ?? Date(),
         spaceId: asset.spaceId)
-      renderedId = try await persistence.uploadRendered(
-        sourceAssetId: asset.id, upload: upload, recipe: recipe)
+      // E1: the render lands as the asset's rendition (same asset, one timeline item).
+      try await persistence.uploadRendition(assetId: asset.id, upload: upload)
     }
+    // E1: no separate rendered asset exists, so renderedAssetId stays nil.
     try await persistence.saveRecipe(EditPersistencePayload(
-      sourceAssetId: asset.id, recipe: recipe, renderedAssetId: renderedId))
+      sourceAssetId: asset.id, recipe: recipe, renderedAssetId: nil))
     // D6a: each Done appends a new version, never overwrites.
-    await MainActor.run { versionStore.append(recipe, renderedAssetId: renderedId) }
+    await MainActor.run { versionStore.append(recipe, renderedAssetId: nil) }
     persistVersions()
-    return renderedId
+    return nil
   }
 
   private func exportFormat(for filename: String) -> EditRenderer.ExportFormat {
@@ -2054,15 +2054,16 @@ extension MacEditModeView {
       contentType: "video/mp4",
       fileCreatedAt: asset.fileCreatedAt ?? Date(), fileModifiedAt: asset.fileModifiedAt ?? Date(),
       spaceId: asset.spaceId, durationMs: Int(result.durationSeconds * 1000))
-    let newId = try await persistence.uploadRendered(
-      sourceAssetId: asset.id, upload: upload, recipe: full)
+    // E1: the export lands as the asset's rendition (same asset, one timeline item).
+    try await persistence.uploadRendition(assetId: asset.id, upload: upload)
+    // E1: no separate rendered asset exists, so renderedAssetId stays nil.
     try await persistence.saveRecipe(EditPersistencePayload(
-      sourceAssetId: asset.id, recipe: full, renderedAssetId: newId))
+      sourceAssetId: asset.id, recipe: full, renderedAssetId: nil))
     // D6a: each Done appends a new version, never overwrites.
     let doneRecipe = full
-    await MainActor.run { versionStore.append(doneRecipe, renderedAssetId: newId) }
+    await MainActor.run { versionStore.append(doneRecipe, renderedAssetId: nil) }
     persistVersions()
-    return newId
+    return nil
   }
 }
 

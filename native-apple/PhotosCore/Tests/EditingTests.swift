@@ -533,13 +533,14 @@ import Testing
     #expect(greenShifted == greenPlain)
   }
 
-  @Test("Recipe KV key and payload format tag are pinned")
+  @Test("Recipe KV key and payload format tag are pinned to v2 (legacy v1 retained)")
   func recipeKeyPinned() throws {
-    #expect(EditRecipeKey.current == "fork.editRecipe.v1")
+    #expect(EditRecipeKey.current == "fork.editRecipe.v2")
+    #expect(EditRecipeKey.legacy == "fork.editRecipe.v1")
     let payload = EditPersistencePayload(sourceAssetId: "asset-1", recipe: sampleRecipe())
     let data = try JSONEncoder().encode(payload)
     let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-    #expect(obj?["format"] as? String == "fork.editRecipe.v1")
+    #expect(obj?["format"] as? String == "fork.editRecipe.v2")
     #expect(obj?["sourceAssetId"] as? String == "asset-1")
     #expect((obj?["recipe"] as? [String: Any]) != nil)
   }
@@ -799,17 +800,313 @@ import Testing
     store.append(EditRecipe(adjust: AdjustRecipe(exposure: 7)), id: "a")
     let payload = EditVersionPayload(sourceAssetId: "asset-1", versions: store.versions)
     #expect(payload.format == EditVersionKey.current)
-    #expect(EditVersionKey.current == "fork.editVersions.v1")
+    #expect(EditVersionKey.current == "fork.editVersions.v2")
+    #expect(EditVersionKey.legacy == "fork.editVersions.v1")
     #expect(EditVersionKey.current != EditRecipeKey.current)
     let data = try JSONEncoder().encode(payload)
     let back = try JSONDecoder().decode(EditVersionPayload.self, from: data)
     #expect(back == payload)
     // Pre-D6a payload without the versions key: empty stack, not an error.
-    let bare = #"{"format":"fork.editVersions.v1","sourceAssetId":"asset-1"}"#
+    let bare = #"{"format":"fork.editVersions.v2","sourceAssetId":"asset-1"}"#
       .data(using: .utf8)!
     let empty = try JSONDecoder().decode(EditVersionPayload.self, from: bare)
     #expect(empty.versions.isEmpty)
     let bareStore = try JSONDecoder().decode(EditVersionStore.self, from: "{}".data(using: .utf8)!)
     #expect(bareStore.isEmpty)
+  }
+
+  // MARK: - E1 recipe v2 + rendition (stubbed server)
+
+  private func e1Persistence(host: String) -> RESTEditPersistence {
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [E1StubURLProtocol.self]
+    return RESTEditPersistence(
+      serverURL: URL(string: "https://\(host)/api")!,
+      token: { "stub-token" },
+      session: URLSession(configuration: config))
+  }
+
+  private func e1MetadataURL(host: String, assetId: String, key: String) -> String {
+    let base = URL(string: "https://\(host)/api")!
+    let encoded = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
+    return base.appendingPathComponent("assets/\(assetId)/metadata/\(encoded)").absoluteString
+  }
+
+  private func e1EntryResponse(payloadJSON: String) -> Data {
+    Data(#"{"value":\#(payloadJSON)}"#.utf8)
+  }
+
+  private func e1Fixture(_ name: String) throws -> String {
+    let url = try #require(Bundle.module.url(
+      forResource: name, withExtension: "json", subdirectory: "Fixtures"))
+    return try #require(String(data: Data(contentsOf: url), encoding: .utf8))
+  }
+
+  private func e1GoldenBaseRecipe() throws -> EditRecipe {
+    let url = try #require(Bundle.module.url(
+      forResource: "edit-recipe-base-v1", withExtension: "json", subdirectory: "Fixtures"))
+    return try JSONDecoder().decode(EditRecipe.self, from: Data(contentsOf: url))
+  }
+
+  @Test("E1: fetchRecipe prefers v2 and never touches the v1 key")
+  func recipeDualReadPrefersV2() async throws {
+    let host = "e1prefer.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let v2 = e1MetadataURL(host: host, assetId: "a1", key: EditRecipeKey.current)
+    E1StubURLProtocol.route(
+      method: "GET", url: v2, status: 200,
+      body: e1EntryResponse(payloadJSON: """
+        {"format":"fork.editRecipe.v2","sourceAssetId":"a1","savedAt":1700000000,\
+        "recipe":{"adjust":{"exposure":50}}}
+        """))
+    let fetched = try await persistence.fetchRecipe(assetId: "a1")
+    #expect(fetched?.recipe.adjust.exposure == 50)
+    #expect(fetched?.format == EditRecipeKey.current)
+    let seen = E1StubURLProtocol.requests(host: host)
+    #expect(seen.map { $0.request.url?.absoluteString } == [v2])
+  }
+
+  @Test("E1: fetchRecipe falls back to v1 with identity defaults, normalized to v2")
+  func recipeDualReadFallsBackToV1() async throws {
+    let host = "e1fallback.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let v2 = e1MetadataURL(host: host, assetId: "asset-1", key: EditRecipeKey.current)
+    let v1 = e1MetadataURL(host: host, assetId: "asset-1", key: EditRecipeKey.legacy)
+    // No v2 route: the v2 GET 404s and the reader falls back to the v1 envelope fixture.
+    E1StubURLProtocol.route(
+      method: "GET", url: v1, status: 200,
+      body: e1EntryResponse(payloadJSON: try e1Fixture("edit-recipe-kv-v1")))
+    let fetched = try await persistence.fetchRecipe(assetId: "asset-1")
+    // Normalized to the v2 tag in memory; the recipe decodes identically to the golden base.
+    #expect(fetched?.format == EditRecipeKey.current)
+    #expect(fetched?.recipe == (try e1GoldenBaseRecipe()))
+    #expect(fetched?.recipe.adjust.exposure == 25)
+    #expect(fetched?.recipe.style?.style == .vividWarm)
+    let seen = E1StubURLProtocol.requests(host: host)
+    #expect(seen.map { $0.request.url?.absoluteString } == [v2, v1])
+  }
+
+  @Test("E1: fetchRecipe returns nil when both keys are absent")
+  func recipeDualReadBothAbsent() async throws {
+    let host = "e1absent.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    #expect(try await persistence.fetchRecipe(assetId: "a1") == nil)
+    #expect(E1StubURLProtocol.requests(host: host).count == 2)
+  }
+
+  @Test("E1: saveRecipe writes v2 only and deletes v1")
+  func recipeSaveWritesV2DeletesV1() async throws {
+    let host = "e1save.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let base = URL(string: "https://\(host)/api")!
+    E1StubURLProtocol.route(
+      method: "PUT",
+      url: base.appendingPathComponent("assets/a1/metadata").absoluteString,
+      status: 200, body: Data("{}".utf8))
+    E1StubURLProtocol.route(
+      method: "DELETE",
+      url: e1MetadataURL(host: host, assetId: "a1", key: EditRecipeKey.legacy),
+      status: 200, body: Data("{}".utf8))
+    try await persistence.saveRecipe(EditPersistencePayload(
+      sourceAssetId: "a1", recipe: sampleRecipe()))
+    let seen = E1StubURLProtocol.requests(host: host)
+    #expect(seen.count == 2)
+    let put = try #require(seen.first { $0.request.httpMethod == "PUT" })
+    let putObj = try JSONSerialization.jsonObject(with: put.body) as? [String: Any]
+    let items = putObj?["items"] as? [[String: Any]]
+    #expect(items?.count == 1)
+    #expect(items?.first?["key"] as? String == "fork.editRecipe.v2")
+    #expect((items?.first?["value"] as? [String: Any])?["format"] as? String == "fork.editRecipe.v2")
+    let delete = try #require(seen.first { $0.request.httpMethod == "DELETE" })
+    #expect(delete.request.url?.absoluteString.contains("fork.editRecipe.v1") == true)
+  }
+
+  @Test("E1: saveRecipe still succeeds when the v1 cleanup delete fails")
+  func recipeSaveToleratesV1DeleteFailure() async throws {
+    let host = "e1savetolerant.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let base = URL(string: "https://\(host)/api")!
+    E1StubURLProtocol.route(
+      method: "PUT",
+      url: base.appendingPathComponent("assets/a1/metadata").absoluteString,
+      status: 200, body: Data("{}".utf8))
+    // No DELETE route: the cleanup delete 404s, which the save tolerates.
+    try await persistence.saveRecipe(EditPersistencePayload(
+      sourceAssetId: "a1", recipe: sampleRecipe()))
+  }
+
+  @Test("E1: fetchVersions falls back to v1, normalized to v2")
+  func versionsDualReadFallsBackToV1() async throws {
+    let host = "e1versions.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let v2 = e1MetadataURL(host: host, assetId: "asset-1", key: EditVersionKey.current)
+    let v1 = e1MetadataURL(host: host, assetId: "asset-1", key: EditVersionKey.legacy)
+    E1StubURLProtocol.route(
+      method: "GET", url: v1, status: 200,
+      body: e1EntryResponse(payloadJSON: try e1Fixture("edit-versions-kv-v1")))
+    let fetched = try await persistence.fetchVersions(assetId: "asset-1")
+    #expect(fetched?.format == EditVersionKey.current)
+    #expect(fetched?.versions.count == 1)
+    #expect(fetched?.versions.first?.id == "v1")
+    #expect(fetched?.versions.first?.recipe == (try e1GoldenBaseRecipe()))
+    let seen = E1StubURLProtocol.requests(host: host)
+    #expect(seen.map { $0.request.url?.absoluteString } == [v2, v1])
+  }
+
+  @Test("E1: saveVersions writes v2 only and deletes v1")
+  func versionsSaveWritesV2DeletesV1() async throws {
+    let host = "e1vsave.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let base = URL(string: "https://\(host)/api")!
+    E1StubURLProtocol.route(
+      method: "PUT",
+      url: base.appendingPathComponent("assets/a1/metadata").absoluteString,
+      status: 200, body: Data("{}".utf8))
+    E1StubURLProtocol.route(
+      method: "DELETE",
+      url: e1MetadataURL(host: host, assetId: "a1", key: EditVersionKey.legacy),
+      status: 200, body: Data("{}".utf8))
+    var store = EditVersionStore()
+    store.append(EditRecipe(adjust: AdjustRecipe(exposure: 7)), id: "a")
+    try await persistence.saveVersions(EditVersionPayload(
+      sourceAssetId: "a1", versions: store.versions))
+    let seen = E1StubURLProtocol.requests(host: host)
+    let put = try #require(seen.first { $0.request.httpMethod == "PUT" })
+    let putObj = try JSONSerialization.jsonObject(with: put.body) as? [String: Any]
+    let items = putObj?["items"] as? [[String: Any]]
+    #expect(items?.first?["key"] as? String == "fork.editVersions.v2")
+    #expect((items?.first?["value"] as? [String: Any])?["format"] as? String == "fork.editVersions.v2")
+    let delete = try #require(seen.first { $0.request.httpMethod == "DELETE" })
+    #expect(delete.request.url?.absoluteString.contains("fork.editVersions.v1") == true)
+  }
+
+  @Test("E1: copy/paste tag moves to v2; v1 and foreign payloads are rejected")
+  func copyPasteTagMovesToV2() throws {
+    let h = EditHistory(initial: sampleRecipe())
+    let data = try h.copiedData()
+    let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    #expect(obj?["format"] as? String == "fork.editRecipe.v2")
+    var other = EditHistory()
+    other.commit(try EditHistory.pastedRecipe(from: data))
+    #expect(other.current == sampleRecipe())
+    #expect(throws: EditHistoryError.incompatiblePaste) {
+      try EditHistory.pastedRecipe(from: Data(
+        #"{"format":"fork.editRecipe.v1","recipe":{"adjust":{"exposure":1}}}"#.utf8))
+    }
+    #expect(throws: EditHistoryError.incompatiblePaste) {
+      try EditHistory.pastedRecipe(from: Data("{\"format\":\"other\",\"recipe\":{}}".utf8))
+    }
+  }
+
+  @Test("E1: v1 KV envelopes decode identically under the v2 reader")
+  func v1EnvelopesBackCompat() throws {
+    let recipePayload = try JSONDecoder().decode(
+      EditPersistencePayload.self, from: Data((try e1Fixture("edit-recipe-kv-v1")).utf8))
+    #expect(recipePayload.recipe == (try e1GoldenBaseRecipe()))
+    let versionsPayload = try JSONDecoder().decode(
+      EditVersionPayload.self, from: Data((try e1Fixture("edit-versions-kv-v1")).utf8))
+    #expect(versionsPayload.versions.count == 1)
+    #expect(versionsPayload.versions.first?.recipe == (try e1GoldenBaseRecipe()))
+  }
+
+  @Test("E1: rendition body carries the assetData file part like the asset upload path")
+  func renditionMultipartBody() {
+    let upload = RenderedUpload(
+      data: Data([1, 2, 3]), filename: "a-edited.jpg", contentType: "image/jpeg",
+      fileCreatedAt: Date(), fileModifiedAt: Date())
+    let (body, boundary) = RESTEditPersistence.renditionBody(upload: upload, boundary: "test-boundary")
+    let text = String(data: body, encoding: .utf8) ?? ""
+    #expect(text.contains("name=\"filename\""))
+    #expect(text.contains("name=\"assetData\"; filename=\"a-edited.jpg\""))
+    #expect(text.contains("Content-Type: image/jpeg"))
+    #expect(text.hasSuffix("--test-boundary--\r\n"))
+    #expect(boundary == "test-boundary")
+  }
+
+  @Test("E1: uploadRendition PUTs multipart to assets/:id/rendition")
+  func renditionPutContract() async throws {
+    let host = "e1rendition.e1stub.invalid"
+    let persistence = e1Persistence(host: host)
+    let base = URL(string: "https://\(host)/api")!
+    let renditionURL = base.appendingPathComponent("assets/a1/rendition").absoluteString
+    // The server answers the asset DTO; the client only needs a 2xx.
+    E1StubURLProtocol.route(
+      method: "PUT", url: renditionURL, status: 200,
+      body: Data(#"{"id":"a1"}"#.utf8))
+    try await persistence.uploadRendition(
+      assetId: "a1",
+      upload: RenderedUpload(
+        data: Data([1, 2, 3]), filename: "a-edited.jpg", contentType: "image/jpeg",
+        fileCreatedAt: Date(), fileModifiedAt: Date()))
+    let seen = E1StubURLProtocol.requests(host: host)
+    #expect(seen.count == 1)
+    #expect(seen[0].request.httpMethod == "PUT")
+    #expect(seen[0].request.url?.absoluteString == renditionURL)
+    #expect(seen[0].request.value(forHTTPHeaderField: "Content-Type")?.contains("multipart/form-data") == true)
+    let text = String(data: seen[0].body, encoding: .utf8) ?? ""
+    #expect(text.contains("name=\"assetData\"; filename=\"a-edited.jpg\""))
+  }
+}
+
+/// Stubbed metadata/rendition server for the E1 tests: routes are keyed by
+/// "METHOD absolute-URL" and every request is recorded with its drained body.
+/// Each test mints its own host, so parallel tests never share routes and no
+/// reset is needed (filter recordings by host).
+private final class E1StubURLProtocol: URLProtocol {
+  struct Recorded {
+    var request: URLRequest
+    var body: Data
+  }
+
+  private static let lock = NSLock()
+  private nonisolated(unsafe) static var routes: [String: (status: Int, body: Data)] = [:]
+  private nonisolated(unsafe) static var seen: [Recorded] = []
+
+  static func route(method: String, url: String, status: Int, body: Data = Data()) {
+    lock.withLock { routes["\(method) \(url)"] = (status, body) }
+  }
+
+  static func requests(host: String) -> [Recorded] {
+    lock.withLock { seen.filter { $0.request.url?.host == host } }
+  }
+
+  override class func canInit(with request: URLRequest) -> Bool {
+    request.url?.host?.hasSuffix(".e1stub.invalid") == true
+  }
+
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    let body = Self.drain(request)
+    let key = "\(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "")"
+    let route = Self.lock.withLock { Self.routes[key] }
+    Self.lock.withLock { Self.seen.append(Recorded(request: request, body: body)) }
+    let (status, payload) = route ?? (404, Data())
+    let response = HTTPURLResponse(
+      url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+      headerFields: ["Content-Length": "\(payload.count)"])!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: payload)
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
+
+  /// `URLSession.upload(for:from:)` hands the body over as a stream, so drain it here.
+  private static func drain(_ request: URLRequest) -> Data {
+    if let direct = request.httpBody, !direct.isEmpty { return direct }
+    guard let stream = request.httpBodyStream else { return Data() }
+    stream.open()
+    defer { stream.close() }
+    var out = Data()
+    let capacity = 4096
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
+    defer { buffer.deallocate() }
+    while stream.hasBytesAvailable {
+      let count = stream.read(buffer, maxLength: capacity)
+      if count <= 0 { break }
+      out.append(buffer, count: count)
+    }
+    return out
   }
 }
