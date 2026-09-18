@@ -139,6 +139,7 @@ struct MacEditModeView: View {
     } message: {
       Text("Your edits have not been saved.")
     }
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier(AXIDs.editMode)
     .task { await openSession() }
     .onDisappear {
@@ -171,6 +172,12 @@ struct MacEditModeView: View {
 
   private func exit() { onExit() }
 
+  // NOTE (known issue, owner-visible): a focused NSSlider eats Escape as
+  // cancelOperation, so Escape right after a slider drag needs focus elsewhere
+  // first (the tests click the canvas). A local key-down monitor was tried and
+  // never installed (makeNSView never ran — cause unknown); keyboard Tab-into-
+  // slider + Escape likely shares the trap natively with AppKit.
+
   // MARK: - Top bar (spec E2)
 
   private var topBar: some View {
@@ -182,14 +189,14 @@ struct MacEditModeView: View {
       Button("Revert to Original", role: .destructive) { revertAll() }
         .disabled(!history.isDirty)
         .accessibilityIdentifier(AXIDs.editRevert)
+      // Tap toggles; press-and-hold on the photo peeks the original. A continuous
+      // gesture on this button starves repeat taps after the first toggle, so the
+      // hold lives on the canvas image (which carries no tap action to conflict).
       Button(comparing ? "After" : "Before") { comparing.toggle() }
-        .simultaneousGesture(DragGesture(minimumDistance: 0)
-          .onChanged { _ in comparing = true }
-          .onEnded { _ in comparing = false })
         .accessibilityIdentifier(AXIDs.editCompare)
         // E9: while comparing, the before (original) image is on screen.
         .accessibilityValue(comparing ? "Original" : "Edited")
-        .help("Click to toggle, press-and-hold (or hold M) to compare with the original")
+        .help("Click to toggle, press-and-hold the photo (or hold M) to compare with the original")
       Spacer()
       Picker("Tool", selection: $tab) {
         Text("Adjust").tag(EditModeTab.adjust)
@@ -249,6 +256,7 @@ struct MacEditModeView: View {
           .aspectRatio(contentMode: .fit)
           .frame(width: fit.width * scale, height: fit.height * scale)
           .clipped()
+          .onLongPressGesture(minimumDuration: 0.2, pressing: { comparing = $0 }) {}
         if tab == .crop { cropOverlay(fit: fit) }
         if tab == .markup {
           MacMarkupCanvas(
@@ -444,6 +452,7 @@ extension MacEditModeView {
       ForEach(EditAdjustSection.allCases, id: \.self) { section in
         if section == .depth {
           DepthSectionView(history: $history, source: previewCI)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AXIDs.editTab(section.rawValue))
         } else {
           EditAdjustSectionView(
@@ -453,6 +462,7 @@ extension MacEditModeView {
               set: { v in var r = history.current; r.adjust = v; history.commit(r) }),
             source: previewCI,
             eyedropperArmed: $eyedropperArmed)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AXIDs.editTab(section.rawValue))
         }
       }
@@ -910,14 +920,25 @@ private struct EditAdjustSectionView: View {
   @State private var thumbs: [CGImage?] = []
   @State private var thumbsTask: Task<Void, Never>?
   @State private var sectionActive = true
+  @State private var sectionExpanded = true
+  @State private var optionsExpanded = false
 
   var body: some View {
-    DisclosureGroup {
+    // Sections default expanded: the filmstrip headline and Options rows are the
+    // panel's working surface (and a collapsed group hides its content from AX,
+    // leaving UI tests nothing to drive).
+    DisclosureGroup(isExpanded: $sectionExpanded) {
       VStack(alignment: .leading, spacing: 6) {
         if let (label, key) = section.filmstripKey {
           filmstrip(label: label, key: key)
         }
-        DisclosureGroup("Options ›") {
+        // A plain button, not a DisclosureGroup: a collapsed DisclosureGroup is
+        // AX-invisible (no triangle, no label), so UI tests could never expand it.
+        Button(optionsExpanded ? "Options ⌄" : "Options ›") { optionsExpanded.toggle() }
+          .accessibilityIdentifier(AXIDs.editSectionOptions(section.rawValue))
+          .font(.caption)
+          .buttonStyle(.plain)
+        if optionsExpanded {
           VStack(alignment: .leading, spacing: 4) {
             ForEach(section.fineSliders, id: \.0) { label, key in
               fineSlider(label: label, key: key)
@@ -933,7 +954,6 @@ private struct EditAdjustSectionView: View {
             }
           }
         }
-        .font(.caption)
       }
       .padding(.leading, 4)
     } label: {

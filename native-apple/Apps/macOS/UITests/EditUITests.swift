@@ -101,11 +101,18 @@ final class EditUITests: XCTestCase {
     openViewer()
     openEdit()
     // Reveal the Light section's Exposure slider (Options disclosure).
+    let options = el("edit.section.options.light")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Options disclosure renders")
+    options.click()
     let exposure = el("edit.slider.Exposure")
     XCTAssertTrue(exposure.waitForExistence(timeout: 10), "Exposure slider renders")
     exposure.adjust(toNormalizedSliderPosition: 0.75)
+    // The drag leaves focus on the slider, which eats Escape as cancelOperation:
+    // click the canvas first so Escape reaches the mode handler.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     app.typeKey(.escape, modifierFlags: [])
-    let discard = app.alerts.buttons["Discard"]
+    // macOS presents SwiftUI alerts as attached sheets, not alert windows.
+    let discard = app.sheets.buttons["Discard"]
     XCTAssertTrue(discard.waitForExistence(timeout: 5), "dirty Escape shows Discard confirm")
     discard.click()
     assertEditClosed("Discard exits edit mode")
@@ -155,18 +162,43 @@ final class EditUITests: XCTestCase {
   func testCopyPasteEdits() {
     openViewer()
     openEdit()
+    let options = el("edit.section.options.light")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Options disclosure renders")
+    options.click()
     let exposure = el("edit.slider.Exposure")
     XCTAssertTrue(exposure.waitForExistence(timeout: 10), "Exposure slider renders")
     exposure.adjust(toNormalizedSliderPosition: 0.8)
     el("edit.more").click()
     app.menuItems["Copy edits"].click()
+    // The adjust dirtied the recipe, so Escape raises Discard (copy is not save).
+    // Click the canvas first: focus may sit on the slider, which eats Escape.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     app.typeKey(.escape, modifierFlags: [])
-    assertEditClosed("Cancel after copy exits")
-    // Paste onto the same asset and confirm the value carried over.
+    let discardAfterCopy = app.sheets.buttons["Discard"]
+    XCTAssertTrue(discardAfterCopy.waitForExistence(timeout: 5), "Escape after copy shows Discard")
+    discardAfterCopy.click()
+    assertEditClosed("Discard after copy exits")
+    // Paste onto the same asset and confirm the value carried over. The mode
+    // reopened fresh, so its Options disclosure starts collapsed again.
     openEdit()
+    let options2 = el("edit.section.options.light")
+    XCTAssertTrue(options2.waitForExistence(timeout: 10), "Options disclosure renders")
+    options2.click()
     el("edit.more").click()
     app.menuItems["Paste edits"].click()
-    let pasted = el("edit.slider.Exposure").value as? String
+    // AX slider values surface as NSNumber on macOS, never String: coerce.
+    let rawPasted = el("edit.slider.Exposure").value
+    let pasted: Double? = {
+      if let s = rawPasted as? String {
+        return Double(s.filter { $0.isNumber || $0 == "." || $0 == "-" })
+      }
+      if let n = rawPasted as? NSNumber { return n.doubleValue }
+      return nil
+    }()
     XCTAssertNotNil(pasted, "Exposure slider still renders after paste")
+    if let pasted {
+      // adjust(0.8) over -100...100 committed 60; paste must carry it over.
+      XCTAssertEqual(pasted, 60, accuracy: 2, "pasted value carried over")
+    }
   }
 }

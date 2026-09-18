@@ -92,6 +92,7 @@ enum AXIDs {
   static let editMore = "edit.more"
 
   static func editSlider(_ key: String) -> String { "edit.slider.\(key)" }
+  static func editSectionOptions(_ section: String) -> String { "edit.section.options.\(section)" }
 
   // MARK: - collections / search
 
