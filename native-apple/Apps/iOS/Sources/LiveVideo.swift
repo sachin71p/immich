@@ -167,6 +167,9 @@ struct VideoPage: View {
   /// WP-R (F2): a stream the server rejects must surface, never sit black.
   @State private var playbackFailed = false
   @State private var attempt = 0
+  /// WP-R/F2-diag: exact player error surfaced in the failure UI (no device
+  /// log streaming available; the owner reads it off the screen).
+  @State private var playbackError: String?
 
   var body: some View {
     ZStack {
@@ -198,20 +201,6 @@ struct VideoPage: View {
         stopObserving()
         player?.pause()
         player = nil
-      }
-      // WP-R (F2): mid-stream failure keeps the last frame but must offer a way
-      // out — overlay retry instead of a dead player.
-      if playbackFailed, player != nil {
-        VStack {
-          Spacer()
-          Button("Video failed — Retry") {
-            playbackFailed = false
-            attempt += 1
-          }
-          .buttonStyle(.bordered)
-          .tint(.white)
-          .padding(.bottom, ViewerLayout.bottomReserve)
-        }
       }
       VStack {
         Spacer()
@@ -248,6 +237,27 @@ struct VideoPage: View {
           .padding(.horizontal, 20)
           .padding(.bottom, ViewerLayout.bottomReserve)
           .accessibilityIdentifier("video-scrubber")
+        }
+      }
+      // WP-R (F2): mid-stream failure keeps the last frame but must offer a way
+      // out — overlay retry instead of a dead player.
+      // Above the pill in ZStack order: the pill used to cover this button.
+      if playbackFailed, player != nil {
+        VStack {
+          Spacer()
+          if let playbackError {
+            Text(playbackError)
+              .font(.caption2).foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+              .padding(.horizontal, 24)
+          }
+          Button("Video failed — Retry") {
+            playbackFailed = false
+            attempt += 1
+          }
+          .buttonStyle(.bordered)
+          .tint(.white)
+          .padding(.bottom, ViewerLayout.bottomReserve)
         }
       }
     }
@@ -294,6 +304,9 @@ struct VideoPage: View {
     if item.status == .failed {
       playbackFailed = true
       isPlaying = false
+      if let err = item.error {
+        playbackError = "load failed: \(err.localizedDescription)"
+      }
       return
     }
     if item.status == .readyToPlay, isPlaying {
