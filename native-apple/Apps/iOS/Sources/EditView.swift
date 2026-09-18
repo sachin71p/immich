@@ -21,9 +21,16 @@ public struct EditView: View {
   var loadOriginalData: () async throws -> Data
   var loadVideoFile: (() async throws -> URL)?
   var loadMotionFile: (() async throws -> URL)?
+  /// WP-R (F1/F3): full-res display upgrade applied *after* the canvas already
+  /// shows `preview`. A failure (timeout, undecodable) keeps the preview — the
+  /// hook's result only ever replaces the canvas image on success.
+  var loadDisplayImage: (() async throws -> UIImage)?
   var persistence: RESTEditPersistence
   var onDone: (String?) -> Void
 
+  /// Canvas source: the instant seed until the full-res upgrade lands.
+  @State private var displaySource: UIImage?
+  @State private var durationFailed = false
   @State private var history = EditHistory()
   @State private var tool: EditTool = .adjust
   @State private var adjustParam: AdjustParam = .exposure
@@ -46,6 +53,7 @@ public struct EditView: View {
     loadOriginalData: @escaping () async throws -> Data,
     loadVideoFile: (() async throws -> URL)? = nil,
     loadMotionFile: (() async throws -> URL)? = nil,
+    loadDisplayImage: (() async throws -> UIImage)? = nil,
     persistence: RESTEditPersistence,
     onDone: @escaping (String?) -> Void = { _ in }
   ) {
@@ -55,9 +63,11 @@ public struct EditView: View {
     self.loadOriginalData = loadOriginalData
     self.loadVideoFile = loadVideoFile
     self.loadMotionFile = loadMotionFile
+    self.loadDisplayImage = loadDisplayImage
     self.persistence = persistence
     self.onDone = onDone
     self._renderedPreview = State(initialValue: preview)
+    self._displaySource = State(initialValue: preview)
   }
 
   public var body: some View {
@@ -73,6 +83,9 @@ public struct EditView: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }.disabled(saving)
+            // WP-R (F3b): stable chrome hook for the parity harness (T's
+            // `editor-chrome` gate). The label match for "Cancel" is unaffected.
+            .accessibilityIdentifier("editor-chrome")
         }
         ToolbarItemGroup(placement: .primaryAction) {
           undoRedoButtons
@@ -96,12 +109,16 @@ public struct EditView: View {
 
   private var previewArea: some View {
     GeometryReader { geo in
-      let fit = AspectFit.rect(for: preview.size, in: geo.size)
+      // WP-R: canvas source is the instant seed (`displaySource`, initialised to
+      // `preview`), upgraded to full-res in the background — never empty.
+      let canvasImage = displaySource ?? preview
+      let fit = AspectFit.rect(for: canvasImage.size, in: geo.size)
       ZStack {
         Image(uiImage: comparing ? preview : renderedPreview)
           .resizable()
           .scaledToFit()
           .frame(width: fit.width, height: fit.height)
+          .accessibilityIdentifier("editor-canvas")
         if tool == .markup {
           PencilCanvas(canvas: $canvas)
             .frame(width: fit.width, height: fit.height)
@@ -330,11 +347,12 @@ public struct EditView: View {
   }
 
   private func filterThumb(_ style: EditStyle) -> some View {
-    Group {
-      if let ui = FilterThumbCache.thumb(assetId: asset.id, style: style, source: preview, renderer: renderer) {
+    let source = displaySource ?? preview
+    return Group {
+      if let ui = FilterThumbCache.thumb(assetId: asset.id, style: style, source: source, renderer: renderer) {
         Image(uiImage: ui).resizable()
       } else {
-        Image(uiImage: preview).resizable()
+        Image(uiImage: source).resizable()
       }
     }
   }
@@ -521,7 +539,7 @@ public struct EditView: View {
   }
 
   private func autoStraighten() async {
-    guard let cg = preview.cgImage else { return }
+    guard let cg = (displaySource ?? preview).cgImage else { return }
     do {
       let angle = try await renderer.suggestedStraightenAngle(for: cg)
       var r = history.current
@@ -558,7 +576,7 @@ public struct EditView: View {
   }
 
   private var portraitAvailableLocal: Bool {
-    guard let ci = CIImage(image: preview) else { return false }
+    guard let ci = CIImage(image: displaySource ?? preview) else { return false }
     return EditRenderer.portraitAvailable(source: ci)
   }
 
@@ -578,6 +596,11 @@ public struct EditView: View {
       if asset.type == .video {
         if let dur = videoDuration {
           trimSlider(duration: dur, label: "Trim")
+        } else if durationFailed {
+          // WP-R: a failed duration probe is terminal for this presentation —
+          // show the fact instead of re-spinning the unbounded fetch.
+          Text("Video length unavailable — trim disabled.")
+            .font(.caption).foregroundStyle(.secondary)
         } else {
           ProgressView().task { await loadDuration() }
         }
@@ -613,6 +636,9 @@ public struct EditView: View {
           .padding(.horizontal)
           if let dur = videoDuration {
             keyFrameSlider(duration: dur)
+          } else if durationFailed {
+            Text("Motion length unavailable.")
+              .font(.caption).foregroundStyle(.secondary)
           } else {
             ProgressView().task { await loadDuration(motion: true) }
           }
@@ -678,18 +704,27 @@ public struct EditView: View {
 
   private func loadDuration(motion: Bool = false) async {
     do {
-      let url: URL
-      if motion {
-        url = try await loadMotionFile!()
-      } else {
-        guard let loader = loadVideoFile else { return }
-        url = try await loader()
+      // WP-R: the file fetch and the AV duration probe are both bounded — an
+      // unresponsive source must surface as "unavailable", never as a spinner
+      // that never resolves (F1/F3 idle-await signature).
+      let url: URL = try await withMainActorTimeout(seconds: EditorLoadBudget.videoDurationProbe) {
+        if motion {
+          return try await self.loadMotionFile!()
+        } else {
+          guard let loader = self.loadVideoFile else { throw EditAccessError.notPermitted }
+          return try await loader()
+        }
       }
       let asset = AVURLAsset(url: url)
-      let dur = try await asset.load(.duration).seconds
+      let dur = try await withMainActorTimeout(seconds: EditorLoadBudget.videoDurationProbe) {
+        try await asset.load(.duration).seconds
+      }
       videoDuration = dur.isFinite ? dur : nil
+      durationFailed = videoDuration == nil
     } catch {
       videoDuration = nil
+      // L2: cancellation retries with the view; only a real failure is terminal.
+      if !error.isCancellation { durationFailed = true }
     }
   }
 
@@ -753,6 +788,20 @@ public struct EditView: View {
       // Offline or never edited — start clean, not an error.
     }
     rerenderPreview()
+    await loadDisplayUpgrade()
+  }
+
+  /// WP-R (F1/F3): replaces the preview seed with the full-res image when — and
+  /// only when — it arrives intact inside the budget. Timeout, cancellation and
+  /// decode failure all keep the seed, so the canvas can never go black here.
+  private func loadDisplayUpgrade() async {
+    guard loadDisplayImage != nil else { return }
+    guard let img = try? await withMainActorTimeout(
+      seconds: EditorLoadBudget.fullOriginalUpgrade,
+      operation: { try await self.loadDisplayImage!() })
+    else { return }
+    displaySource = img
+    rerenderPreview()
   }
 
   @State private var previewTask: Task<Void, Never>?
@@ -760,7 +809,7 @@ public struct EditView: View {
   private func rerenderPreview() {
     previewTask?.cancel()
     let recipe = history.current
-    let src = preview
+    let src = displaySource ?? preview
     previewTask = Task { @MainActor in
       // Render off-main would need a thread-safe bridge; preview images are small
       // (Media thumbnail/preview tier), so render inline and bail if superseded.

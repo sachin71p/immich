@@ -174,8 +174,7 @@ struct ViewerView: View {
   @State private var showInfo = false
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
-  @State private var showEdit = false
-  @State private var editPreview: UIImage?
+  @State private var editRequest: EditSession?
   @State private var actionError: String?
   @State private var openMs: Double?
   @State private var exif: AssetExif?
@@ -306,12 +305,18 @@ struct ViewerView: View {
             .environmentObject(session)
         }
       }
-      .fullScreenCover(isPresented: $showEdit) {
-        if let asset, let editPreview, let base = session.serverURL {
+      // WP-R (F3b): item-based cover. The previous `isPresented` + captured-
+      // `self` content could present a stale snapshot (empty canvas, chrome
+      // only after a scene-phase re-sync). The item carries fresh values as
+      // parameters, so the content can never go stale.
+      .fullScreenCover(item: $editRequest) { request in
+        if let base = session.serverURL {
           EditView(
-            asset: asset, access: session.access, preview: editPreview,
-            loadOriginalData: { try await downloadOriginal(asset) },
-            loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
+            asset: request.asset, access: session.access, preview: request.preview,
+            loadOriginalData: { [asset = request.asset] in try await downloadOriginal(asset) },
+            loadVideoFile: request.asset.type == .video
+              ? { [asset = request.asset] in try await downloadOriginalFile(asset) } : nil,
+            loadDisplayImage: { [asset = request.asset] in try await fullDisplayImage(for: asset) },
             persistence: RESTEditPersistence(
               serverURL: base, token: { await session.bearerToken() }),
             onDone: { _ in Task { await reloadAsset() } })
@@ -392,6 +397,15 @@ struct ViewerView: View {
           }
         })
     }
+  }
+
+  /// WP-R (F3b): the editor's present payload. Carried by value through
+  /// `.fullScreenCover(item:)` so the presented content is always fresh —
+  /// unlike `isPresented` + captured-`self` content, which can present stale.
+  private struct EditSession: Identifiable {
+    let id = UUID()
+    var asset: Asset
+    var preview: UIImage
   }
 
   private func containerName(for asset: Asset) -> String {
@@ -477,27 +491,83 @@ struct ViewerView: View {
     }
   }
 
+  /// WP-R (F1/F3/F3b): present-first editing. The old path awaited the full-res
+  /// original with no deadline *before* presenting, so a stalled fetch gated the
+  /// editor chrome itself (F3b) and its failure modes ended on an empty canvas
+  /// (F1/F3). Now the cover presents over the viewer's already-decoded image
+  /// (same tiers `ViewerPage` paints); the full-res upgrade arrives in the
+  /// background and can only replace the seed on a successful decode — never
+  /// with an empty image. Save re-fetches the original itself, so the upgrade
+  /// is display-only.
   private func openEdit(_ asset: Asset) {
+    // Synchronous memory-cache probe: the viewer just painted these tiers.
+    if let seed = cachedEditSeed(for: asset) {
+      editRequest = EditSession(asset: asset, preview: seed)
+      return
+    }
     Task {
       do {
-        let data = try await downloadOriginal(asset)
-        if let image = UIImage(data: data) {
-          editPreview = image
-        } else {
-          // Video: use the first frame as the editing preview.
-          let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("mp4")
-          try data.write(to: tmp)
-          editPreview = await firstFrame(of: tmp) ?? UIImage()
-          try? FileManager.default.removeItem(at: tmp)
+        // Nothing cached: bound the preview-tier fetch (the viewer stays visible
+        // underneath, so this never shows black) and only then present.
+        let preview = try await withMainActorTimeout(seconds: EditorLoadBudget.cachedPreviewFetch) {
+          try await previewTierImage(for: asset)
         }
-        showEdit = true
+        editRequest = EditSession(asset: asset, preview: preview)
       } catch {
         // L2: cancellation is never a user-facing error.
         if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
+  }
+
+  /// Best already-decoded image for `asset.id`: fullsize → preview → thumbnail →
+  /// thumbhash placeholder. `nil` means "fetch"; never synthesizes an empty image.
+  private func cachedEditSeed(for asset: Asset) -> UIImage? {
+    if let pipeline = session.pipeline {
+      for tier: MediaTier in [.fullsize, .preview, .thumbnail] {
+        if let cg = pipeline.cachedImage(id: asset.id, tier: tier) {
+          return UIImage(cgImage: cg)
+        }
+      }
+    }
+    if let hash = asset.thumbhash,
+      let decoded = try? ThumbHash.decode(base64: hash),
+      let cg = decoded.makeCGImage()
+    {
+      return UIImage(cgImage: cg)
+    }
+    return nil
+  }
+
+  /// First image yielded by the working viewer pipeline at preview tier.
+  private func previewTierImage(for asset: Asset) async throws -> UIImage {
+    guard let pipeline = session.pipeline else { throw EditAccessError.notPermitted }
+    for try await loaded in await pipeline.stream(asset: asset, tier: .preview) {
+      switch loaded.content {
+      case .placeholder(let img), .tier(_, let img, _):
+        return img
+      }
+    }
+    throw EditAccessError.notPermitted
+  }
+
+  /// WP-R (F1/F3): full-res canvas upgrade. Returns a *decoded* image — throws
+  /// on undecodable data so the caller keeps the preview seed. Never returns an
+  /// empty `UIImage()` (the old video path did, painting a permanent black
+  /// canvas behind interactive chrome).
+  private func fullDisplayImage(for asset: Asset) async throws -> UIImage {
+    let data = try await downloadOriginal(asset)
+    if let image = UIImage(data: data) { return image }
+    guard asset.type == .video else { throw EditRenderError.undecodableSource }
+    let tmp = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension("mp4")
+    try data.write(to: tmp)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    guard let frame = await firstFrame(of: tmp) else {
+      throw EditRenderError.undecodableSource
+    }
+    return frame
   }
 
   private func downloadOriginal(_ asset: Asset) async throws -> Data {

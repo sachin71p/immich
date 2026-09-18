@@ -163,24 +163,55 @@ struct VideoPage: View {
   @State private var isScrubbing = false
   @State private var timeObserver: Any?
   @State private var endObserver: NSObjectProtocol?
+  @State private var failedObserver: NSObjectProtocol?
+  /// WP-R (F2): a stream the server rejects must surface, never sit black.
+  @State private var playbackFailed = false
+  @State private var attempt = 0
 
   var body: some View {
     ZStack {
       Group {
         if let player {
           PlayerControllerView(player: player)
+            .accessibilityIdentifier("videoPlayerCanvas")
             .onTapGesture { onSingleTap?() }
+        } else if playbackFailed {
+          VStack(spacing: 12) {
+            ContentUnavailableView(
+              "Video unavailable", systemImage: "play.slash",
+              description: Text("The video could not be played."))
+            Button("Retry") {
+              playbackFailed = false
+              attempt += 1
+            }
+            .buttonStyle(.bordered)
+            .tint(.white)
+          }
         } else {
           ProgressView().tint(.white)
         }
       }
-      .task(id: asset.id) {
+      .task(id: "\(asset.id)-\(attempt)") {
         await makePlayer()
       }
       .onDisappear {
         stopObserving()
         player?.pause()
         player = nil
+      }
+      // WP-R (F2): mid-stream failure keeps the last frame but must offer a way
+      // out — overlay retry instead of a dead player.
+      if playbackFailed, player != nil {
+        VStack {
+          Spacer()
+          Button("Video failed — Retry") {
+            playbackFailed = false
+            attempt += 1
+          }
+          .buttonStyle(.bordered)
+          .tint(.white)
+          .padding(.bottom, ViewerLayout.bottomReserve)
+        }
       }
       VStack {
         Spacer()
@@ -227,6 +258,12 @@ struct VideoPage: View {
     stopObserving()
     progress = 0
     isPlaying = false
+    playbackFailed = false
+    // WP-R (F2): the scrubber must work even when the AV duration probe fails —
+    // seed from the asset record first; the probe below only refines it.
+    if durationSeconds <= 0, let known = asset.durationSeconds, known > 0 {
+      durationSeconds = Double(known)
+    }
     guard let base = session.serverURL,
       let token = await session.bearerToken()
     else { return }
@@ -237,8 +274,30 @@ struct VideoPage: View {
     let created = AVPlayer(playerItem: item)
     created.isMuted = isMuted
     player = created
-    if let seconds = try? await item.asset.load(.duration).seconds, seconds.isFinite {
+    // WP-R (F2): bound the probe — the old unbounded `load(.duration)` left
+    // `durationSeconds == 0` forever on failure, freezing the scrubber thumb.
+    if let seconds = try? await withMainActorTimeout(
+      seconds: EditorLoadBudget.videoDurationProbe,
+      operation: { try await item.asset.load(.duration).seconds }),
+      seconds.isFinite, seconds > 0
+    {
       durationSeconds = seconds
+    }
+    // WP-R (F2): honour a play tap that landed before readiness, and surface a
+    // rejected stream instead of sitting black with a dead scrubber.
+    try? await withMainActorTimeout(seconds: EditorLoadBudget.playerReady, operation: {
+      while item.status == .unknown {
+        try Task.checkCancellation()
+        try await Task.sleep(nanoseconds: 100_000_000)
+      }
+    })
+    if item.status == .failed {
+      playbackFailed = true
+      isPlaying = false
+      return
+    }
+    if item.status == .readyToPlay, isPlaying {
+      created.play()
     }
     // Both blocks run on .main, so they touch @State synchronously through the
     // assumed actor (the observer/notify APIs don't carry that statically).
@@ -260,6 +319,16 @@ struct VideoPage: View {
         progress = 1
       }
     }
+    // WP-R (F2): a mid-stream failure surfaces with a retry instead of freezing
+    // on the last frame with a dead scrubber.
+    failedObserver = NotificationCenter.default.addObserver(
+      forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main
+    ) { _ in
+      MainActor.assumeIsolated {
+        isPlaying = false
+        playbackFailed = true
+      }
+    }
   }
 
   private func stopObserving() {
@@ -271,6 +340,10 @@ struct VideoPage: View {
       NotificationCenter.default.removeObserver(endObserver)
     }
     self.endObserver = nil
+    if let failedObserver {
+      NotificationCenter.default.removeObserver(failedObserver)
+    }
+    self.failedObserver = nil
   }
 
   private func togglePlay() {
