@@ -67,7 +67,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.immich.heirloom.ios
-        CODE_SIGN_ENTITLEMENTS: Apps/Shared/Heirloom.entitlements
+        # No entitlements on the runner: it inherits none of the app's, and the
+        # shared file carries the macOS-only application-groups key, which the
+        # portal rejects when minting the runner profile for device runs.
+        CODE_SIGN_ENTITLEMENTS: ""
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
   Heirloom-macOS:
     type: application
