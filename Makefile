@@ -48,8 +48,12 @@ help:
 	@echo "WARNING: install-ios-release reinstalls the app, which logs the owner out of Heirloom."
 	@echo "A literal iPhone name or UDID also works for IOS_DEVICE."
 
+# Unset DEVELOPMENT_TEAM for the regen: with it set, xcodegen interpolates the
+# literal ${DEVELOPMENT_TEAM} in project.yml and every build dirties
+# Heirloom.xcodeproj/project.pbxproj. Unset, the literal passes through and the
+# tree stays clean (Xcode resolves the variable at build time either way).
 xcodegen:
-	cd $(NATIVE_DIR) && xcodegen generate
+	cd $(NATIVE_DIR) && env -u DEVELOPMENT_TEAM xcodegen generate
 
 # Building against a project-local derived data + module cache path mirrors
 # native-apple/scripts/verify.sh so builds don't collide with Xcode's own cache.
