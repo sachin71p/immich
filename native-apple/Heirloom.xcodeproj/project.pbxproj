@@ -115,6 +115,7 @@
 		B1B00CECEF067ED5E8EF8703 /* Media in Frameworks */ = {isa = PBXBuildFile; productRef = 6279A9067853BAACD2E54D99 /* Media */; };
 		B27032EFFEBC3A6E2CE4683A /* MoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958BD68C3B16A152746D63A5 /* MoveSheet.swift */; };
 		B2E232FB0CFF801B0281E2B6 /* BackupScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A200B4479469DD4C3817B69 /* BackupScanner.swift */; };
+		B3E6BCE5053B6C3F9D53F5B8 /* EditorLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1D42E271261F49679D0B20 /* EditorLoad.swift */; };
 		B63C1150C2B471CE7C7BA00F /* Search in Frameworks */ = {isa = PBXBuildFile; productRef = 3A6164A7A7F48AE42AE1D9C5 /* Search */; };
 		BB8AFB92998483F7105D6AE1 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500F5A4905443D3A3CF04B9A /* SharedContainer.swift */; };
 		BC2215C8BF65688DA4298B47 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 85CFCE58FBB95FEC2EF1800C /* LocalStore */; };
@@ -306,6 +307,7 @@
 		DB2BE337917F87C38F80A852 /* PhotosCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PhotosCore; path = PhotosCore; sourceTree = SOURCE_ROOT; };
 		DC84EEBDF5622F30FB15AD60 /* HeirloomIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomIOSApp.swift; sourceTree = "<group>"; };
 		DC8C25D063828EA8571BC260 /* YearsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearsView.swift; sourceTree = "<group>"; };
+		DD1D42E271261F49679D0B20 /* EditorLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorLoad.swift; sourceTree = "<group>"; };
 		DE98821B494A9BE5D727EEAB /* LibrarySelectMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySelectMenu.swift; sourceTree = "<group>"; };
 		E0AF35940917C91636A4A755 /* MacPreviewCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewCatalog.swift; sourceTree = "<group>"; };
 		E3830EA54566B228691C8B90 /* SearchSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSuggestions.swift; sourceTree = "<group>"; };
@@ -576,6 +578,7 @@
 				644C38FC2FC62B250E305F5A /* BackupSettings.swift */,
 				FAD06FF34A315C4624E74B70 /* ClusteredMap.swift */,
 				52ADF313E45A57DF68AB044B /* Collections.swift */,
+				DD1D42E271261F49679D0B20 /* EditorLoad.swift */,
 				848364178733C3D1D80789CF /* EditView.swift */,
 				654F5B7B73E4E8F342B80457 /* ExtensionSnapshotWriter.swift */,
 				1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */,
@@ -1178,6 +1181,7 @@
 				443F6D37EF67F2CA6A503863 /* CollectionsLoader.swift in Sources */,
 				059C56F540604315F066D1E5 /* ConnectView.swift in Sources */,
 				0D84C822D912CE57500AE304 /* EditView.swift in Sources */,
+				B3E6BCE5053B6C3F9D53F5B8 /* EditorLoad.swift in Sources */,
 				23D25F7E4E774F4695B170E1 /* ErrorFilter.swift in Sources */,
 				E90F414B18520F0A62CBDA9A /* ExtensionSnapshotWriter.swift in Sources */,
 				8B6CCC43E03D96B3C89CB8A5 /* FastScroller.swift in Sources */,
