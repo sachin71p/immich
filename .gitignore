@@ -34,3 +34,6 @@ e2e/fork-assets/personal/*
 e2e/.fork-data/
 e2e/.fork-report/
 server/.fork-ts-*/
+
+# Parity-program capture evidence: contains the owner's real photo library. Never commit.
+.claude/plans/**/assets/
