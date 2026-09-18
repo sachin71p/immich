@@ -50,11 +50,7 @@ final class MacFunctionalTests: XCTestCase {
     // Select, Sync, Manage) into the overflow menu where AX cannot reach them:
     // ⌥-click the green button so the window fills the display and the full
     // grid toolbar renders before any test touches it.
-    let zoom = app.windows.firstMatch.buttons["_XCUI:FullScreenWindow"]
-    XCTAssertTrue(zoom.waitForExistence(timeout: 10), "zoom button renders")
-    XCUIElement.perform(withKeyModifiers: .option) { zoom.click() }
-    XCTAssertTrue(
-      el("favorite-button").waitForExistence(timeout: 10), "toolbar unfurls after zoom")
+    XCTAssertTrue(app.zoomToFillDisplay(), "toolbar unfurls after zoom")
   }
 
   private func windowTitle() -> String {
@@ -72,6 +68,42 @@ final class MacFunctionalTests: XCTestCase {
     app.descendants(matching: .any).matching(
       NSPredicate(format: "identifier BEGINSWITH %@", "grid-cell-")
     ).count
+  }
+
+  /// Re-runs `act` until `settled()` holds (bounded): interactions that land
+  /// while the library is still settling can get swallowed with no error —
+  /// no animation, no loading state, just a dropped action. Idempotent
+  /// activations only (navigation, selection, sheet-openers) — never toggles
+  /// or destructive actions.
+  private func clickUntilSettled(
+    _ message: String, timeout: TimeInterval = 15,
+    file: StaticString = #filePath, line: UInt = #line,
+    act: () -> Void, settled: () -> Bool
+  ) {
+    let deadline = Date().addingTimeInterval(timeout)
+    repeat {
+      act()
+      Thread.sleep(forTimeInterval: 0.5)
+    } while !settled() && Date() < deadline
+    XCTAssertTrue(settled(), message, file: file, line: line)
+  }
+
+  /// Scrolls the sidebar until `id` is hittable (bounded): lower sections
+  /// sit below the fold on short displays and virtualized rows report zero
+  /// frames, so clicking blind throws "not hittable".
+  private func scrollSidebarTo(
+    _ id: String, _ message: String,
+    file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let bar = el("sidebar")
+    let deadline = Date().addingTimeInterval(10)
+    var n = 0
+    while !el(id).isHittable, Date() < deadline, n < 6 {
+      bar.swipeUp()
+      n += 1
+      Thread.sleep(forTimeInterval: 0.5)
+    }
+    XCTAssertTrue(el(id).isHittable, message, file: file, line: line)
   }
 
   /// Selection-dependent menu items capture the focused grid actions when Commands
@@ -94,6 +126,12 @@ final class MacFunctionalTests: XCTestCase {
     // surface; the menu-bar instance is the one the suite drives.
     let item = app.menuBars.menuItems[title].firstMatch
     XCTAssertTrue(item.waitForExistence(timeout: 10), "menu item \(title)", file: file, line: line)
+    // Clicks on a still-disabled item do nothing: the selection reaches the
+    // menus asynchronously after grid interaction, so wait for enabled the
+    // same way waitForSelectionMenus does.
+    let deadline = Date().addingTimeInterval(10)
+    while !item.isEnabled && Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+    XCTAssertTrue(item.isEnabled, "menu item \(title) enables", file: file, line: line)
     item.click()
     return item
   }
@@ -187,16 +225,18 @@ final class MacFunctionalTests: XCTestCase {
     XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
     firstCell.click()
     app.typeKey("a", modifierFlags: .command)
-    menuItem("Move to…")
-    XCTAssertTrue(el("move-sheet-title").waitForExistence(timeout: 10), "move sheet opens")
+    clickUntilSettled("move sheet opens", act: { menuItem("Move to…") }) {
+      el("move-sheet-title").exists
+    }
 
     // Cancel closes.
     sheetButton("Cancel")
     assertClosed("move-sheet-title", "move sheet Cancel closes")
 
     // Escape closes.
-    menuItem("Move to…")
-    XCTAssertTrue(el("move-sheet-title").waitForExistence(timeout: 10), "move sheet reopens")
+    clickUntilSettled("move sheet reopens", act: { menuItem("Move to…") }) {
+      el("move-sheet-title").exists
+    }
     app.typeKey(.escape, modifierFlags: [])
     assertClosed("move-sheet-title", "move sheet Escape closes")
 
@@ -223,12 +263,16 @@ final class MacFunctionalTests: XCTestCase {
 
   func testNewAlbumSheetCancelAndEscape() {
     launchAndWaitForLibrary()
-    el("sidebar-new-album").click()
-    XCTAssertTrue(el("new-album-name").waitForExistence(timeout: 10), "new-album sheet opens")
+    scrollSidebarTo("sidebar-new-album", "new-album button scrolls into view")
+    clickUntilSettled("new-album sheet opens", act: { el("sidebar-new-album").click() }) {
+      el("new-album-name").exists
+    }
     sheetButton("Cancel")
     assertClosed("new-album-name", "new-album Cancel closes")
-    el("sidebar-new-album").click()
-    XCTAssertTrue(el("new-album-name").waitForExistence(timeout: 10), "new-album sheet reopens")
+    scrollSidebarTo("sidebar-new-album", "new-album button scrolls into view")
+    clickUntilSettled("new-album sheet reopens", act: { el("sidebar-new-album").click() }) {
+      el("new-album-name").exists
+    }
     app.typeKey(.escape, modifierFlags: [])
     assertClosed("new-album-name", "new-album Escape closes")
   }
@@ -238,14 +282,14 @@ final class MacFunctionalTests: XCTestCase {
     let firstCell = el("grid-cell-asset-personal-1")
     XCTAssertTrue(firstCell.waitForExistence(timeout: 10))
     firstCell.click()
-    menuItem("Add to Album…")
-    XCTAssertTrue(
-      el("add-to-album-album-trip").waitForExistence(timeout: 10), "add-to-album sheet opens")
+    clickUntilSettled("add-to-album sheet opens", act: { menuItem("Add to Album…") }) {
+      el("add-to-album-album-trip").exists
+    }
     sheetButton("Cancel")
     assertClosed("add-to-album-album-trip", "add-to-album Cancel closes")
-    menuItem("Add to Album…")
-    XCTAssertTrue(
-      el("add-to-album-album-trip").waitForExistence(timeout: 10), "add-to-album sheet reopens")
+    clickUntilSettled("add-to-album sheet reopens", act: { menuItem("Add to Album…") }) {
+      el("add-to-album-album-trip").exists
+    }
     app.typeKey(.escape, modifierFlags: [])
     assertClosed("add-to-album-album-trip", "add-to-album Escape closes")
   }
@@ -256,8 +300,9 @@ final class MacFunctionalTests: XCTestCase {
     // needs the space selection applied — wait for both, never click blind.
     XCTAssertTrue(
       el("sidebar-space-space-family").waitForExistence(timeout: 10), "space row renders")
-    el("sidebar-space-space-family").click()
-    XCTAssertEqual(windowTitle(), "Family")
+    clickUntilSettled("navigates to Family", act: { el("sidebar-space-space-family").click() }) {
+      windowTitle() == "Family"
+    }
     XCTAssertTrue(
       el("space-manage-button").waitForExistence(timeout: 10), "manage button renders")
     el("space-manage-button").click()
@@ -311,9 +356,17 @@ final class MacFunctionalTests: XCTestCase {
     waitForSelectionMenus()
     XCTAssertTrue(
       el("favorite-button").waitForExistence(timeout: 10), "favorite button renders")
-    el("favorite-button").click()
-    el("sidebar-favorites").click()
-    XCTAssertEqual(windowTitle(), "Favorites")
+    // The toggle is not retried (a second click would un-favorite): wait for
+    // enabled instead, the same settling the menu items need.
+    let fav = el("favorite-button")
+    XCTAssertTrue(fav.waitForExistence(timeout: 10), "favorite button renders")
+    let favDeadline = Date().addingTimeInterval(10)
+    while !fav.isEnabled, Date() < favDeadline { Thread.sleep(forTimeInterval: 0.5) }
+    XCTAssertTrue(fav.isEnabled, "favorite button enables")
+    fav.click()
+    clickUntilSettled("navigates to Favorites", act: { el("sidebar-favorites").click() }) {
+      windowTitle() == "Favorites"
+    }
     XCTAssertTrue(
       el("grid-cell-asset-personal-2").waitForExistence(timeout: 10),
       "first favorited item in Favorites")
@@ -337,8 +390,9 @@ final class MacFunctionalTests: XCTestCase {
     // No visible-count assertion: the grid virtualizes (visible cells are
     // viewport-sized, not library-sized), so trashing one of 2k rows cannot move
     // the count. Gone-from-grid + renders-in-Trash is the removal proof.
-    doomed.click()
-    waitForSelectionMenus()
+    clickUntilSettled("selection reaches the menus", act: { doomed.click() }) {
+      app.menuBars.menuItems["Move to…"].isEnabled
+    }
     // Image > Delete owns the ⌘⌫ shortcut (MacMenus): send the keystroke rather
     // than clicking through the menu bar, which is timing-fragile under automation.
     app.typeKey(.delete, modifierFlags: .command)
@@ -372,8 +426,9 @@ final class MacFunctionalTests: XCTestCase {
     for (row, title) in [
       ("sidebar-map", "Map"), ("sidebar-people", "People"), ("sidebar-memories", "Memories"),
     ] {
-      el(row).click()
-      XCTAssertEqual(windowTitle(), title)
+      clickUntilSettled("navigates to \(title)", act: { el(row).click() }) {
+        windowTitle() == title
+      }
       for id in gridOnly {
         XCTAssertFalse(el(id).exists, "\(id) hidden on \(title)")
       }

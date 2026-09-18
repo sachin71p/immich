@@ -43,11 +43,7 @@ final class EditUITests: XCTestCase {
     // Same toolbar-overflow guard as the functional suite: the default 1400px
     // window hides trailing toolbar items (including the viewer Edit button)
     // where AX clicks cannot reach them.
-    let zoom = app.windows.firstMatch.buttons["_XCUI:FullScreenWindow"]
-    XCTAssertTrue(zoom.waitForExistence(timeout: 10), "zoom button renders")
-    XCUIElement.perform(withKeyModifiers: .option) { zoom.click() }
-    XCTAssertTrue(
-      el("favorite-button").waitForExistence(timeout: 10), "toolbar unfurls after zoom")
+    XCTAssertTrue(app.zoomToFillDisplay(), "toolbar unfurls after zoom")
   }
 
   private func firstCell() -> XCUIElement {
@@ -124,10 +120,12 @@ final class EditUITests: XCTestCase {
     openViewer()
     XCTAssertTrue(el("sidebar").exists, "sidebar visible before edit")
     openEdit()
-    let sidebarGone = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "exists == false"), object: el("sidebar"))
-    XCTAssertEqual(
-      XCTWaiter.wait(for: [sidebarGone], timeout: 10), .completed, "entering edit hides the sidebar")
+    // Hidden, not removed: full-window edit keeps the sidebar in the
+    // hierarchy with hidden set (preserving scroll state), so `exists`
+    // never drops — poll hittability, the observable hidden state, instead.
+    let deadline = Date().addingTimeInterval(10)
+    while el("sidebar").isHittable, Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+    XCTAssertFalse(el("sidebar").isHittable, "entering edit hides the sidebar")
     app.typeKey(.escape, modifierFlags: [])
     XCTAssertTrue(el("sidebar").waitForExistence(timeout: 10), "exiting edit restores the sidebar")
   }
