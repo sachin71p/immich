@@ -23,7 +23,7 @@ CONFIGURATION ?= Release
 .DEFAULT_GOAL := help
 
 .PHONY: help xcodegen build-ios build-macos build-macos-debug check-ios-device install-ios install-ios-release install-macos \
-        test-core test-macos-ui \
+        test-core test-ios-ui test-macos-ui \
         mock-server mock-server-down mock-server-logs ios-sim clean
 
 help:
@@ -35,6 +35,7 @@ help:
 	@echo "  make build-macos-debug  Build the macOS app in Debug (developer iteration)"
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
 	@echo "  make test-core          Run the PhotosCore SwiftPM test suite"
+	@echo "  make test-ios-ui        Run the iOS UI tests (Heirloom-iOS-UITests, Simulator)"
 	@echo "  make test-macos-ui      Run the macOS UI tests (Heirloom-macOS-UITests)"
 	@echo "  make mock-server        Start the local Heirloom server via Docker (built from source)"
 	@echo "  make mock-server-down   Stop the local Docker server"
@@ -151,6 +152,23 @@ install-macos: build-macos
 
 test-core:
 	swift test --package-path $(NATIVE_DIR)/PhotosCore
+
+# WP-T (TEST-PLAN): the iOS parity harness target. Runs the Heirloom-iOS-UITests
+# bundle on the Simulator. Perf/budget tests skip on the Simulator by design
+# (Release-on-physical-device-only); pass TEST_FILTER to run a narrow slice,
+# e.g. `make test-ios-ui TEST_FILTER=ParityViewerUITests`. Perf numbers are
+# only valid from a Release build on a physical device (see F6/WP-B).
+test-ios-ui: xcodegen
+	@mkdir -p $(MODULE_CACHE)
+	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild test \
+		-project Heirloom.xcodeproj \
+		-scheme Heirloom-iOS \
+		-configuration $(CONFIGURATION) \
+		-destination 'platform=iOS Simulator,name=$(SIMULATOR_NAME)' \
+		-derivedDataPath .build/DerivedData \
+		-skipPackagePluginValidation \
+		-allowProvisioningUpdates \
+		-only-testing:Heirloom-iOS-UITests$(if $(TEST_FILTER),/$(TEST_FILTER))
 
 test-macos-ui: xcodegen
 	@mkdir -p $(MODULE_CACHE)
