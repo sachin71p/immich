@@ -200,6 +200,39 @@ final class EditUITests: XCTestCase {
     assertEditClosed("Discard exits edit mode")
   }
 
+  // MARK: - D4 Red-Eye tap canvas
+
+  /// Tapping the Red-Eye canvas places a correction region: the count readout
+  /// moves off "No corrections", and the change marks the recipe dirty (the
+  /// Discard confirm on Escape proves the new keys participate in dirty
+  /// tracking). Done-save itself stays fixture-gated (E7): Done is disabled
+  /// with no server original.
+  func testRedEyeTapPlacesCorrection() {
+    openViewer()
+    openEdit()
+    let options = el("edit.section.options.redEye")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Red-Eye Options renders")
+    options.click()
+    let canvas = el("edit.slider.redeye-canvas")
+    XCTAssertTrue(canvas.waitForExistence(timeout: 10), "red-eye canvas renders")
+    let count = el("edit.slider.redeye-count")
+    XCTAssertTrue(count.waitForExistence(timeout: 10), "red-eye count renders")
+    // macOS exposes StaticText content as `value`, not `label`.
+    XCTAssertEqual(count.value as? String, "No corrections")
+    // A click is a zero-distance drag, which the canvas maps to a normalized
+    // region at its center.
+    canvas.click()
+    XCTAssertEqual(count.value as? String, "1 correction")
+    // The tap leaves no focus on the canvas, but click it anyway so Escape
+    // reaches the mode handler rather than a lingering control.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    app.typeKey(.escape, modifierFlags: [])
+    let discard = app.sheets.buttons["Discard"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5), "dirty Escape shows Discard confirm")
+    discard.click()
+    assertEditClosed("Discard exits edit mode")
+  }
+
   // MARK: - E7 Done gating
 
   func testDoneGatedWhileOriginalLoads() {

@@ -139,6 +139,11 @@ public struct AdjustRecipe: Sendable, Equatable {
   public var selMagentaSat: Int
   public var selMagentaLum: Int
   public var selMagentaRange: Int
+  /// Red-Eye section (D4): tap-to-select eye regions (normalized, origin
+  /// upper-left) plus a 0...100 correction strength. Empty regions = identity
+  /// regardless of strength, so legacy payloads (missing keys) render unchanged.
+  public var redEyeRegions: [RedEyeRegion]
+  public var redEyeStrength: Int
   /// Recipe/pipeline versions (on-device-AI §13.2; full v2 migration is E1's).
   /// 0 = legacy unversioned payload; new saves write 1.
   public var recipeVersion: Int
@@ -160,6 +165,7 @@ public struct AdjustRecipe: Sendable, Equatable {
     selGreenHue: Int = 0, selGreenSat: Int = 0, selGreenLum: Int = 0, selGreenRange: Int = 0,
     selBlueHue: Int = 0, selBlueSat: Int = 0, selBlueLum: Int = 0, selBlueRange: Int = 0,
     selMagentaHue: Int = 0, selMagentaSat: Int = 0, selMagentaLum: Int = 0, selMagentaRange: Int = 0,
+    redEyeRegions: [RedEyeRegion] = [], redEyeStrength: Int = 0,
     recipeVersion: Int = 1, rendererVersion: Int = 1
   ) {
     self.exposure = Self.clamp(exposure)
@@ -218,6 +224,8 @@ public struct AdjustRecipe: Sendable, Equatable {
     self.selMagentaSat = Self.clamp(selMagentaSat)
     self.selMagentaLum = Self.clamp(selMagentaLum)
     self.selMagentaRange = Self.clampRange(selMagentaRange)
+    self.redEyeRegions = redEyeRegions.map { $0.clamped() }
+    self.redEyeStrength = Self.clamp(redEyeStrength)
     self.recipeVersion = recipeVersion
     self.rendererVersion = rendererVersion
   }
@@ -257,6 +265,7 @@ extension AdjustRecipe: Codable {
       selGreenHue, selGreenSat, selGreenLum, selGreenRange,
       selBlueHue, selBlueSat, selBlueLum, selBlueRange,
       selMagentaHue, selMagentaSat, selMagentaLum, selMagentaRange,
+      redEyeRegions, redEyeStrength,
       recipeVersion, rendererVersion
   }
 
@@ -302,6 +311,8 @@ extension AdjustRecipe: Codable {
       selBlueRange: v(.selBlueRange),
       selMagentaHue: v(.selMagentaHue), selMagentaSat: v(.selMagentaSat),
       selMagentaLum: v(.selMagentaLum), selMagentaRange: v(.selMagentaRange),
+      redEyeRegions: (try? c.decodeIfPresent([RedEyeRegion].self, forKey: .redEyeRegions)) ?? [],
+      redEyeStrength: v(.redEyeStrength),
       recipeVersion: v(.recipeVersion), rendererVersion: v(.rendererVersion))
   }
 
@@ -363,6 +374,8 @@ extension AdjustRecipe: Codable {
     try c.encode(selMagentaSat, forKey: .selMagentaSat)
     try c.encode(selMagentaLum, forKey: .selMagentaLum)
     try c.encode(selMagentaRange, forKey: .selMagentaRange)
+    try c.encode(redEyeRegions, forKey: .redEyeRegions)
+    try c.encode(redEyeStrength, forKey: .redEyeStrength)
     try c.encode(recipeVersion, forKey: .recipeVersion)
     try c.encode(rendererVersion, forKey: .rendererVersion)
   }
@@ -524,6 +537,31 @@ public struct NormalizedPoint: Sendable, Codable, Equatable {
   public init(x: Double, y: Double) {
     self.x = x
     self.y = y
+  }
+}
+
+/// One Red-Eye correction target (D4): tap-to-select eye center, normalized
+/// `0...1` with origin upper-left (same convention as `CropRecipe.rect`), plus
+/// a correction radius as a fraction of image width. Values are clamped on
+/// set so foreign/tap payloads can never push the crop math off-frame.
+public struct RedEyeRegion: Sendable, Codable, Equatable {
+  public var x: Double
+  public var y: Double
+  public var radius: Double
+
+  public init(x: Double, y: Double, radius: Double = 0.04) {
+    self.x = x
+    self.y = y
+    self.radius = radius
+  }
+
+  /// Value-clamped copy (used by `AdjustRecipe.init` so decoded regions are
+  /// always frame-safe).
+  public func clamped() -> RedEyeRegion {
+    RedEyeRegion(
+      x: min(1, max(0, x)),
+      y: min(1, max(0, y)),
+      radius: min(0.25, max(0.01, radius)))
   }
 }
 

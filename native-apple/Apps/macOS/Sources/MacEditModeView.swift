@@ -871,8 +871,8 @@ extension MacEditModeView {
 /// One Adjust section: header row (title, AUTO, reset, enable toggle), a smart
 /// filmstrip slider for the headline param, and an Options disclosure with fine
 /// sliders. Sections with dedicated UI (D3 levels handles, D1 selective-color
-/// swatches) render it instead of fine sliders; sections still without
-/// dedicated keys (curves freeform, red-eye) expose honest macros or a
+/// swatches, D4 red-eye tools) render it instead of fine sliders; sections
+/// still without dedicated keys (curves freeform) expose honest macros or a
 /// deferred note — see `deferredNote`.
 enum EditAdjustSection: String, CaseIterable {
   case light, color, blackWhite, whiteBalance, curves, levels, definition
@@ -936,7 +936,8 @@ enum EditAdjustSection: String, CaseIterable {
     case .noiseReduction: return [\.noiseReduction]
     case .sharpen: return [\.sharpness, \.sharpenEdges, \.sharpenFalloff]
     case .vignette: return [\.vignette, \.vignetteStrength, \.vignetteRadius, \.vignetteSoftness]
-    case .depth, .redEye: return []
+    case .redEye: return [\.redEyeStrength]
+    case .depth: return []
     }
   }
 
@@ -992,7 +993,7 @@ enum EditAdjustSection: String, CaseIterable {
     case .selectiveColor:
       return nil
     case .redEye:
-      return "Red-Eye removal (P2) is deferred to owner decision."
+      return nil
     default: return nil
     }
   }
@@ -1009,6 +1010,7 @@ private struct EditAdjustSectionView: View {
   @State private var sectionExpanded = true
   @State private var optionsExpanded = false
   @State private var selectiveHue = 0
+  @State private var redEyeThumb: CGImage?
 
   var body: some View {
     // Sections default expanded: the filmstrip headline and Options rows are the
@@ -1042,6 +1044,9 @@ private struct EditAdjustSectionView: View {
             if section == .selectiveColor {
               selectiveColorSection
             }
+            if section == .redEye {
+              redEyeTools
+            }
             if let note = section.deferredNote {
               Text(note).font(.caption2).foregroundStyle(.secondary)
             }
@@ -1066,6 +1071,8 @@ private struct EditAdjustSectionView: View {
       }
       Button {
         for key in section.keys { recipe[keyPath: key] = 0 }
+        // Region taps are not Int keys, so the generic reset cannot reach them.
+        if section == .redEye { recipe.redEyeRegions = [] }
       } label: { Image(systemName: "arrow.counterclockwise") }
         .buttonStyle(.plain)
         .help("Reset \(section.title)")
@@ -1074,7 +1081,10 @@ private struct EditAdjustSectionView: View {
           get: { sectionActive },
           set: { v in
             sectionActive = v
-            if !v { for key in section.keys { recipe[keyPath: key] = 0 } }
+            if !v {
+              for key in section.keys { recipe[keyPath: key] = 0 }
+              if section == .redEye { recipe.redEyeRegions = [] }
+            }
           }))
           .toggleStyle(.switch)
           .controlSize(.mini)
@@ -1225,6 +1235,98 @@ private struct EditAdjustSectionView: View {
       fineSlider(label: "Saturation", key: hue.satKey, axKey: "sel-\(hue.axID)-saturation")
       fineSlider(label: "Luminance", key: hue.lumKey, axKey: "sel-\(hue.axID)-luminance")
       fineSlider(label: "Range", key: hue.rangeKey, axKey: "sel-\(hue.axID)-range")
+    }
+  }
+
+  /// Tap-to-select eye regions + strength (D4). Taps on the canvas land as
+  /// normalized regions (capped at 10); Detect Faces seeds them from Vision
+  /// eye landmarks instead. The first tap arms the section (strength 0 → 100)
+  /// so a placed correction renders immediately.
+  private var redEyeTools: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      redEyeCanvas
+      HStack {
+        Text(verbatim: redEyeCountText)
+          .font(.caption).foregroundStyle(.secondary)
+          .accessibilityIdentifier(AXIDs.editSlider("redeye-count"))
+        Spacer()
+        Button("Detect Faces") { detectFaces() }
+          .buttonStyle(.plain).font(.caption)
+          .disabled(source == nil)
+        Button("Clear") { recipe.redEyeRegions = [] }
+          .buttonStyle(.plain).font(.caption)
+          .disabled(recipe.redEyeRegions.isEmpty)
+      }
+      fineSlider(label: "Strength", key: \.redEyeStrength, axKey: "redeye-strength")
+    }
+  }
+
+  private var redEyeCountText: String {
+    switch recipe.redEyeRegions.count {
+    case 0: return "No corrections"
+    case 1: return "1 correction"
+    default: return "\(recipe.redEyeRegions.count) corrections"
+    }
+  }
+
+  /// Placement canvas: a stretched source thumbnail (stretch keeps the tap →
+  /// normalized mapping exact) with a marker per region. A zero-distance drag
+  /// is a click, so UI-test clicks land here as placements.
+  private var redEyeCanvas: some View {
+    GeometryReader { geo in
+      ZStack {
+        if let redEyeThumb {
+          Image(nsImage: NSImage(cgImage: redEyeThumb, size: NSSize(width: 320, height: 200)))
+            .resizable()
+        } else {
+          RoundedRectangle(cornerRadius: 6).fill(.gray.opacity(0.3))
+        }
+        ForEach(recipe.redEyeRegions.indices, id: \.self) { i in
+          let r = recipe.redEyeRegions[i]
+          Circle()
+            .stroke(.yellow, lineWidth: 2)
+            .frame(width: 14, height: 14)
+            .position(x: CGFloat(r.x) * geo.size.width, y: CGFloat(r.y) * geo.size.height)
+        }
+      }
+      .gesture(DragGesture(minimumDistance: 0).onEnded { d in
+        placeRedEye(at: d.location, in: geo.size)
+      })
+      .accessibilityElement(children: .ignore)
+      .accessibilityIdentifier(AXIDs.editSlider("redeye-canvas"))
+      .accessibilityLabel("Red-eye tap canvas")
+      .accessibilityValue(redEyeCountText)
+    }
+    .frame(height: 120)
+    .clipShape(RoundedRectangle(cornerRadius: 6))
+    .task {
+      guard let source else { return }
+      let thumbs = await editFilmstripThumbs(
+        source: UncheckedCIImage(source), recipes: [EditRecipe()])
+      redEyeThumb = thumbs.first ?? nil
+    }
+  }
+
+  private func placeRedEye(at location: CGPoint, in size: CGSize) {
+    guard size.width > 0, size.height > 0, recipe.redEyeRegions.count < 10 else { return }
+    recipe.redEyeRegions.append(RedEyeRegion(
+      x: min(1, max(0, location.x / size.width)),
+      y: min(1, max(0, location.y / size.height))))
+    if recipe.redEyeStrength == 0 { recipe.redEyeStrength = 100 }
+  }
+
+  /// Seeds regions from on-device Vision eye landmarks (Tier A: Vision + Core
+  /// Image only). No faces (or no landmarks) leaves the recipe untouched.
+  private func detectFaces() {
+    guard let source else { return }
+    let boxed = UncheckedCIImage(source)
+    Task { @MainActor in
+      let thumbs = await editFilmstripThumbs(source: boxed, recipes: [EditRecipe()])
+      guard let cg = thumbs.first ?? nil else { return }
+      let found = (try? await EditRenderer().suggestedRedEyeRegions(for: cg)) ?? []
+      guard !found.isEmpty else { return }
+      recipe.redEyeRegions = Array((recipe.redEyeRegions + found).prefix(10))
+      if recipe.redEyeStrength == 0 { recipe.redEyeStrength = 100 }
     }
   }
 

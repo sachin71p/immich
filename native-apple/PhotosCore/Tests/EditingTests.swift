@@ -189,6 +189,107 @@ import Testing
     #expect(blueShifted == bluePlain)
   }
 
+  // MARK: - Red-Eye (D4)
+
+  @Test("[D4] Red-eye keys default to empty/off; clamping holds")
+  func redEyeDefaults() {
+    let a = AdjustRecipe()
+    #expect(a.redEyeRegions.isEmpty && a.redEyeStrength == 0)
+    #expect(AdjustRecipe(redEyeStrength: 500).redEyeStrength == 100)
+    #expect(AdjustRecipe(redEyeStrength: -500).redEyeStrength == -100)
+    let c = RedEyeRegion(x: 2, y: -1, radius: 9).clamped()
+    #expect(c.x == 1 && c.y == 0 && c.radius == 0.25)
+    let lo = RedEyeRegion(x: 0.5, y: 0.5, radius: 0).clamped()
+    #expect(lo.radius == 0.01)
+  }
+
+  @Test("[D4] Red-eye keys round-trip; legacy payloads decode to empty/off")
+  func redEyeCodable() throws {
+    var a = AdjustRecipe()
+    a.redEyeRegions = [
+      RedEyeRegion(x: 0.3, y: 0.4), RedEyeRegion(x: 0.7, y: 0.35, radius: 0.06)
+    ]
+    a.redEyeStrength = 80
+    let data = try JSONEncoder().encode(EditRecipe(adjust: a))
+    let back = try JSONDecoder().decode(EditRecipe.self, from: data).adjust
+    #expect(back.redEyeRegions == a.redEyeRegions)
+    #expect(back.redEyeStrength == 80)
+    // Legacy payload without the new keys: empty regions, strength off.
+    let legacy = #"{"exposure":25}"#.data(using: .utf8)!
+    let old = try JSONDecoder().decode(AdjustRecipe.self, from: legacy)
+    #expect(old.exposure == 25)
+    #expect(old.redEyeRegions.isEmpty && old.redEyeStrength == 0)
+  }
+
+  @Test("[D4] No regions renders pixel-identical (red-eye path is a no-op without taps)")
+  func redEyeIdentityNoOp() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let armed = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(redEyeStrength: 100))),
+      let tapped = renderer.pixelHash(
+        source: src,
+        recipe: EditRecipe(adjust: AdjustRecipe(
+          redEyeRegions: [RedEyeRegion(x: 0.5, y: 0.5)], redEyeStrength: 0)))
+    else { return }
+    // Strength with no regions, and regions with strength off, both identity.
+    #expect(armed == plain)
+    #expect(tapped == plain)
+  }
+
+  @Test("[D4] Red-eye renders deterministically with regions placed")
+  func redEyeDeterministic() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    let recipe = EditRecipe(adjust: AdjustRecipe(
+      redEyeRegions: [RedEyeRegion(x: 0.3, y: 0.4), RedEyeRegion(x: 0.7, y: 0.35)],
+      redEyeStrength: 100))
+    guard let first = renderer.pixelHash(source: src, recipe: recipe),
+      let second = renderer.pixelHash(source: src, recipe: recipe)
+    else { return }
+    #expect(first == second)
+  }
+
+  @Test("[D4] Red-eye crop rects stay inside the frame")
+  func redEyeCropMath() {
+    let extent = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let center = EditRenderer.redEyeCropRect(extent, RedEyeRegion(x: 0.5, y: 0.5))
+    #expect(extent.contains(center) && !center.isEmpty)
+    // Corner taps clip against the frame instead of escaping it.
+    let corner = EditRenderer.redEyeCropRect(extent, RedEyeRegion(x: 0, y: 0))
+    #expect(!corner.isNull && !corner.isEmpty)
+    #expect(extent.intersection(corner) == corner)
+    // y flips: recipe origin is upper-left, CI extents lower-left.
+    let top = EditRenderer.redEyeCropRect(extent, RedEyeRegion(x: 0.5, y: 0))
+    let bottom = EditRenderer.redEyeCropRect(extent, RedEyeRegion(x: 0.5, y: 1))
+    #expect(top.minY > bottom.minY)
+  }
+
+  @Test("[D4] Eye centroid maps face-relative landmarks to recipe space")
+  func redEyeEyeMapping() {
+    // Face box covering the middle of the frame; centroid at the face-box
+    // center lands at the frame center; y flips (landmarks lower-left,
+    // recipe upper-left).
+    let face = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+    let mid = EditRenderer.eyeRegion(centroidFaceX: 0.5, centroidFaceY: 0.5, faceBox: face)
+    #expect(abs(mid.x - 0.5) < 1e-9 && abs(mid.y - 0.5) < 1e-9)
+    let lowerLeft = EditRenderer.eyeRegion(centroidFaceX: 0, centroidFaceY: 0, faceBox: face)
+    #expect(abs(lowerLeft.x - 0.25) < 1e-9 && abs(lowerLeft.y - 0.75) < 1e-9)
+  }
+
+  @Test("[D4] Faceless image suggests no regions (Vision negative path)")
+  func redEyeNoFaces() async {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let cg = renderer.cgImage(source: src, recipe: EditRecipe()) else { return }
+    do {
+      _ = try await renderer.suggestedRedEyeRegions(for: cg)
+    } catch {
+      #expect(error as? EditRenderError == .noFacesFound)
+    }
+  }
+
   @Test("Recipe KV key and payload format tag are pinned")
   func recipeKeyPinned() throws {
     #expect(EditRecipeKey.current == "fork.editRecipe.v1")

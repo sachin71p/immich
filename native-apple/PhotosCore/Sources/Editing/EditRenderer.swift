@@ -163,6 +163,9 @@ public final class EditRenderer: @unchecked Sendable {
         img, inBlack: Double(a.levelsInBlack) / 100, inWhite: Double(a.levelsInWhite) / 100,
         outBlack: Double(a.levelsOutBlack) / 100, outWhite: Double(a.levelsOutWhite) / 100)
     }
+    if !a.redEyeRegions.isEmpty && a.redEyeStrength != 0 {
+      img = redEyeCorrected(img, regions: a.redEyeRegions, strength: a.redEyeStrength)
+    }
     if a.vibrance != 0 {
       img = filtered("CIVibrance", img, ["inputAmount": a.unit(a.vibrance)])
     }
@@ -380,6 +383,50 @@ public final class EditRenderer: @unchecked Sendable {
     return -horizon.angle * 180.0 / .pi
   }
 
+  // MARK: - Red-eye eye detection (Vision face landmarks)
+
+  /// Suggests red-eye regions from on-device face landmarks (D4, on-device-AI
+  /// §13 Tier A / E2: Vision + Core Image only — no Neural Engine, no Core ML
+  /// models). Each detected eye's landmark centroid becomes one `RedEyeRegion`
+  /// (capped at 10, matching the tap canvas). Throws `noFacesFound` when no
+  /// face — or no eye landmarks — are detected.
+  public func suggestedRedEyeRegions(for cgImage: CGImage) async throws -> [RedEyeRegion] {
+    let request = VNDetectFaceLandmarksRequest()
+    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    try handler.perform([request])
+    guard let faces = request.results, !faces.isEmpty else { throw EditRenderError.noFacesFound }
+    var out: [RedEyeRegion] = []
+    for face in faces {
+      guard let landmarks = face.landmarks else { continue }
+      if let left = landmarks.leftEye { out += Self.eyeRegions(left, in: face.boundingBox) }
+      if let right = landmarks.rightEye { out += Self.eyeRegions(right, in: face.boundingBox) }
+    }
+    guard !out.isEmpty else { throw EditRenderError.noFacesFound }
+    return Array(out.prefix(10))
+  }
+
+  /// Centroid of one eye's landmark points, mapped from face-relative
+  /// coordinates (origin lower-left) to recipe space (origin upper-left).
+  static func eyeRegions(_ eye: VNFaceLandmarkRegion2D, in faceBox: CGRect) -> [RedEyeRegion] {
+    let pts = eye.normalizedPoints
+    guard !pts.isEmpty else { return [] }
+    let cx = Double(pts.map(\.x).reduce(0, +)) / Double(pts.count)
+    let cy = Double(pts.map(\.y).reduce(0, +)) / Double(pts.count)
+    return [eyeRegion(centroidFaceX: cx, centroidFaceY: cy, faceBox: faceBox)]
+  }
+
+  /// Maps one eye centroid from face-relative landmark space (origin
+  /// lower-left — the `VNFaceLandmarkRegion2D.normalizedPoints` convention)
+  /// to recipe space (origin upper-left). Pure so unit tests can pin the
+  /// vertical flip without a face image.
+  public static func eyeRegion(centroidFaceX x: Double, centroidFaceY y: Double, faceBox: CGRect)
+    -> RedEyeRegion
+  {
+    RedEyeRegion(
+      x: Double(faceBox.origin.x) + x * Double(faceBox.width),
+      y: 1 - (Double(faceBox.origin.y) + y * Double(faceBox.height)))
+  }
+
   // MARK: - Helpers
 
   private static func downscale(_ image: CIImage, maxPixel: Int) -> CIImage {
@@ -426,6 +473,37 @@ public final class EditRenderer: @unchecked Sendable {
     pattern = pattern.cropped(to: CGRect(x: e.minX, y: e.minY, width: max(e.width, 2), height: max(e.height, 2)))
     return dissolve(foreground: pattern, background: image, amount: min(0.35, amount * 0.25))
       .cropped(to: e)
+  }
+
+  /// Red-Eye correction (D4, on-device-AI §13 Tier A): each tap/Vision region is
+  /// cropped square, run through `CIRedEyeCorrection`, and dissolved back over
+  /// the frame at `strength`. The filter is identity on non-eye content, so
+  /// this is a safe no-op unless a real red pupil sits under a region; an
+  /// empty region list never reaches here (gated at the call site).
+  private func redEyeCorrected(_ image: CIImage, regions: [RedEyeRegion], strength: Int) -> CIImage {
+    let amount = min(1, max(0, Double(strength) / 100.0))
+    guard amount > 0 else { return image }
+    let extent = image.extent
+    var img = image
+    for region in regions {
+      let crop = Self.redEyeCropRect(extent, region)
+      guard !crop.isNull && !crop.isEmpty else { continue }
+      let corrected = filtered("CIRedEyeCorrection", img.cropped(to: crop), [:])
+      img = dissolve(foreground: corrected, background: img, amount: amount).cropped(to: extent)
+    }
+    return img
+  }
+
+  /// Square correction crop for one region, always contained in `extent`.
+  /// Public so unit tests can pin the tap→pixel mapping without rendering.
+  public static func redEyeCropRect(_ extent: CGRect, _ region: RedEyeRegion) -> CGRect {
+    let c = region.clamped()
+    let half = max(4, CGFloat(c.radius) * extent.width * 2)
+    let cx = extent.minX + CGFloat(c.x) * extent.width
+    // Regions are origin-upper-left; CI extents are origin-lower-left.
+    let cy = extent.minY + (1 - CGFloat(c.y)) * extent.height
+    return CGRect(x: cx - half, y: cy - half, width: half * 2, height: half * 2)
+      .intersection(extent)
   }
 
   /// True levels transform (D3): input remap [inBlack, inWhite] -> [0, 1] via
@@ -573,6 +651,7 @@ public enum EditRenderError: Error, Sendable, Equatable {
   case renderFailed
   case encoderUnavailable
   case noHorizonFound
+  case noFacesFound
   case depthUnavailable
 }
 
