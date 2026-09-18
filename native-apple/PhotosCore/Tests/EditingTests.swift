@@ -382,6 +382,157 @@ import Testing
     #expect(redOnly != lifted)
   }
 
+  // MARK: - E3 bronze exact-match (D1–D3, fixture-only, no GPU goldens)
+
+  @Test("[E3] Degenerate levels range renders pixel-identical (inBlack == inWhite is identity)")
+  func levelsDegenerateIdentity() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    var degenerate = AdjustRecipe()
+    degenerate.levelsInBlack = 50
+    degenerate.levelsInWhite = 50
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let deg = renderer.pixelHash(source: src, recipe: EditRecipe(adjust: degenerate))
+    else { return }
+    #expect(deg == plain)
+  }
+
+  @Test("[E3] Empty curves + range-only selective + identity levels render pixel-identical")
+  func emptyAdjustCombinedIdentity() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    var a = AdjustRecipe()
+    a.curvesMaster = []
+    a.curvesRed = []
+    a.curvesGreen = []
+    a.curvesBlue = []
+    // Range shapes a shift but never applies one: kernel stays gated off.
+    a.selRedRange = 100
+    a.selBlueRange = 100
+    a.levelsInBlack = 0
+    a.levelsInWhite = 100
+    a.levelsOutBlack = 0
+    a.levelsOutWhite = 100
+    #expect(!a.isSelectiveActive)
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let combined = renderer.pixelHash(source: src, recipe: EditRecipe(adjust: a))
+    else { return }
+    #expect(combined == plain)
+  }
+
+  @Test("[E3] toneCurve resampling: point sets agreeing at the 5 CIToneCurve stops render identically")
+  func toneCurveStopsExactMatch() {
+    // Set A: one mid control point. Set B spells out the interpolated
+    // quarter stops explicitly, so both configure the filter's 5 fixed
+    // points (x = 0 / .25 / .5 / .75 / 1) identically. All values are
+    // exactly representable in binary, so the two configurations agree
+    // bit-for-bit (no 1-ulp wobble at the stops).
+    let a = [CurvePoint(x: 0.5, y: 0.75)]
+    let e25 = CurvePoint.evaluate(a, at: 0.25)
+    let e75 = CurvePoint.evaluate(a, at: 0.75)
+    #expect(abs(e25 - 0.375) < 1e-9)
+    #expect(abs(e75 - 0.875) < 1e-9)
+    let b = [
+      CurvePoint(x: 0.25, y: e25), CurvePoint(x: 0.5, y: 0.75), CurvePoint(x: 0.75, y: e75)
+    ]
+    for x in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      #expect(abs(CurvePoint.evaluate(b, at: x) - CurvePoint.evaluate(a, at: x)) < 1e-9)
+    }
+    // Same 5-stop configuration -> bit-identical render, on both the master
+    // path and the masked per-channel path.
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let masterA = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(curvesMaster: a))),
+      let masterB = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(curvesMaster: b))),
+      let redA = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(curvesRed: a))),
+      let redB = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(curvesRed: b)))
+    else { return }
+    #expect(masterA == masterB)
+    #expect(redA == redB)
+    #expect(masterA != plain)
+    #expect(redA != plain)
+  }
+
+  @Test("[E3] Selective kernel leaves black/white bit-identical at full shifts")
+  func selectiveAchromaticEndpoints() {
+    let renderer = EditRenderer()
+    var a = AdjustRecipe()
+    a.selRedHue = 100
+    a.selRedSat = 100
+    a.selRedLum = 100
+    a.selRedRange = 100
+    a.selGreenHue = -100
+    a.selGreenSat = 100
+    a.selGreenLum = -100
+    a.selGreenRange = 100
+    a.selBlueSat = 100
+    a.selBlueLum = 100
+    a.selBlueRange = 100
+    #expect(a.isSelectiveActive)
+    // 0 and 1 are fixed points of every colorspace round-trip, so the
+    // achromatic guard holds bit-exactly here.
+    for v in [0.0, 1.0] {
+      let img = CIImage(color: CIColor(red: v, green: v, blue: v))
+        .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+      guard let plain = renderer.pixelHash(source: img, recipe: EditRecipe()),
+        let shifted = renderer.pixelHash(source: img, recipe: EditRecipe(adjust: a))
+      else { return }
+      #expect(shifted == plain)
+    }
+  }
+
+  @Test("[E3] Selective kernel adds no chroma to mid-gray at full shifts")
+  func selectiveAchromaticNoChroma() {
+    let renderer = EditRenderer()
+    let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    var a = AdjustRecipe()
+    a.selRedHue = 100
+    a.selRedSat = 100
+    a.selRedLum = 100
+    a.selRedRange = 100
+    a.selGreenHue = -100
+    a.selGreenSat = 100
+    a.selGreenLum = -100
+    a.selGreenRange = 100
+    a.selBlueHue = 50
+    a.selBlueSat = 100
+    a.selBlueLum = -100
+    a.selBlueRange = 100
+    #expect(a.isSelectiveActive)
+    // Every output pixel must stay achromatic (R == G == B): selective
+    // shifts may wobble luma by rounding, but must never tint gray.
+    guard let cg = renderer.cgImage(source: gray, recipe: EditRecipe(adjust: a)),
+      let data = cg.dataProvider?.data as Data?
+    else { return }
+    #expect(data.count % 4 == 0 && !data.isEmpty)
+    for i in stride(from: 0, to: data.count, by: 4) {
+      #expect(data[i] == data[i + 1] && data[i + 1] == data[i + 2])
+    }
+  }
+
+  @Test("[E3] Selective single-hue isolation, second pair: yellow shift touches yellow, spares green")
+  func selectiveYellowGreenIsolation() {
+    let renderer = EditRenderer()
+    let yellow = CIImage(color: CIColor(red: 0.8, green: 0.8, blue: 0.1))
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    let green = CIImage(color: CIColor(red: 0.1, green: 0.8, blue: 0.1))
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    let recipe = EditRecipe(adjust: AdjustRecipe(selYellowLum: 100, selYellowRange: 100))
+    guard let yellowPlain = renderer.pixelHash(source: yellow, recipe: EditRecipe()),
+      let yellowShifted = renderer.pixelHash(source: yellow, recipe: recipe),
+      let greenPlain = renderer.pixelHash(source: green, recipe: EditRecipe()),
+      let greenShifted = renderer.pixelHash(source: green, recipe: recipe)
+    else { return }
+    #expect(yellowShifted != yellowPlain)
+    #expect(greenShifted == greenPlain)
+  }
+
   @Test("Recipe KV key and payload format tag are pinned")
   func recipeKeyPinned() throws {
     #expect(EditRecipeKey.current == "fork.editRecipe.v1")

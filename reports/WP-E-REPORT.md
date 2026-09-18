@@ -81,6 +81,38 @@ identically (golden fixtures). New `CropAspect` cases + `CropOrientation`;
 - `build-for-testing -only-testing:Heirloom-macOS-UITests`: **TEST BUILD SUCCEEDED**
   (includes new `EditUITests`).
 
+## E3 bronze Delta-E harness
+
+Bronze = the owner can measure parity the day the refs exist; no Apple Photos
+content lives in the repo (fixture/synthetic only, no NE/Core ML).
+
+- Script: `native-apple/scripts/heirloom-parity/deltae.sh <refs-dir> [out-dir]`
+  renders each `<case>.recipe.json` on `<case>.source.png` through the real
+  `EditRenderer`, compares against `<case>.ref.png` with `CILabDeltaE`, and
+  prints per-case `median/p90/max/zerofrac` dE plus a PASS/FAIL summary
+  (bronze bar: per-case median dE < 3; failures exit 1). Empty/absent refs dir
+  prints "no references — owner capture pending" and exits 0 (never fails).
+- Exact-match unit tests (`EditingTests`, `[E3]`, 6 tests, all pass): levels
+  degenerate-range identity; `toneCurve` resampling (point sets agreeing at
+  the 5 `CIToneCurve` stops render bit-identical, master + per-channel);
+  empty curves + range-only selective + identity levels = identity; selective
+  black/white bit-identity + no-chroma-on-gray + yellow/green single-hue
+  isolation. No GPU goldens, no Photos images; D1–D4 renderer math untouched.
+- Finding: the selective kernel wobbles mid-gray by 1 LSB (128 → 127) while
+  black/white stay bit-exact — kernel I/O round-trip, not hue math. Flagged
+  for the full-E3 tuning loop, not fixed here (renderer math is frozen).
+
+Owner-capture recipe (owner's Mac, Apple Photos): 3 synthetic inputs
+(gray step wedge, hue wheel/patches, photo-like gradient) × fixed D1–D3
+strengths — e.g. levels `{inBlack:20, inWhite:85, outBlack:10, outWhite:90}`,
+curves master `[(0.25,0.3),(0.75,0.8)]`, selective `{selRedSat:+60 range:80}`
+— export each edit as PNG at source size (`<case>.ref.png`), save the matching
+raw `EditRecipe` JSON (`<case>.recipe.json`) beside the input
+(`<case>.source.png`), then run `deltae.sh` on the dir.
+
+Deferred to full E3: the 50-photo reference set, SSIM alongside ΔE, the
+slider-gain tuning loop toward median ΔE < 3, and iPhone↔Mac drift goldens.
+
 ## Unresolved (owed to the main session)
 
 1. `verify.sh mac-ui` (device foreground is exclusive): run
