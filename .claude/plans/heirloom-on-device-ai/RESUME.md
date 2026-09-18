@@ -35,4 +35,4 @@
   Foundation Models (image input iOS 27) for titles/captions.
 
 ## Status
-PLAN.md written 2026-09-17 — awaiting owner decisions in §11. Next: WP0 spikes.
+PLAN.md written 2026-09-17 (+ editing §13, research-editing.md, recon-editing.md on 2026-09-18) — awaiting owner decisions 1–11 in §11. Next: WP0 spikes; editing starts with E0 (iOS editor P0s).

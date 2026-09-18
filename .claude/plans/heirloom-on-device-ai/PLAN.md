@@ -1,7 +1,7 @@
 # Heirloom On-Device AI — Plan
 
-Status: DRAFT for owner review · 2026-09-17 · Author: Opus (main session)
-Inputs: [research-apple-frameworks.md](research-apple-frameworks.md) · [research-cloudkit.md](research-cloudkit.md) · [recon-codebase.md](recon-codebase.md)
+Status: DRAFT for owner review · 2026-09-17, editing §13 added 2026-09-18 · Author: Opus (main session)
+Inputs: [research-apple-frameworks.md](research-apple-frameworks.md) · [research-cloudkit.md](research-cloudkit.md) · [recon-codebase.md](recon-codebase.md) · [research-editing.md](research-editing.md) · [recon-editing.md](recon-editing.md)
 
 ---
 
@@ -30,6 +30,13 @@ Inputs: [research-apple-frameworks.md](research-apple-frameworks.md) · [researc
   stays the single source of truth; APNs sent by the server provides the push. (§9)
 - **Foundation Models** (on-device LLM) writes Trip/Memory titles and captions on Apple
   Intelligence devices; server provides a template fallback.
+- **Editing (§13):** extend the existing non-destructive `EditRecipe` editor. Apple devices are the
+  only renderers (no Core Image on Linux) and upload the rendered result as the asset's *edited
+  rendition*. Build Apple's exact public pipelines first (RAW 9, HDR gain maps, Portrait depth,
+  Cinematic focus + Audio Mix, Live Photo, video), then close approximations (sliders, filters as
+  LUTs, curves/levels/selective color), then our own Neural Engine tools (Clean Up, Retouch, smart
+  crop, subject masks, "make it warmer" edits). Not reproducible with public APIs: Portrait Lighting,
+  re-editing Apple's Photographic Styles, Spatial Scenes, Reframe/Extend.
 
 ---
 
@@ -416,6 +423,18 @@ Suggested order: WP0 → WP1 → WP2 → (WP3 ∥ WP4 ∥ WP10) → WP5 → WP7 
 4. Model delivery: **download from your Heirloom server on demand** | bundle in app.
 5. Opt-in extras: video speech transcripts (off), calendar titles via EventKit (off), Foundation Models titles (**on** where available).
 6. Trip threshold: **80 km from home, ≥ 1 night** — or set Home explicitly.
+7. Model choice (see §2.2 — ViT-B/32 + buffalo_l were placeholders = server defaults):
+   search → **ViT-B-16-SigLIP2__webli** (Apache-2.0, 768-d, big recall gain, fits iPhone ANE);
+   faces → WP0 bake-off on the owner's own labelled faces: buffalo_l vs antelopev2 vs AdaFace IR-101
+   (MIT). Whatever wins is set on the server first, then converted for devices.
+8. Where an edited version lives: **a rendition file on the same asset** (one timeline item;
+   Revert = drop it) | keep today's "rendered copy uploaded as a new asset".
+9. Import edits you make in Apple Photos into Heirloom (as a rendition; Apple's recipe is private):
+   **yes**.
+10. Write Heirloom edits back into Apple Photos for iPhone-origin photos (revertible there):
+    **off by default, per-edit "Also save to Photos"**.
+11. Clean Up engine: **LaMa (Apache-2.0) converted to Core ML** — approve bundling/downloading a
+    ~200 MB model.
 
 ## 12. Risks
 - Face-alignment drift between Vision landmarks and SCRFD → mixed clusters. Mitigated by WP0 gate.
@@ -425,3 +444,127 @@ Suggested order: WP0 → WP1 → WP2 → (WP3 ∥ WP4 ∥ WP10) → WP5 → WP7 
   unless the user chooses otherwise.
 - iOS background time is scarce; the plugged-in overnight window is the main budget.
 - Admin changing the server CLIP model invalidates device vectors — manifest check + re-queue.
+
+---
+
+## 13. Editing with native frameworks & the Neural Engine
+
+Detail + citations: [research-editing.md](research-editing.md). Current state: [recon-editing.md](recon-editing.md).
+Existing specs this builds on (do not duplicate): `heirloom-macos-photos-parity/WP-E-EDIT.md` (Mac
+editor UI), `heirloom-ios-photos-parity/PLAN.md` (iOS editor gaps E1–E7 and P0 defects F1/F3).
+
+### 13.1 What already exists
+- `PhotosCore/Sources/Editing`: non-destructive `EditRecipe` (Adjust ×16 sliders + auto, Style,
+  Crop incl. straighten/perspective/flip/aspect, Portrait aperture + focus, Markup, Video
+  trim/mute/rotate/Live key frame), Core Image + Metal `EditRenderer`, Vision horizon auto-straighten,
+  iOS Photo Editing Extension target.
+- Persistence: crop / 90° rotate / mirror → server `asset_edit` table (server renders these);
+  everything else → recipe in metadata KV `fork.editRecipe.v1` + full-res render uploaded as a
+  **new asset**.
+- Web: crop / rotate / mirror only.
+- **Blocker:** iOS editor black canvas (F1) and video editor stall (F3) — must be fixed first
+  (owned by the iOS parity plan).
+
+### 13.2 Principles
+1. **Apple devices are the renderers.** No Core Image on Linux; rebuilding every filter in libvips
+   gives visible drift for no gain. The editing device renders full-res and uploads the result.
+   The server renders only what it already does exactly (crop / rotate / mirror).
+2. **Recipe = abstract, versioned parameters** (already true — sliders are −100…100, not CIFilter
+   blobs). Add `recipeVersion` + `rendererVersion`; the uploaded rendition is the source of truth
+   for display, so a later renderer change never silently changes an old edit.
+3. **Generated pixels are stored, not re-generated.** Clean Up / Retouch / anything ML-generated
+   saves its patch (PNG + mask + model id) as a recipe resource, so re-rendering on another device or
+   model version gives the same picture.
+4. **Heirloom's own viewer isn't limited by PhotoKit.** "Not possible" items that are only about
+   flags inside Apple Photos (Live Loop/Bounce/Long Exposure) are recipe fields + Heirloom playback.
+5. Edits that must reach Apple Photos go through `PHContentEditingOutput` + `PHAdjustmentData`
+   (recipe JSON inside), so Apple Photos can revert and Heirloom can re-open them.
+
+### 13.3 Feature map — Apple Photos → Heirloom
+
+**Tier A — Apple's own public pipeline (exact)**
+| Photos feature | API | Heirloom status / work |
+|---|---|---|
+| RAW / ProRAW editing | `CIRAWFilter` (exposure, boost, local tone map, NR, detail, highlight recovery, lens correction; RAW 9 Neural Engine demosaic/denoise in iOS/macOS 27) | New `RawRecipe`; open RAW originals through CIRAWFilter, sliders feed its linear stage |
+| HDR photos (view, edit, keep HDR, Mac "Mute HDR") | `CIImage(.expandToHDR)`, `contentHeadroom`, `toneMapHeadroom`, `CIContext.writeHEIFRepresentation(.hdrGainMapImage, hdrGainMapAsRGB)` | Renderer works in extended range; rendition written with a gain map; `hdrHeadroom` recipe field |
+| Portrait depth + change focus | `CIContext.depthBlurEffectFilter(for:disparityImage:portraitEffectsMatte:hairSemanticSegmentation:glassesMatte:gainMap:…)` | Exists (aperture/focus); switch to the newer overload with hair/glasses mattes; hide tab when no depth (E7) |
+| Cinematic video: change focus subject, depth | `Cinematic`: `CNAssetInfo`, `CNScript`, `CNDecision`, `CNObjectTracker`, `CNRenderingSession` | New `CinematicRecipe` (serialized script changes — verify `CNScript.Changes` data representation) |
+| Audio Mix (iPhone 16+ spatial audio) | `CNAssetSpatialAudioInfo.audioMix(effectIntensity:renderingStyle:)` → `AVAudioMix` | New `audioMix { style, intensity }` in `VideoRecipe` (iOS gap E6) |
+| Live Photo edits across all frames, key photo, mute, trim | `PHLivePhotoEditingContext` + `frameProcessor`; AVFoundation for trim/mute | Apply the photo recipe to every frame; key frame exists; verify key-photo write-back for Apple Photos |
+| Video adjust / filters / crop / trim / speed / slo-mo ramp | `AVVideoComposition(asset:applyingCIFiltersWithHandler:)`, `AVMutableComposition`, `scaleTimeRange` | Same `EditRenderer` graph per frame; add `speedRamps[]` and filmstrip trim UI (E5); HDR video (HLG/Dolby Vision) preservation spike |
+| Straighten, red-eye, white-balance eyedropper | `CIStraightenFilter`, `CIRedEyeCorrection` (+ face landmarks), `CITemperatureAndTint` | Straighten exists; add red-eye tool and WB eyedropper |
+| Markup | PencilKit (`PKCanvasView`, `PKDrawing`) | Exists (iOS flattened, macOS vector); store `PKDrawing.dataRepresentation()` so iOS markup stays editable |
+
+**Tier B — close approximations with Core Image (Apple's exact math is private)**
+| Photos feature | Approach |
+|---|---|
+| Exposure, Highlights, Shadows, Contrast, Brightness, Saturation, Vibrance, Warmth/Tint, Sharpness, NR, Vignette | `CIExposureAdjust`, `CIHighlightShadowAdjust`, `CIColorControls`, `CIVibrance`, `CITemperatureAndTint`, `CISharpenLuminance`, `CINoiseReduction`, `CIVignetteEffect` (exists) — **tune the slider curves against Apple Photos** with a reference set (below) |
+| Brilliance, Definition, Black Point | Custom Metal local-tone-mapping / clarity kernel (`CIKernel`) instead of chained filters |
+| Auto Enhance | `autoAdjustmentFilters` baseline **plus** aesthetics-guided search: render ~8 candidates on a small proxy, score with `CalculateImageAestheticsScoresRequest`, keep the best — mapped back onto the normal sliders so the user can adjust it |
+| Filters (Vivid/Warm/Cool, Dramatic/Warm/Cool, Mono, Silvertone, Noir) | Our own 3D LUTs (`CIColorCubeWithColorSpace`) sampled from Apple Photos output on a colour chart + test set; `CIPhotoEffect*` are a different, older set |
+| Photographic Styles | Our own Tone × Color pad + Palette (spec'd in WP-E-EDIT); Apple's per-shot style metadata can't be read or re-driven |
+| Curves, Levels, Selective Color (Mac) | `CIToneCurve` / custom `CIColorKernel` for 6-range HSL (already spec'd in WP-E-EDIT) |
+| Perspective (vertical/horizontal), aspect presets, flip, rotate | Exists (`CIPerspectiveCorrection` + transforms) |
+| Live Photo Loop / Bounce / Long Exposure | `LiveRecipe.playbackStyle`: Heirloom player loops / bounces the paired video; Long Exposure = frame-average of the aligned frames (`VNHomographicImageRegistrationRequest` + averaging kernel) rendered to a still. Only the badge inside Apple Photos is impossible |
+
+Fidelity harness (applies to all of Tier B): 50 reference photos edited in Apple Photos at fixed
+slider values → export → compare Heirloom renders by ΔE (`CILabDeltaE`) and SSIM; tune until
+median ΔE < 3. Also a golden-image test to catch iPhone ↔ Mac render drift.
+
+**Tier C — Heirloom's own Neural Engine tools (no Apple API; Core ML + Vision)**
+| Feature | Approach | Priority |
+|---|---|---|
+| **Clean Up** (tap-to-remove, brush) | Suggest objects with `GenerateForegroundInstanceMaskRequest` / person instance masks; fill with **LaMa** converted to Core ML (512px tiles around the mask, blended back at full res). Patch stored per §13.2-3 | P1 |
+| Retouch brush (Mac + iOS) | Same inpainting engine with a small brush mask | P1 |
+| Smart crop / auto-straighten suggestions | Horizon angle (exists) + candidate crops scored by saliency + aesthetics | P1 |
+| Subject / background adjustments ("brighten the people", "blur the background") | Vision person / foreground instance masks as local-adjustment masks in the recipe (mask regenerated from recipe, cached) | P2 |
+| Edit by instruction ("make it warmer and brighter") | Foundation Models `@Generable EditRecipeDelta` with `@Guide` ranges → applied as normal slider values (reviewable) | P2 |
+| "Make portrait" on photos without depth | Monocular depth model (Apple's Core ML **Depth Anything V2 Small**, Apache-2.0) → synthetic disparity → the same `depthBlurEffectFilter` | P2 |
+| Portrait Lighting look-alikes | Matte + custom relight kernels | P3 / probably skip |
+| Extend (outpainting) | Mac-only experiment later (Core ML Stable Diffusion inpainting / MLX); too heavy for iPhone | P3 |
+
+**Not doing (no public API, poor approximation value):** Apple's exact Portrait Lighting,
+re-driving Apple Photographic Styles metadata, Spatial Scene conversion (visionOS-only APIs),
+Reframe.
+
+### 13.4 Storage & sync changes
+- `EditRecipe` v2 (additive, still in `fork.editRecipe.v1`-style KV → bump to `.v2`): `recipeVersion`,
+  `rendererVersion`, `raw`, `hdrHeadroom`, `live { playbackStyle, keyFrame, trim, muted }`,
+  `video { speedRamps, audioMix, cinematicScript }`, `masks[]` (Vision mask requests by kind +
+  params), `patches[]` (resource ids for inpainted areas), `markup.pkDrawing`.
+- Recipe resources (patches, PKDrawing, cinematic script) stored as small files linked to the
+  asset (new `asset_edit_resource` or asset-file type) rather than inside the JSON.
+- **Rendition on the same asset** (decision 8): the device uploads the render as the asset's
+  `edited` file; server builds thumbnails/previews from it; Revert deletes it; the timeline shows one
+  item. Replaces "upload render as a new asset". Web/server crop-rotate-mirror stays in `asset_edit`,
+  applied *on top of* the rendition.
+- **Edits made in Apple Photos** (decision 9): `Backup` sees `PHAsset` adjustments via
+  `PHPersistentChangeToken`, uploads the current full-size render as the rendition with
+  `recipe.source = "apple-photos"` (not re-editable in Heirloom, Revert restores the original).
+- **Write-back to Apple Photos** (decision 10): `PHContentEditingOutput` + `PHAdjustmentData`
+  (`formatIdentifier = com.heirloom.edit`, recipe JSON). The existing Photo Editing Extension
+  uses the same code, so "Edit with Heirloom" inside Apple Photos round-trips.
+- Batch: Copy/Paste Edits across many assets queues **render jobs** on the analysis work queue
+  (§3.2, new capability `render`), so the Mac agent renders a 200-photo paste in the background.
+
+### 13.5 Performance targets
+- Slider tick ≤ 16 ms on a 2048 px proxy (existing WP-E target), full-res export in the background.
+- ML tools asynchronous with progress; Clean Up ≤ 1.5 s per mask on iPhone 15 Pro-class, model
+  loaded lazily and evicted under memory pressure.
+- Video: live preview through `AVPlayerItem.videoComposition`; export with the async
+  `AVAssetExportSession.export(to:as:)`.
+
+### 13.6 Editing work packages
+| WP | Scope | Owner tier | Depends |
+|---|---|---|---|
+| **E0** | Fix iOS editor P0s F1/F3 (canvas black, video stall) | Opus diagnoses (cause unknown) | — |
+| **E1** | Recipe v2, recipe resources, rendition-on-same-asset (server + clients), Apple Photos edits import, render jobs on the work queue | Opus designs server contract; implementer | E0, WP1 |
+| **E2** | Tier A photo: RAW 9, HDR gain-map round trip + Mute HDR, depth-blur overload with mattes, red-eye, WB eyedropper, PKDrawing markup | implementer | E1 |
+| **E3** | Tier B fidelity: harness (ΔE/SSIM), slider curve tuning, Brilliance/Definition kernels, 9 LUT filters, aesthetics-guided Auto Enhance; Mac Curves/Levels/Selective Color per WP-E-EDIT | implementer; Opus judges harness results | E1 |
+| **E4** | Live Photo: frame-wide edits, key photo, trim/mute, Loop/Bounce playback, Long Exposure render | implementer | E1 |
+| **E5** | Video: filmstrip trim, adjust/filters via `AVVideoComposition`, speed + slo-mo ramp, Cinematic focus editing, Audio Mix, HDR video spike | implementer | E1 |
+| **E6** | Neural tools: LaMa Core ML conversion + Clean Up/Retouch UI, smart crop, masked adjustments, Foundation Models edit-by-instruction, depth-synthesized portrait | Opus reviews model conversion + quality; implementer | E1, WP0-style model spike |
+| **E7** | Apple Photos integration: write-back option, Photo Editing Extension round trip | implementer | E1 |
+| **E8** | Verification on real hardware (Neural Engine features don't run in Simulator) + golden images | verifier | each |
+
+Order: E0 → E1 → (E2 ∥ E4 ∥ E7) → E3 → E5 → E6.
