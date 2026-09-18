@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import CoreImage
 import CoreModel
 import Editing
@@ -6,8 +7,9 @@ import PencilKit
 import Rules
 import SwiftUI
 
-/// A8 edit screen (brief UIs): tool tabs (Adjust, Filters, Crop, Portrait, Markup — plus
-/// Video for videos), a horizontal dial slider, Done/Cancel.
+/// A8 edit screen (brief UIs): Photos-order tool tabs (Styles, Adjust, Crop,
+/// conditional Portrait, Tools — plus Video/Audio Mix for videos, Live for
+/// live photos; Markup lives inside Tools), a tick-ruler dial, Done/Cancel.
 ///
 /// Deliberately decoupled from Viewer/Media/SyncEngine (other phases build on those): the
 /// caller supplies the preview image and async source loaders, and Done persists through
@@ -44,6 +46,23 @@ public struct EditView: View {
   @State private var dragAnchor: CGRect?
   @State private var canvas = PKCanvasView()
   @State private var hasLoadedRecipe = false
+  /// E7: cached depth-data probe — the Portrait tab only exists when true (or
+  /// a portrait recipe is already loaded, so existing edits are not stranded).
+  @State private var portraitDepthAvailable = false
+  /// E2: the Styles intensity dial only appears after CUSTOMIZE is tapped.
+  @State private var stylesCustomizing = false
+  /// E4: honest unavailable-state notice for Clean Up / Extend.
+  @State private var toolsNotice: String?
+  /// E4: index into the Reframe aspect cycle (starts at Original).
+  @State private var reframeIndex = 3
+  /// E5: cached loader-supplied file URLs shared by the duration probe, the
+  /// filmstrip thumbnails and trim playback (one fetch per presentation).
+  @State private var videoFileURL: URL?
+  @State private var motionFileURL: URL?
+  @State private var filmstripThumbs: [UIImage] = []
+  /// E5: canvas trim-preview player; nil when not previewing.
+  @State private var trimPreviewPlayer: AVPlayer?
+  @State private var trimError: String?
   @Environment(\.dismiss) private var dismiss
 
   private let renderer = EditRenderer()
@@ -68,6 +87,10 @@ public struct EditView: View {
     self.onDone = onDone
     self._renderedPreview = State(initialValue: preview)
     self._displaySource = State(initialValue: preview)
+    // E5: fixture/server metadata seeds the trim shell synchronously; the
+    // duration probe in `initialLoad` refines it to the exact timeline.
+    self._videoDuration = State(
+      initialValue: asset.durationSeconds.map { Double($0) })
   }
 
   public var body: some View {
@@ -132,6 +155,12 @@ public struct EditView: View {
             .position(
               x: CGFloat(focus.x) * fit.width, y: CGFloat(focus.y) * fit.height)
         }
+        // E5: trim preview plays the selected range over the canvas.
+        if let player = trimPreviewPlayer {
+          VideoPlayer(player: player)
+            .frame(width: fit.width, height: fit.height)
+            .task { await watchTrimPreview(player) }
+        }
       }
       .frame(width: fit.width, height: fit.height)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -159,45 +188,56 @@ public struct EditView: View {
 
   @ViewBuilder
   private var toolBody: some View {
-    switch tool {
+    // E1/E7: the derived selection strands nothing — `.portrait` without
+    // depth data falls back to `.adjust` (see `selectedTool`).
+    switch selectedTool {
     case .adjust:
       adjustGrid
-    case .filters:
-      filtersRow
+    case .styles:
+      stylesRow
     case .crop:
       cropControls
     case .portrait:
       portraitControls
+    case .tools:
+      toolsPanel
     case .markup:
       Text(hasInk ? "Draw with Apple Pencil or finger — ink flattens into the saved render."
         : "Draw with Apple Pencil or finger.")
         .font(.caption).foregroundStyle(.secondary).padding(.vertical, 6)
     case .video:
       videoControls
+    case .audiomix:
+      audioMixBody
     }
   }
 
   @ViewBuilder
   private var dialArea: some View {
-    switch tool {
+    switch selectedTool {
     case .adjust:
-      dial(value: adjustBinding, range: -100...100, format: "\(Int(adjustValue))")
-    case .filters:
-      dial(
-        value: Binding(
-          get: { Double(history.current.style?.intensity ?? 100) },
-          set: { v in
-            var r = history.current
-            let name = r.style?.style ?? .vivid
-            r.style = StyleRecipe(style: name, intensity: Int(v))
-            history.commit(r)
-          }), range: 0...100, format: "Intensity \(Int(history.current.style?.intensity ?? 100))")
+      dial(value: adjustBinding, range: -100...100, format: "\(Int(adjustValue))", step: 1)
+    case .styles:
+      // E2: the intensity dial only appears after CUSTOMIZE is tapped.
+      if stylesCustomizing {
+        dial(
+          value: Binding(
+            get: { Double(history.current.style?.intensity ?? 100) },
+            set: { v in
+              var r = history.current
+              let name = r.style?.style ?? .vivid
+              r.style = StyleRecipe(style: name, intensity: Int(v))
+              history.commit(r)
+            }), range: 0...100, format: "Intensity \(Int(history.current.style?.intensity ?? 100))", step: 1)
+      } else {
+        EmptyView()
+      }
     case .crop:
       dial(
         value: Binding(
           get: { history.current.crop?.straightenDegrees ?? 0 },
           set: { v in var r = history.current; var c = r.crop ?? CropRecipe(); c.straightenDegrees = v; r.crop = c; history.commit(r) }),
-        range: -45...45, format: String(format: "Straighten %.1f°", history.current.crop?.straightenDegrees ?? 0))
+        range: -45...45, format: String(format: "Straighten %.1f°", history.current.crop?.straightenDegrees ?? 0), step: 0.5)
     case .portrait:
       dial(
         value: Binding(
@@ -208,35 +248,77 @@ public struct EditView: View {
             p.aperture = v
             r.portrait = p
             history.commit(r)
-          }), range: 1.4...16, format: String(format: "ƒ/%.1f", history.current.portrait?.aperture ?? 2.8))
-    case .markup, .video:
+          }), range: 1.4...16, format: String(format: "ƒ/%.1f", history.current.portrait?.aperture ?? 2.8), step: 0.1)
+    case .markup, .video, .tools, .audiomix:
       EmptyView()
     }
   }
 
-  private func dial(value: Binding<Double>, range: ClosedRange<Double>, format: String) -> some View {
-    VStack(spacing: 2) {
-      Slider(value: value, in: range)
-        .padding(.horizontal)
-      Text(format).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+  /// E3: Photos-style tick-ruler dial with a centre marker (see `RulerDial`).
+  private func dial(value: Binding<Double>, range: ClosedRange<Double>, format: String, step: Double) -> some View {
+    RulerDial(value: value, range: range, step: step, format: format)
+      .padding(.horizontal)
+  }
+
+  // MARK: - Tabs (E1 taxonomy, E7 gating)
+
+  /// E7: the Portrait tab exists only when depth data is available (or a
+  /// portrait recipe is already loaded, so existing edits are not stranded).
+  private var portraitShown: Bool {
+    portraitDepthAvailable || history.current.portrait != nil
+  }
+
+  /// E1: Photos-order tab set. Video assets get Video + Audio Mix; live
+  /// photos get a Live tab for their motion part; Markup lives inside Tools.
+  private var availableTabs: [EditTool] {
+    if asset.type == .video {
+      return [.video, .audiomix, .adjust, .styles, .crop]
     }
-    .padding(.vertical, 4)
+    var tabs: [EditTool] = [.styles, .adjust, .crop]
+    if portraitShown { tabs.append(.portrait) }
+    tabs.append(.tools)
+    if asset.livePhotoVideoId != nil { tabs.append(.video) }
+    return tabs
+  }
+
+  /// Derived selection: `.portrait` without depth data falls back to
+  /// `.adjust` so the body and dial never strand on a hidden tab.
+  private var selectedTool: EditTool {
+    if tool == .portrait, !portraitShown { return .adjust }
+    return tool
+  }
+
+  /// Tab highlight: the hidden `.markup` mode lights up its parent Tools tab.
+  private var highlightTool: EditTool {
+    selectedTool == .markup ? .tools : selectedTool
+  }
+
+  private func selectTab(_ t: EditTool) {
+    if t != .video { trimPreviewPlayer = nil }
+    tool = t
+    if t == .crop, cropDraft == nil { cropDraft = history.current.crop?.rect }
+  }
+
+  private func tabTitle(_ t: EditTool) -> String {
+    if t == .video { return asset.type == .video ? "Video" : "Live" }
+    return t.title
   }
 
   private var toolTabs: some View {
     HStack {
-      ForEach(EditTool.available(for: asset), id: \.self) { t in
+      ForEach(availableTabs, id: \.self) { t in
         Button {
-          tool = t
-          if t == .crop, cropDraft == nil { cropDraft = history.current.crop?.rect }
+          selectTab(t)
         } label: {
           VStack(spacing: 2) {
-            Image(systemName: t.icon).font(.title3)
-            Text(t.title).font(.caption2)
+            Image(systemName: t == .video && asset.type != .video ? "livephoto" : t.icon)
+              .font(.title3)
+            Text(tabTitle(t)).font(.caption2)
           }
           .frame(maxWidth: .infinity)
-          .foregroundStyle(tool == t ? .yellow : .primary)
+          .foregroundStyle(highlightTool == t ? .yellow : .primary)
         }
+        .accessibilityIdentifier("editor-tab-\(t.tabId)")
       }
     }
     .padding(.vertical, 8)
@@ -319,31 +401,44 @@ public struct EditView: View {
     history.commit(r)
   }
 
-  // MARK: - Filters
+  // MARK: - Styles (E2)
 
-  private var filtersRow: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 12) {
-        ForEach(EditStyle.allCases, id: \.self) { style in
-          Button {
-            var r = history.current
-            r.style = style == .none ? nil : StyleRecipe(style: style, intensity: r.style?.intensity ?? 100)
-            history.commit(r)
-          } label: {
-            VStack {
-              filterThumb(style)
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                  RoundedRectangle(cornerRadius: 10)
-                    .stroke(history.current.style?.style == style ? .yellow : .clear, lineWidth: 2))
-              Text(style.displayName).font(.caption2)
+  /// Live thumbnail previews rendered from the current photo (see
+  /// `FilterThumbCache`) plus CUSTOMIZE, which reveals the intensity dial.
+  private var stylesRow: some View {
+    VStack(spacing: 6) {
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 12) {
+          ForEach(Array(EditStyle.allCases.enumerated()), id: \.element) { index, style in
+            Button {
+              var r = history.current
+              r.style = style == .none ? nil : StyleRecipe(style: style, intensity: r.style?.intensity ?? 100)
+              history.commit(r)
+            } label: {
+              VStack {
+                filterThumb(style)
+                  .frame(width: 56, height: 56)
+                  .clipShape(RoundedRectangle(cornerRadius: 10))
+                  .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                      .stroke(history.current.style?.style == style ? .yellow : .clear, lineWidth: 2))
+                Text(style.displayName).font(.caption2)
+              }
             }
+            .accessibilityIdentifier("editor-style-cell-\(index)")
           }
         }
+        .padding(.horizontal)
       }
-      .padding(.horizontal)
+      Button(stylesCustomizing ? "DONE" : "CUSTOMIZE") {
+        stylesCustomizing.toggle()
+      }
+      .buttonStyle(.bordered)
+      .font(.caption)
+      .tint(stylesCustomizing ? .yellow : .gray)
+      .accessibilityIdentifier("editor-styles-customize")
     }
+    .padding(.vertical, 4)
   }
 
   private func filterThumb(_ style: EditStyle) -> some View {
@@ -597,7 +692,23 @@ public struct EditView: View {
     VStack(spacing: 8) {
       if asset.type == .video {
         if let dur = videoDuration {
-          trimSlider(duration: dur, label: "Trim")
+          // E5: Photos-pattern trim filmstrip (frame thumbnails, yellow
+          // handles, play button) instead of the Mute + speed row.
+          Text("Trim: \(fmtTime(history.current.video?.trimStart ?? 0)) – \(fmtTime(history.current.video?.trimEnd ?? dur))")
+            .font(.caption).monospacedDigit()
+          EditTrimFilmstrip(
+            duration: dur,
+            start: history.current.video?.trimStart ?? 0,
+            end: history.current.video?.trimEnd ?? dur,
+            thumbs: filmstripThumbs,
+            isPlaying: trimPreviewPlayer != nil,
+            onTrim: { s, e in applyTrim(start: s, end: e, duration: dur) },
+            onPlay: toggleTrimPreview)
+            .padding(.horizontal)
+            .task { await loadFilmstripThumbs() }
+          if let trimError {
+            Text(trimError).font(.caption).foregroundStyle(.secondary)
+          }
         } else if durationFailed {
           // WP-R: a failed duration probe is terminal for this presentation —
           // show the fact instead of re-spinning the unbounded fetch.
@@ -606,16 +717,6 @@ public struct EditView: View {
         } else {
           ProgressView().task { await loadDuration() }
         }
-        Toggle("Mute", isOn: Binding(
-          get: { history.current.video?.muted ?? false },
-          set: { v in
-            var r = history.current
-            var recipe = r.video ?? VideoRecipe()
-            recipe.muted = v
-            r.video = recipe.isEmpty ? nil : recipe
-            history.commit(r)
-          }))
-        .padding(.horizontal)
         Button("Rotate 90°") {
           var r = history.current
           var recipe = r.video ?? VideoRecipe()
@@ -626,16 +727,8 @@ public struct EditView: View {
         .buttonStyle(.bordered)
       } else if asset.livePhotoVideoId != nil {
         if loadMotionFile != nil {
-          Toggle("Mute motion photo", isOn: Binding(
-            get: { history.current.video?.muted ?? false },
-            set: { v in
-              var r = history.current
-              var recipe = r.video ?? VideoRecipe()
-              recipe.muted = v
-              r.video = recipe.isEmpty ? nil : recipe
-              history.commit(r)
-            }))
-          .padding(.horizontal)
+          Toggle("Mute motion photo", isOn: muteBinding)
+            .padding(.horizontal)
           if let dur = videoDuration {
             keyFrameSlider(duration: dur)
           } else if durationFailed {
@@ -653,31 +746,72 @@ public struct EditView: View {
     .padding(.vertical, 4)
   }
 
-  private func trimSlider(duration: Double, label: String) -> some View {
-    VStack {
-      Text("\(label): \(fmtTime(history.current.video?.trimStart ?? 0)) – \(fmtTime(history.current.video?.trimEnd ?? duration))")
-        .font(.caption).monospacedDigit()
-      HStack {
-        Slider(
-          value: Binding(
-            get: { history.current.video?.trimStart ?? 0 },
-            set: { v in setTrim(start: min(v, (history.current.video?.trimEnd ?? duration) - 0.5), end: nil) }),
-          in: 0...max(0.5, duration - 0.5))
-        Slider(
-          value: Binding(
-            get: { history.current.video?.trimEnd ?? duration },
-            set: { v in setTrim(start: nil, end: max(v, (history.current.video?.trimStart ?? 0) + 0.5)) }),
-          in: 0.5...duration)
-      }
-      .padding(.horizontal)
+  // MARK: - Audio Mix (E6)
+
+  private var muteBinding: Binding<Bool> {
+    Binding(
+      get: { history.current.video?.muted ?? false },
+      set: { v in
+        var r = history.current
+        var recipe = r.video ?? VideoRecipe()
+        recipe.muted = v
+        r.video = recipe.isEmpty ? nil : recipe
+        history.commit(r)
+      })
+  }
+
+  /// E6: video sound controls live here (Photos pattern), not in the Video tab.
+  private var audioMixBody: some View {
+    VStack(spacing: 6) {
+      Toggle("Mute", isOn: muteBinding)
+        .padding(.horizontal)
+      Text("Silent playback for this video; off plays the original sound.")
+        .font(.caption).foregroundStyle(.secondary)
     }
+    .padding(.vertical, 4)
+  }
+
+  // MARK: - Tools (E4)
+
+  /// E4: Photos-pattern tool buttons. Reframe cycles centered aspect presets
+  /// through the persisted crop recipe; Clean Up and Extend have no
+  /// client-side model in this build and explain instead of pretending.
+  private var toolsPanel: some View {
+    EditToolsPanel(
+      reframeLabel: reframePresets[reframeIndex % reframePresets.count].label,
+      onReframe: applyReframe,
+      onCleanup: {
+        toolsNotice =
+          "Clean Up needs an object-removal model that isn't in this build — the photo is unchanged."
+      },
+      onExtend: {
+        toolsNotice =
+          "Extend needs an outpainting model that isn't in this build — the photo is unchanged."
+      },
+      onMarkup: {
+        toolsNotice = nil
+        tool = .markup
+      },
+      notice: toolsNotice)
+  }
+
+  private var reframePresets: [(aspect: CropAspect, label: String)] {
+    [(aspect: .square, label: "1:1"), (.fourThree, "4:3"), (.sixteenNine, "16:9"), (.free, "Original")]
+  }
+
+  private func applyReframe() {
+    toolsNotice = nil
+    // `reframeIndex` always names the currently applied preset (starting at
+    // Original); each tap advances one step through the cycle.
+    reframeIndex = (reframeIndex + 1) % reframePresets.count
+    applyAspect(reframePresets[reframeIndex].aspect)
   }
 
   private func keyFrameSlider(duration: Double) -> some View {
     VStack {
       Text("Key frame: \(fmtTime(history.current.video?.livePhotoKeyFrame ?? 0))")
         .font(.caption).monospacedDigit()
-      Slider(
+      RulerDial(
         value: Binding(
           get: { history.current.video?.livePhotoKeyFrame ?? 0 },
           set: { v in
@@ -686,9 +820,18 @@ public struct EditView: View {
             recipe.livePhotoKeyFrame = v
             r.video = recipe
             history.commit(r)
-          }), in: 0...duration)
+          }), range: 0...max(0.5, duration), step: 0.1, format: fmtTime(history.current.video?.livePhotoKeyFrame ?? 0))
       .padding(.horizontal)
     }
+  }
+
+  /// E5: filmstrip handle commit — clamps the raw handle positions to a valid
+  /// sub-range (0.5 s minimum) before persisting.
+  private func applyTrim(start: Double, end: Double, duration: Double) {
+    trimPreviewPlayer = nil
+    let s = min(max(0, start), max(0, duration - 0.5))
+    let e = min(duration, max(s + 0.5, end))
+    setTrim(start: s, end: e)
   }
 
   private func setTrim(start: Double?, end: Double?) {
@@ -704,29 +847,92 @@ public struct EditView: View {
     String(format: "%d:%04.1f", Int(s) / 60, s.truncatingRemainder(dividingBy: 60))
   }
 
-  private func loadDuration(motion: Bool = false) async {
+  /// E5: the single bounded file fetch shared by the duration probe, the
+  /// filmstrip thumbnails and trim playback (one fetch per presentation).
+  /// Returns nil instead of throwing — callers render honest fallbacks.
+  private func ensureVideoFile(motion: Bool = false) async -> URL? {
+    if motion, let cached = motionFileURL { return cached }
+    if !motion, let cached = videoFileURL { return cached }
     do {
-      // WP-R: the file fetch and the AV duration probe are both bounded — an
-      // unresponsive source must surface as "unavailable", never as a spinner
-      // that never resolves (F1/F3 idle-await signature).
+      // WP-R: the fetch is bounded — an unresponsive source must surface as
+      // "unavailable", never as a spinner that never resolves (F1/F3
+      // idle-await signature).
       let url: URL = try await withMainActorTimeout(seconds: EditorLoadBudget.videoDurationProbe) {
         if motion {
-          return try await self.loadMotionFile!()
+          guard let loader = self.loadMotionFile else { throw EditAccessError.notPermitted }
+          return try await loader()
         } else {
           guard let loader = self.loadVideoFile else { throw EditAccessError.notPermitted }
           return try await loader()
         }
       }
+      if motion { motionFileURL = url } else { videoFileURL = url }
+      return url
+    } catch {
+      return nil
+    }
+  }
+
+  private func loadDuration(motion: Bool = false) async {
+    do {
+      guard let url = await ensureVideoFile(motion: motion) else {
+        throw EditAccessError.notPermitted
+      }
       let asset = AVURLAsset(url: url)
       let dur = try await withMainActorTimeout(seconds: EditorLoadBudget.videoDurationProbe) {
         try await asset.load(.duration).seconds
       }
-      videoDuration = dur.isFinite ? dur : nil
+      if dur.isFinite { videoDuration = dur }
+      // A seeded metadata duration survives a failed probe — only a complete
+      // absence of duration is terminal.
       durationFailed = videoDuration == nil
     } catch {
-      videoDuration = nil
       // L2: cancellation retries with the view; only a real failure is terminal.
-      if !error.isCancellation { durationFailed = true }
+      if !error.isCancellation, videoDuration == nil { durationFailed = true }
+    }
+  }
+
+  /// E5: decode real frame thumbnails for the trim strip once per presentation.
+  private func loadFilmstripThumbs() async {
+    guard filmstripThumbs.isEmpty else { return }
+    guard let dur = videoDuration, dur > 0 else { return }
+    guard let url = await ensureVideoFile() else { return }
+    filmstripThumbs = await EditTrimFilmstrip.generateThumbs(
+      fileURL: url, duration: dur)
+  }
+
+  /// E5: toggle canvas playback of the selected trim range.
+  private func toggleTrimPreview() {
+    if trimPreviewPlayer != nil {
+      trimPreviewPlayer = nil
+      return
+    }
+    trimError = nil
+    Task { @MainActor in
+      guard let url = await ensureVideoFile() else {
+        trimError = "Preview unavailable — the video file could not be loaded."
+        return
+      }
+      let start = history.current.video?.trimStart ?? 0
+      let player = AVPlayer(url: url)
+      await player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
+      trimPreviewPlayer = player
+      player.play()
+    }
+  }
+
+  /// E5: stop the trim preview when playback passes the trim end. Owned by the
+  /// canvas overlay's lifetime, so leaving the editor always stops playback.
+  private func watchTrimPreview(_ player: AVPlayer) async {
+    let dur = videoDuration ?? 0
+    let end = history.current.video?.trimEnd ?? dur
+    while !Task.isCancelled {
+      try? await Task.sleep(nanoseconds: 200_000_000)
+      if player.currentTime().seconds >= end {
+        player.pause()
+        if trimPreviewPlayer === player { trimPreviewPlayer = nil }
+        return
+      }
     }
   }
 
@@ -789,8 +995,20 @@ public struct EditView: View {
     } catch {
       // Offline or never edited — start clean, not an error.
     }
+    // E7: probe depth data once from the seed preview — same photo as the
+    // full-res upgrade, so the result holds for both.
+    if let ci = CIImage(image: preview) {
+      portraitDepthAvailable = EditRenderer.portraitAvailable(source: ci)
+    }
     rerenderPreview()
     await loadDisplayUpgrade()
+    // E5: refine the seeded metadata duration to the exact timeline (and warm
+    // the shared file fetch for the filmstrip and trim playback).
+    if asset.type == .video {
+      await loadDuration()
+    } else if asset.livePhotoVideoId != nil, loadMotionFile != nil {
+      await loadDuration(motion: true)
+    }
   }
 
   /// WP-R (F1/F3): replaces the preview seed with the full-res image when — and
@@ -942,11 +1160,17 @@ public struct EditView: View {
 
 // MARK: - Supporting types
 
+/// E1: Photos-order editor taxonomy — Styles / Adjust / Crop / (Portrait) /
+/// Tools for photos (+ Live for live photos; Video + Audio Mix for videos).
+/// `filters` was renamed to `styles`; `markup` is no longer a tab — it lives
+/// inside Tools — but stays a mode so in-flight markup is never stranded.
 public enum EditTool: String, CaseIterable, Hashable {
-  case adjust, filters, crop, portrait, markup, video
+  case adjust, styles, crop, portrait, tools, markup, video, audiomix
 
+  /// Legacy tab set (pre-E1). Tab membership is now depth- and asset-aware;
+  /// see `EditView.availableTabs`.
   static func available(for asset: Asset) -> [EditTool] {
-    var tools: [EditTool] = [.adjust, .filters, .crop, .portrait, .markup]
+    var tools: [EditTool] = [.adjust, .styles, .crop, .portrait, .tools]
     if asset.type == .video || asset.livePhotoVideoId != nil { tools.append(.video) }
     return tools
   }
@@ -954,24 +1178,31 @@ public enum EditTool: String, CaseIterable, Hashable {
   var title: String {
     switch self {
     case .adjust: return "Adjust"
-    case .filters: return "Filters"
+    case .styles: return "Styles"
     case .crop: return "Crop"
     case .portrait: return "Portrait"
+    case .tools: return "Tools"
     case .markup: return "Markup"
     case .video: return "Video"
+    case .audiomix: return "Audio Mix"
     }
   }
 
   var icon: String {
     switch self {
     case .adjust: return "slider.horizontal.3"
-    case .filters: return "camera.filters"
+    case .styles: return "square.grid.2x2"
     case .crop: return "crop"
     case .portrait: return "person.crop.circle"
+    case .tools: return "sparkles"
     case .markup: return "pencil.tip.crop.circle"
     case .video: return "video"
+    case .audiomix: return "waveform"
     }
   }
+
+  /// Stable accessibility suffix: the tab button is `editor-tab-\(tabId)`.
+  var tabId: String { rawValue }
 }
 
 public enum AdjustParam: String, CaseIterable, Hashable {

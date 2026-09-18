@@ -65,6 +65,7 @@ final class EditorUITests: XCTestCase {
     Parity.openEditor(app)
     // E2/WP-E: style cells render live thumbnails of the photo, not text
     // labels; a CUSTOMIZE control exists.
+    Parity.require("editor-tab-styles", in: app, gap: "E1", owner: "WP-E").tap()
     Parity.require("editor-style-cell-0", in: app, gap: "E2", owner: "WP-E")
     Parity.require("editor-styles-customize", in: app, gap: "E2", owner: "WP-E")
   }
@@ -83,9 +84,35 @@ final class EditorUITests: XCTestCase {
     Parity.openViewer(app)
     Parity.openEditor(app)
     // E4/WP-E.
+    Parity.require("editor-tab-tools", in: app, gap: "E1", owner: "WP-E").tap()
     for tool in ["editor-tool-cleanup", "editor-tool-extend", "editor-tool-reframe"] {
       Parity.require(tool, in: app, gap: "E4", owner: "WP-E")
     }
+  }
+
+  func test_editorTools_unavailableShowNotice() throws {
+    let app = Parity.launch()
+    Parity.openViewer(app)
+    Parity.openEditor(app)
+    // E4/WP-E: Clean Up / Extend have no client-side model — tapping them
+    // must explain, never silently no-op (no dead buttons).
+    Parity.require("editor-tab-tools", in: app, gap: "E1", owner: "WP-E").tap()
+    Parity.require("editor-tool-cleanup", in: app, gap: "E4", owner: "WP-E").tap()
+    Parity.require("editor-tools-notice", in: app, gap: "E4", owner: "WP-E")
+  }
+
+  func test_editorReframe_cyclesAspectPreset() throws {
+    let app = Parity.launch()
+    Parity.openViewer(app)
+    Parity.openEditor(app)
+    // E4/WP-E: Reframe is real — each tap advances the centered-aspect
+    // preset, starting from Original.
+    Parity.require("editor-tab-tools", in: app, gap: "E1", owner: "WP-E").tap()
+    let value = Parity.require(
+      "editor-tool-reframe-value", in: app, gap: "E4", owner: "WP-E")
+    XCTAssertEqual(value.label, "Original")
+    Parity.require("editor-tool-reframe", in: app, gap: "E4", owner: "WP-E").tap()
+    XCTAssertEqual(value.label, "1:1")
   }
 
   func test_videoEditor_hasTrimFilmstripWithHandles() throws {
@@ -94,6 +121,7 @@ final class EditorUITests: XCTestCase {
     Parity.openEditor(app)
     // E5/WP-E: frame-thumbnail filmstrip, yellow trim handles, play button —
     // not Mute + speed only.
+    Parity.require("editor-tab-video", in: app, gap: "E1", owner: "WP-E").tap()
     Parity.require("editor-trim-filmstrip", in: app, gap: "E5", owner: "WP-E")
     Parity.require("editor-trim-handle-start", in: app, gap: "E5", owner: "WP-E")
     Parity.require("editor-trim-handle-end", in: app, gap: "E5", owner: "WP-E")

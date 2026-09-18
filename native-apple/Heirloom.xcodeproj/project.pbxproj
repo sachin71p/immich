@@ -32,6 +32,7 @@
 		22328826F00AB80090B9DBE6 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 952D308CC84C144B2BC179A7 /* LocalStore */; };
 		23D25F7E4E774F4695B170E1 /* ErrorFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */; };
 		26D2C31B3ABC77106FBF1674 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AA815EE14B97B0CBB0477F0 /* SearchView.swift */; };
+		28ED0B2C6917CFD299D4DE65 /* EditRulerDial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A4F1AE757258931B7EB815E /* EditRulerDial.swift */; };
 		29ABBE27D7DCD7F5BFF9DC17 /* MacConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED843D17D53914CE88AD6A8 /* MacConnectView.swift */; };
 		2C619338F3FAA35064EE3D05 /* Rules in Frameworks */ = {isa = PBXBuildFile; productRef = A1AB2DABA22196D637D75068 /* Rules */; };
 		2CFC71F750FE62CC4BFC6F03 /* MacAgentLoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */; };
@@ -130,6 +131,7 @@
 		C30A28B0EEA9BC9DAE5F2E56 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 2C468586827D06DB7DBFB36A /* LocalStore */; };
 		C58688346D8899529D46D329 /* MacMemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */; };
 		C66E3C17920D5031FD4EBE4D /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB42CF139FDE95D19202A9F0 /* MacSearchView.swift */; };
+		C7140DE1F9EC18391458AE9D /* EditTrimFilmstrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF43BFAF2D49E2C9C09028C /* EditTrimFilmstrip.swift */; };
 		C73C9DED8745E21A84656176 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE3A2E934C82B427235CAAC4 /* Assets.xcassets */; };
 		C750B6CD502A1F9848EED59C /* MacStorageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C489D7BEF9C9328C346F2DFC /* MacStorageView.swift */; };
 		C85E293F9688512B7D0D9064 /* MacGridHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */; };
@@ -147,6 +149,7 @@
 		D40D0AC7E13E0CF25F297543 /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EE5AC26D5029A8610E8F4EEF /* ImmichAPI */; };
 		D69FC882B6A4CF0F7D3F5673 /* Rules in Frameworks */ = {isa = PBXBuildFile; productRef = 05C0846ED22321DA94E3FA7F /* Rules */; };
 		D88BBF9527653F7952010D94 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = C4A5E82A48F6AF0BA0893C36 /* LocalStore */; };
+		D9E106F6A1FE405E90442752 /* EditToolsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285A76E88196DB5E471FCE90 /* EditToolsPanel.swift */; };
 		DD6300F009E5382AD0E581F7 /* PhotoGridViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B1F0D46D5FB8B587DF4848 /* PhotoGridViewController.swift */; };
 		DDF142E14F09ECE862AF4CE3 /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 5391217B7AC8A0349772138D /* Upload */; };
 		DFFA006D506FC3C74C8C0402 /* ViewerLongPressMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90D2FEC4245D35A0F05D1F2 /* ViewerLongPressMenu.swift */; };
@@ -208,10 +211,12 @@
 		1621E72990EA01E79B8DD583 /* MacPreviewFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewFixtures.swift; sourceTree = "<group>"; };
 		173F9A53CF69350E161F685F /* FastScroller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastScroller.swift; sourceTree = "<group>"; };
 		1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSeed.swift; sourceTree = "<group>"; };
+		1EF43BFAF2D49E2C9C09028C /* EditTrimFilmstrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTrimFilmstrip.swift; sourceTree = "<group>"; };
 		220BD30E984341379A611211 /* PhotoForkIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoForkIntents.swift; sourceTree = "<group>"; };
 		22148554E0DF227F6078A07C /* LibraryFilterMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilterMenu.swift; sourceTree = "<group>"; };
 		22467E2D72965EE2650E6009 /* Heirloom-Intents.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-Intents.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		252B49AC8E4F995558D5C3A8 /* Heirloom-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Heirloom-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		285A76E88196DB5E471FCE90 /* EditToolsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditToolsPanel.swift; sourceTree = "<group>"; };
 		2926BA269E6027FC436CF9C2 /* AssetGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetGridView.swift; sourceTree = "<group>"; };
 		2AAB4890D52B9C3FAF67BC30 /* AppSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
 		2B46BD5E10FDEFE9A7D967C7 /* PhotoGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridCell.swift; sourceTree = "<group>"; };
@@ -241,6 +246,7 @@
 		567FC7079366CAC7EAD4BE27 /* Heirloom-macOS-UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Heirloom-macOS-UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		58B423EDAD3D1C1AC259A1BE /* HeirloomWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomWidgets.swift; sourceTree = "<group>"; };
 		58B7A0F588ED12A3BF26CC38 /* GridSelectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridSelectionModel.swift; sourceTree = "<group>"; };
+		5A4F1AE757258931B7EB815E /* EditRulerDial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditRulerDial.swift; sourceTree = "<group>"; };
 		5AA815EE14B97B0CBB0477F0 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		5EF112E6B8F6ED46F7ED33BA /* MacAssetChangeCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAssetChangeCenter.swift; sourceTree = "<group>"; };
 		634006C4823CC8F38A3B0D85 /* MacGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGridCell.swift; sourceTree = "<group>"; };
@@ -586,6 +592,9 @@
 				FAD06FF34A315C4624E74B70 /* ClusteredMap.swift */,
 				52ADF313E45A57DF68AB044B /* Collections.swift */,
 				DD1D42E271261F49679D0B20 /* EditorLoad.swift */,
+				5A4F1AE757258931B7EB815E /* EditRulerDial.swift */,
+				285A76E88196DB5E471FCE90 /* EditToolsPanel.swift */,
+				1EF43BFAF2D49E2C9C09028C /* EditTrimFilmstrip.swift */,
 				848364178733C3D1D80789CF /* EditView.swift */,
 				654F5B7B73E4E8F342B80457 /* ExtensionSnapshotWriter.swift */,
 				1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */,
@@ -1197,6 +1206,9 @@
 				151779599FCCABAC1EA2282C /* Collections.swift in Sources */,
 				443F6D37EF67F2CA6A503863 /* CollectionsLoader.swift in Sources */,
 				059C56F540604315F066D1E5 /* ConnectView.swift in Sources */,
+				28ED0B2C6917CFD299D4DE65 /* EditRulerDial.swift in Sources */,
+				D9E106F6A1FE405E90442752 /* EditToolsPanel.swift in Sources */,
+				C7140DE1F9EC18391458AE9D /* EditTrimFilmstrip.swift in Sources */,
 				0D84C822D912CE57500AE304 /* EditView.swift in Sources */,
 				B3E6BCE5053B6C3F9D53F5B8 /* EditorLoad.swift in Sources */,
 				23D25F7E4E774F4695B170E1 /* ErrorFilter.swift in Sources */,
