@@ -116,7 +116,8 @@ struct ViewerPage: View {
 
   var body: some View {
     ZStack {
-      Color.black.ignoresSafeArea()
+      // WP-L L1: system background in light, black in dark (pair L02-viewer).
+      HeirloomAppearance.viewerBackdrop.ignoresSafeArea()
       if let asset, asset.type == .video {
         VideoPage(asset: asset)
       } else if let asset, let motionId = asset.livePhotoVideoId {
@@ -129,7 +130,7 @@ struct ViewerPage: View {
           onLongPress: { showLongPressMenu = true })
       } else {
         ProgressView()
-          .tint(.white)
+          .tint(HeirloomAppearance.viewerLoadingTint)
           .accessibilityIdentifier("viewer-loading")
       }
     }
@@ -332,10 +333,11 @@ struct ViewerView: View {
 
   var body: some View {
     ZStack {
-      Color.black.ignoresSafeArea()
+      // WP-L L1: system background in light, black in dark (pair L02-viewer).
+      HeirloomAppearance.viewerBackdrop.ignoresSafeArea()
       if ids.isEmpty {
         ProgressView()
-          .tint(.white)
+          .tint(HeirloomAppearance.viewerLoadingTint)
           .accessibilityIdentifier("viewer-loading")
       } else {
         ViewerPager(
@@ -383,6 +385,10 @@ struct ViewerView: View {
             onPlayLive: { livePlay.token += 1 })
         }
         .padding(.horizontal, 12)
+        // WP-L L1: light-appearance test surface (AppearanceUITests samples
+        // this, not the photo). Contain keeps the inner buttons addressable.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("viewer-chrome-surface")
       }
     }
     .safeAreaInset(edge: .bottom) {

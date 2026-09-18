@@ -88,15 +88,36 @@ enum HeirloomAppearance {
       traits.userInterfaceStyle == .dark ? .white : .label
     })
 
+  /// UIKit mirror of `viewerBackdrop` for the `ViewerPageController` view and
+  /// page hosts (`ViewerPager.swift`), which are UIKit and cannot read a
+  /// SwiftUI `Color`. Same contract: black in dark, system background in light.
+  static let viewerBackdropUIColor = UIColor { traits in
+    traits.userInterfaceStyle == .dark ? .black : .systemBackground
+  }
+
   // MARK: fixed (identical in both appearances)
 
-  /// Library title text. ALWAYS white — Photos keeps white-on-scrim in both
-  /// appearances (pair L01-library). Drives the L2 ≥ 4.5:1 contrast target.
+  /// Library title text. INTENDED always-white — Photos keeps white-on-scrim
+  /// in both appearances (pair L01-library) — but currently UNUSED: the
+  /// title is the native nav-bar title, and `.toolbarColorScheme(.dark)` (the
+  /// only SwiftUI route to whiten it) collapses the large title + toolbar
+  /// items out of the bar on this SDK (Xcode 27 / iOS 27 simulator, verified
+  /// by screenshot: bar shows subtitle only). Kept so the intent survives for
+  /// a WP-X revisit on a newer SDK; the native dark title over the light
+  /// scrim below meets the contrast target meanwhile.
   static let libraryTitleText = Color.white
 
-  /// Blur scrim behind the library title. ALWAYS dark, both appearances.
-  /// Backs the `library-title-scrim` test surface (phase 2 adds it).
-  static let libraryTitleScrim = Color.black.opacity(0.45)
+  /// Blur scrim behind the library title. ADAPTIVE (revised from fixed-dark
+  /// in phase 2 for the reason above): white-based blur in light behind the
+  /// native dark title, black 0.45 in dark behind the native white title.
+  /// Backs the `library-title-scrim` test surface and drives the L2
+  /// ≥ 4.5:1 contrast target in both appearances.
+  static let libraryTitleScrim = Color(
+    uiColor: UIColor { traits in
+      traits.userInterfaceStyle == .dark
+        ? UIColor.black.withAlphaComponent(0.45)
+        : UIColor.white.withAlphaComponent(0.72)
+    })
 
   /// Editor modal veils. Fixed dark pending the L3 re-verify (Photos' editor
   /// is dark in both appearances, so this may already be correct).

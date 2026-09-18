@@ -51,6 +51,11 @@ struct LibraryView: View {
     return formatter
   }()
 
+  /// WP-L L2: title-scrim height — covers the status area plus the large-title
+  /// region at scroll rest, fading out below it so the grid shows through.
+  /// Exact geometry vs WP-C's header is a WP-X on-device check (see report).
+  private static let libraryTitleScrimHeight: CGFloat = 190
+
   // Getters only (setters would need mutating self — bindings write the raws).
   private var sort: LibrarySort { LibrarySort(rawValue: sortRaw) ?? .captured }
 
@@ -86,6 +91,13 @@ struct LibraryView: View {
       .navigationTitle("Library")
       .navigationBarTitleDisplayMode(.large)
       .navigationSubtitle(librarySubtitle)
+      // WP-L L2: no bar-content overrides here. `.toolbarColorScheme(.dark)`
+      // (the Photos-exact white-title route) collapses the large title +
+      // toolbar items out of the bar on this SDK — verified by screenshot
+      // (bar shows subtitle only, both appearances) — so legibility comes
+      // from the adaptive scrim in the overlay below instead, behind the
+      // native title (dark in light, white in dark). The count/subtitle ids
+      // owned by WP-C/WP-G are untouched.
       .toolbar {
         if selection.isSelecting {
           ToolbarItem(placement: .topBarLeading) {
@@ -235,19 +247,45 @@ struct LibraryView: View {
       }
     }
     .overlay(alignment: .top) {
-      // WP-G parity mirrors (G6/G7): near-invisible 1pt texts carrying the
-      // header subtitle + time level for the parity tests. The visible header
-      // is the navigation subtitle (no stable AX handle); visible chrome is
-      // untouched — WP-C owns it.
-      VStack(spacing: 0) {
-        Text(librarySubtitle)
-          .accessibilityIdentifier("grid-header-subtitle")
-        Text(zoom.rawValue)
-          .accessibilityIdentifier("grid-time-level")
-          .accessibilityValue(zoom.rawValue)
+      ZStack(alignment: .top) {
+        // WP-L L2: adaptive title scrim (pair L01-library) — an adapting
+        // material plus the adaptive `libraryTitleScrim` tint (light blur in
+        // light behind the native dark title, dark blur in dark behind the
+        // native white title), fading out below the large-title region.
+        // Hit-testing stays off so the grid scrolls beneath it.
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .overlay {
+            LinearGradient(
+              colors: [
+                HeirloomAppearance.libraryTitleScrim,
+                HeirloomAppearance.libraryTitleScrim.opacity(0.55),
+                .clear,
+              ], startPoint: .top, endPoint: .bottom)
+          }
+          .frame(height: Self.libraryTitleScrimHeight)
+          .mask(
+            LinearGradient(
+              colors: [.black, .black, .clear],
+              startPoint: .top, endPoint: .bottom)
+          )
+          .ignoresSafeArea(edges: .top)
+          .allowsHitTesting(false)
+          .accessibilityIdentifier("library-title-scrim")
+        // WP-G parity mirrors (G6/G7): near-invisible 1pt texts carrying the
+        // header subtitle + time level for the parity tests. The visible header
+        // is the navigation subtitle (no stable AX handle); visible chrome is
+        // untouched — WP-C owns it.
+        VStack(spacing: 0) {
+          Text(librarySubtitle)
+            .accessibilityIdentifier("grid-header-subtitle")
+          Text(zoom.rawValue)
+            .accessibilityIdentifier("grid-time-level")
+            .accessibilityValue(zoom.rawValue)
+        }
+        .frame(width: 1, height: 1)
+        .opacity(0.01)
       }
-      .frame(width: 1, height: 1)
-      .opacity(0.01)
     }
   }
 

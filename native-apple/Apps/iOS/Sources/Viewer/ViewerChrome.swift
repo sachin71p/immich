@@ -58,9 +58,11 @@ struct ViewerTopBar: View {
       Button(action: onBack) {
         Image(systemName: "chevron.left")
           .font(.title3.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
           .frame(width: ViewerLayout.barButtonSize, height: ViewerLayout.barButtonSize)
-          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .circle)
+          // WP-L L1: white-based pills in light, black-based in dark (pair L02).
+          .glassEffect(
+            .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .circle)
       }
       .accessibilityLabel("Back")
       .accessibilityIdentifier("viewer-back")
@@ -68,24 +70,26 @@ struct ViewerTopBar: View {
       VStack(spacing: 1) {
         Text(line1)
           .font(.subheadline.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
         if !line2.isEmpty {
           Text(line2)
             .font(.caption)
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(HeirloomAppearance.chromePrimaryText)
         }
       }
       .padding(.horizontal, 20)
       .padding(.vertical, 8)
-      .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+      .glassEffect(
+        .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
       Spacer()
       Menu { menu }
       label: {
         Image(systemName: "ellipsis")
           .font(.title3.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
           .frame(width: ViewerLayout.barButtonSize, height: ViewerLayout.barButtonSize)
-          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .circle)
+          .glassEffect(
+            .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .circle)
       }
       .accessibilityLabel("More")
     }
@@ -107,10 +111,11 @@ struct ViewerBadgeRow: View {
             Text("LIVE")
               .font(.caption.weight(.semibold))
           }
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
           .padding(.horizontal, 10)
           .padding(.vertical, 6)
-          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+          .glassEffect(
+            .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
         }
         .accessibilityLabel("Play Live Photo")
       }
@@ -122,10 +127,11 @@ struct ViewerBadgeRow: View {
           Image(systemName: "chevron.right")
             .font(.caption2.weight(.semibold))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(HeirloomAppearance.chromePrimaryText)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+        .glassEffect(
+          .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
         .accessibilityLabel("Shared by \(ownerName)")
       }
       Spacer()
@@ -187,7 +193,7 @@ private struct ViewerThumb: View {
           .resizable()
           .aspectRatio(contentMode: .fill)
       } else {
-        Rectangle().fill(.white.opacity(0.15))
+        Rectangle().fill(HeirloomAppearance.chromeSubtleFill)
       }
     }
     .frame(width: 44, height: ViewerLayout.filmstripHeight)
@@ -195,7 +201,7 @@ private struct ViewerThumb: View {
     .overlay {
       if isCurrent {
         RoundedRectangle(cornerRadius: 8)
-          .stroke(.white, lineWidth: 2)
+          .stroke(HeirloomAppearance.chromePrimaryText, lineWidth: 2)
       }
     }
     .task(id: id) { await load() }
@@ -251,14 +257,15 @@ struct ViewerGlassBar: View {
     }
     .padding(.horizontal, 22)
     .padding(.vertical, 12)
-    .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+    .glassEffect(
+      .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
   }
 
   private func barButton(_ label: String, system: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Image(systemName: system)
         .font(.title3)
-        .foregroundStyle(.white)
+        .foregroundStyle(HeirloomAppearance.chromePrimaryText)
         .frame(width: 30, height: 30)
     }
     .accessibilityLabel(label)

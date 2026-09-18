@@ -113,7 +113,9 @@ final class ViewerPageController: UIPageViewController {
     super.viewDidLoad()
     dataSource = self
     delegate = self
-    view.backgroundColor = .black
+    // WP-L L1: same contract as HeirloomAppearance.viewerBackdrop — black in
+    // dark, system background in light (UIKit cannot read the SwiftUI token).
+    view.backgroundColor = HeirloomAppearance.viewerBackdropUIColor
     view.accessibilityIdentifier = "viewer-pager"
     if let first = page(at: currentIndex) {
       setViewControllers([first], direction: .forward, animated: false)
@@ -143,7 +145,7 @@ final class ViewerPageController: UIPageViewController {
     guard ids.indices.contains(index) else { return nil }
     let page = ViewerPage(assetId: ids[index], onSingleTap: onSingleTap, livePlay: livePlay)
     let host = ViewerPageHost(pageIndex: index, rootView: AnyView(page.environmentObject(session)))
-    host.view.backgroundColor = .black
+    host.view.backgroundColor = HeirloomAppearance.viewerBackdropUIColor
     return host
   }
 

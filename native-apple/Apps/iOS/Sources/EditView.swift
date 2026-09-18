@@ -463,7 +463,9 @@ public struct EditView: View {
       x: CGFloat(rect.x) * size.width, y: CGFloat(rect.y) * size.height,
       width: CGFloat(rect.width) * size.width, height: CGFloat(rect.height) * size.height)
     return ZStack {
-      Color.black.opacity(0.5)
+      // WP-L L3: fixed dark veil in both appearances (Photos' editor is dark
+      // in both — re-verify once the light editor is captured; see WP-X list).
+      HeirloomAppearance.editorVeil
         .mask(CropDimShape(outer: size, rect: r).fill(style: FillStyle(eoFill: true)))
         .allowsHitTesting(false)
       Rectangle().stroke(.white, lineWidth: 1).frame(width: r.width, height: r.height)
@@ -841,7 +843,7 @@ public struct EditView: View {
 
   private var savingOverlay: some View {
     ZStack {
-      Color.black.opacity(0.4).ignoresSafeArea()
+      HeirloomAppearance.editorVeil.ignoresSafeArea()
       VStack(spacing: 12) {
         ProgressView()
         Text("Rendering full resolution…").font(.caption).foregroundStyle(.white)

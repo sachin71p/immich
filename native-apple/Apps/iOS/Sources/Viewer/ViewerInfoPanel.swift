@@ -26,7 +26,8 @@ struct ViewerInfoPanel: View {
       // can't be aimed reliably — outer layout modifiers join its AX frame.
       Button(action: onClose) {
         Capsule()
-          .fill(.white.opacity(0.5))
+          // WP-L L3: adaptive faint text (white 0.5 dark / tertiary light).
+          .fill(HeirloomAppearance.chromeTertiaryText)
           .frame(width: 40, height: 5)
           .frame(maxWidth: .infinity)
           .padding(.top, 10)
@@ -42,9 +43,9 @@ struct ViewerInfoPanel: View {
             infoCard {
               HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "text.bubble")
-                  .foregroundStyle(.white.opacity(0.7))
+                  .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
                 Text(caption)
-                  .foregroundStyle(.white)
+                  .foregroundStyle(HeirloomAppearance.chromePrimaryText)
               }
             }
           }
@@ -52,13 +53,13 @@ struct ViewerInfoPanel: View {
             VStack(alignment: .leading, spacing: 8) {
               Text(InfoDateText.headline(for: asset.localDateTime))
                 .font(.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                 .accessibilityIdentifier("viewer-info-date")
               HStack(spacing: 10) {
                 Image(systemName: "text.bubble")
-                  .foregroundStyle(.white.opacity(0.7))
+                  .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
                 Text(asset.originalFileName)
-                  .foregroundStyle(.white.opacity(0.7))
+                  .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
               }
               .font(.subheadline)
             }
@@ -69,27 +70,27 @@ struct ViewerInfoPanel: View {
                 HStack {
                   Text(camera.title)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                   Spacer()
                   if !camera.format.isEmpty {
                     Text(camera.format)
                       .font(.caption.weight(.semibold))
-                      .foregroundStyle(.white.opacity(0.8))
+                      .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                       .padding(.horizontal, 10)
                       .padding(.vertical, 4)
-                      .background(.white.opacity(0.15), in: .capsule)
+                      .background(HeirloomAppearance.chromeSubtleFill, in: .capsule)
                   }
                 }
                 .accessibilityIdentifier("viewer-info-camera")
                 if !camera.subtitle.isEmpty {
                   Text(camera.subtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
                 }
                 if !camera.dimensions.isEmpty {
                   Text(camera.dimensions)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
                 }
                 if !camera.exposure.isEmpty {
                   HStack {
@@ -99,7 +100,7 @@ struct ViewerInfoPanel: View {
                     }
                   }
                   .font(.caption)
-                  .foregroundStyle(.white.opacity(0.7))
+                  .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
                 }
               }
             }
@@ -114,16 +115,16 @@ struct ViewerInfoPanel: View {
                   HStack {
                     Text(placeLabel)
                       .font(.subheadline)
-                      .foregroundStyle(.white.opacity(0.85))
+                      .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                     Spacer()
                     Image(systemName: "chevron.right")
                       .font(.caption.weight(.semibold))
-                      .foregroundStyle(.white.opacity(0.5))
+                      .foregroundStyle(HeirloomAppearance.chromeTertiaryText)
                   }
                 }
                 Text("Library: \(containerName)")
                   .font(.subheadline)
-                  .foregroundStyle(.white.opacity(0.7))
+                  .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
               }
             }
             .accessibilityIdentifier("viewer-info-map")
@@ -133,22 +134,22 @@ struct ViewerInfoPanel: View {
               VStack(alignment: .leading, spacing: 8) {
                 Text("People")
                   .font(.headline)
-                  .foregroundStyle(.white)
+                  .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                 ScrollView(.horizontal, showsIndicators: false) {
                   HStack(spacing: 12) {
                     ForEach(people) { person in
                       VStack(spacing: 4) {
                         Circle()
-                          .fill(.white.opacity(0.2))
+                          .fill(HeirloomAppearance.chromeSubtleFill)
                           .frame(width: 44, height: 44)
                           .overlay {
                             Text(initials(of: person.name))
                               .font(.headline)
-                              .foregroundStyle(.white)
+                              .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                           }
                         Text(person.name)
                           .font(.caption)
-                          .foregroundStyle(.white.opacity(0.85))
+                          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                       }
                     }
                   }
@@ -161,17 +162,17 @@ struct ViewerInfoPanel: View {
               VStack(alignment: .leading, spacing: 8) {
                 Text("Albums")
                   .font(.headline)
-                  .foregroundStyle(.white)
+                  .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                 ForEach(albumNames, id: \.self) { name in
                   HStack {
                     Image(systemName: "rectangle.stack")
-                      .foregroundStyle(.white.opacity(0.7))
+                      .foregroundStyle(HeirloomAppearance.chromeSecondaryText)
                     Text(name)
-                      .foregroundStyle(.white)
+                      .foregroundStyle(HeirloomAppearance.chromePrimaryText)
                     Spacer()
                     Image(systemName: "chevron.right")
                       .font(.caption.weight(.semibold))
-                      .foregroundStyle(.white.opacity(0.5))
+                      .foregroundStyle(HeirloomAppearance.chromeTertiaryText)
                   }
                   .font(.subheadline)
                 }
@@ -182,8 +183,13 @@ struct ViewerInfoPanel: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
       }
+      // WP-L L3: appearance test surface — the sheet's own scroll content.
+      // Contain (like the panel root) keeps the card ids addressable.
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("info-sheet-surface")
     }
-    .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 20))
+    // WP-L L3: grouped-background card in light, dark card in dark.
+    .background(HeirloomAppearance.infoCardBackground, in: RoundedRectangle(cornerRadius: 20))
     // Explicit containment: without it the panel's identifier collapses the whole
     // subtree (grabber label included) into a single element and the children
     // stop being addressable.
@@ -207,7 +213,7 @@ struct ViewerInfoPanel: View {
     }
     .padding(14)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(white: 0.14), in: RoundedRectangle(cornerRadius: 20))
+    .background(HeirloomAppearance.infoCardBackground, in: RoundedRectangle(cornerRadius: 20))
   }
 
   private var placeLabel: String {
