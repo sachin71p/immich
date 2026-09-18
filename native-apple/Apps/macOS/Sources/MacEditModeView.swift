@@ -1362,6 +1362,7 @@ private struct EditAdjustSectionView: View {
             .accessibilityIdentifier(ch.axID)
         }
       }
+      .accessibilityElement(children: .contain)
       .accessibilityIdentifier(AXIDs.editSlider("curves-channel"))
       CurveCanvas(
         points: curvePoints, picker: $armedPicker,
@@ -1473,6 +1474,7 @@ private struct CurveCanvas: View {
       }
       .frame(height: Self.height)
     }
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier(axCanvas)
     .focusable()
     .onKeyPress(.upArrow) { nudge(dx: 0, dy: Self.keyStep); return .handled }
