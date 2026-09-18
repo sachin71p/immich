@@ -630,7 +630,8 @@ struct PlacesView: View {
       onOpen: { route in
         viewerRequest = ViewerRequest(ids: route.resolveIds(), initialId: route.startId)
       },
-      showsSectionHeaders: false
+      showsSectionHeaders: false,
+      session: session
     )
   }
 

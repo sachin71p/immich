@@ -351,7 +351,8 @@ struct SearchView: View {
             showViewer = true
           },
           showsSectionHeaders: false,
-          reloadToken: searchToken
+          reloadToken: searchToken,
+          session: session
         )
         .accessibilityIdentifier("search-results")
       }

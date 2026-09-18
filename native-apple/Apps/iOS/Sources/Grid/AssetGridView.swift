@@ -44,6 +44,9 @@ struct AssetGridView: View {
   var currentUserId: String? = nil
   var onPinchEdge: ((Bool) -> Void)? = nil
   var onScrollActive: ((Bool) -> Void)? = nil
+  /// WP-M (G4): menu owner for the grid long-press provider. Optional so
+  /// callers without a session keep tap-to-open untouched.
+  var session: AppSession? = nil
 
   @StateObject private var loader = LibraryGridLoader()
   @ObservedObject private var selectionModel: GridSelectionModel
@@ -63,7 +66,8 @@ struct AssetGridView: View {
     reloadToken: Int = 0,
     currentUserId: String? = nil,
     onPinchEdge: ((Bool) -> Void)? = nil,
-    onScrollActive: ((Bool) -> Void)? = nil
+    onScrollActive: ((Bool) -> Void)? = nil,
+    session: AppSession? = nil
   ) {
     self.source = source
     self.store = store
@@ -82,6 +86,7 @@ struct AssetGridView: View {
     self.currentUserId = currentUserId
     self.onPinchEdge = onPinchEdge
     self.onScrollActive = onScrollActive
+    self.session = session
   }
 
   var body: some View {
@@ -100,7 +105,8 @@ struct AssetGridView: View {
         showsSectionHeaders: showsSectionHeaders,
         currentUserId: currentUserId,
         onPinchEdge: onPinchEdge,
-        onScrollActive: onScrollActive
+        onScrollActive: onScrollActive,
+        session: session
       )
       .ignoresSafeArea(edges: .bottom)
     }
@@ -170,6 +176,7 @@ private struct GridBridge: UIViewControllerRepresentable {
   var currentUserId: String?
   var onPinchEdge: ((Bool) -> Void)?
   var onScrollActive: ((Bool) -> Void)?
+  var session: AppSession? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -201,6 +208,13 @@ private struct GridBridge: UIViewControllerRepresentable {
     vc.onTap = { [weak vc, onOpen] id in
       guard let snapshot = vc?.currentSnapshot else { return }
       onOpen(ViewerRoute(startId: id) { snapshot.allIds })
+    }
+    // WP-M (G4): grid long-press menu. Without a session the provider stays
+    // nil and tap-to-open is untouched.
+    vc.menuProvider = { [session] id, _ in
+      guard let session else { return nil }
+      return UIHostingController(
+        rootView: GridContextMenuSheet(assetId: id).environmentObject(session))
     }
     vc.onSelectionChange = { [weak selection] ids in
       selection?.ids = ids

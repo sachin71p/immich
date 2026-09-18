@@ -305,7 +305,8 @@ struct LibraryView: View {
                 isGridScrolling = false
               }
             }
-          }
+          },
+          session: session
         )
         .accessibilityIdentifier("library-grid")
       } else {

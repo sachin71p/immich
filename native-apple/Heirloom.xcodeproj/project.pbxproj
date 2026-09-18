@@ -17,6 +17,7 @@
 		0D1AAA3C3B29869B077E8506 /* AppearanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB3423F7182EE3D21FE5149 /* AppearanceUITests.swift */; };
 		0D84C822D912CE57500AE304 /* EditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848364178733C3D1D80789CF /* EditView.swift */; };
 		0E10C711C8F681B0C76713FC /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = D1C30EE4872AF2F23206FB13 /* CoreModel */; };
+		0E840940204F07961030BF35 /* GridContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715FFA80CBD735CCE3B46FFB /* GridContextMenu.swift */; };
 		0F2EBA171CCB583E46541F66 /* MacPeopleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8350F00918404C2A0D5D3E /* MacPeopleView.swift */; };
 		105FEC7964FFA5BCF58C7677 /* ParityCanvasSelfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05DC4A4509FEA7127C178009 /* ParityCanvasSelfTests.swift */; };
 		13608FE5CC19FD06F78233DE /* MacMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D65FC4B1B649D178D8A4490 /* MacMenus.swift */; };
@@ -147,6 +148,7 @@
 		D88BBF9527653F7952010D94 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = C4A5E82A48F6AF0BA0893C36 /* LocalStore */; };
 		DD6300F009E5382AD0E581F7 /* PhotoGridViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B1F0D46D5FB8B587DF4848 /* PhotoGridViewController.swift */; };
 		DDF142E14F09ECE862AF4CE3 /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 5391217B7AC8A0349772138D /* Upload */; };
+		DFFA006D506FC3C74C8C0402 /* ViewerLongPressMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90D2FEC4245D35A0F05D1F2 /* ViewerLongPressMenu.swift */; };
 		E00BBE3092CD602E5BCDD234 /* ViewerChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90DE8642D7DD958704AC0FD /* ViewerChrome.swift */; };
 		E09CF031F98CB87E7FA21507 /* MacPreviewCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AF35940917C91636A4A755 /* MacPreviewCatalog.swift */; };
 		E229A8BE2B9D90937CDD28A0 /* MacEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4809432DCC4D04479898A85 /* MacEditView.swift */; };
@@ -252,6 +254,7 @@
 		6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDragDrop.swift; sourceTree = "<group>"; };
 		6E3E22E15AF847EB8E62EE01 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		6FD940D36923946B23596B70 /* ParityChromeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityChromeUITests.swift; sourceTree = "<group>"; };
+		715FFA80CBD735CCE3B46FFB /* GridContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridContextMenu.swift; sourceTree = "<group>"; };
 		71607B706C614A1C8A0A6D54 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
 		71A54903BAEFFF522B2BF7AB /* WidgetsExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetsExtension.swift; sourceTree = "<group>"; };
 		71AE2ECC214496244BF961D9 /* ParityViewerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityViewerUITests.swift; sourceTree = "<group>"; };
@@ -279,6 +282,7 @@
 		A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentLoginItem.swift; sourceTree = "<group>"; };
 		A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTour.swift; sourceTree = "<group>"; };
 		A79F5EE788A54FD0A7363A85 /* ViewerInfoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerInfoPanel.swift; sourceTree = "<group>"; };
+		A90D2FEC4245D35A0F05D1F2 /* ViewerLongPressMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerLongPressMenu.swift; sourceTree = "<group>"; };
 		AA092BF2BAD6CCE9099D356D /* MonthsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthsView.swift; sourceTree = "<group>"; };
 		B0E647D70429540C5A8F9AF4 /* KeyAssetPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyAssetPhoto.swift; sourceTree = "<group>"; };
 		B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLiveText.swift; sourceTree = "<group>"; };
@@ -555,6 +559,7 @@
 				2926BA269E6027FC436CF9C2 /* AssetGridView.swift */,
 				2BC2B330D0AB7D07343EBF7B /* BucketHeaderView.swift */,
 				173F9A53CF69350E161F685F /* FastScroller.swift */,
+				715FFA80CBD735CCE3B46FFB /* GridContextMenu.swift */,
 				74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */,
 				58B7A0F588ED12A3BF26CC38 /* GridSelectionModel.swift */,
 				46E69169F9C526F6242FC0CD /* GridSnapshot.swift */,
@@ -677,6 +682,7 @@
 			children = (
 				E90DE8642D7DD958704AC0FD /* ViewerChrome.swift */,
 				A79F5EE788A54FD0A7363A85 /* ViewerInfoPanel.swift */,
+				A90D2FEC4245D35A0F05D1F2 /* ViewerLongPressMenu.swift */,
 				0364F98EC3A3B2999C136AE8 /* ViewerPager.swift */,
 			);
 			path = Viewer;
@@ -1188,6 +1194,7 @@
 				56ABB8722262A613B915AAFF /* FixtureArtwork.swift in Sources */,
 				8B42ECF6B1AF7C434B602742 /* FixtureSeed.swift in Sources */,
 				CA0727D769971F8DA20E364B /* FreeUpSpaceView.swift in Sources */,
+				0E840940204F07961030BF35 /* GridContextMenu.swift in Sources */,
 				CDAFB670B121C9578D09A09C /* GridPrefetchPolicy.swift in Sources */,
 				E6DED1853529ACA4D2511877 /* GridSelectionModel.swift in Sources */,
 				EB27BEF28DAA01723107CBB0 /* GridSnapshot.swift in Sources */,
@@ -1216,6 +1223,7 @@
 				E285774554AF518271B4AD20 /* Viewer.swift in Sources */,
 				E00BBE3092CD602E5BCDD234 /* ViewerChrome.swift in Sources */,
 				5D62B6B3F920991B560ED1BE /* ViewerInfoPanel.swift in Sources */,
+				DFFA006D506FC3C74C8C0402 /* ViewerLongPressMenu.swift in Sources */,
 				BDE3988953DD862B5FA0BAA4 /* ViewerPager.swift in Sources */,
 				9830135D974E63A6479AC3CC /* ViewerRoute.swift in Sources */,
 				800A8E8B6F7D5E6335A95FCC /* YearsView.swift in Sources */,
