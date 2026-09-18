@@ -23,7 +23,7 @@ CONFIGURATION ?= Release
 .DEFAULT_GOAL := help
 
 .PHONY: help xcodegen build-ios build-macos build-macos-debug check-ios-device install-ios install-macos \
-        test-core test-macos-ui \
+        test-core test-macos-ui test-ios-ui \
         mock-server mock-server-down mock-server-logs ios-sim clean
 
 help:
@@ -35,6 +35,7 @@ help:
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
 	@echo "  make test-core          Run the PhotosCore SwiftPM test suite"
 	@echo "  make test-macos-ui      Run the macOS UI tests in a Tart VM (RUN_ON_HOST=1 for host)"
+	@echo "  make test-ios-ui        Run the iOS UI tests in the bridged VM (RUN_ON_HOST=1 for host)"
 	@echo "  make mock-server        Start the local Heirloom server via Docker (built from source)"
 	@echo "  make mock-server-down   Stop the local Docker server"
 	@echo "  make mock-server-logs   Tail the local server's logs"
@@ -145,6 +146,22 @@ test-macos-ui: xcodegen
 else
 test-macos-ui:
 	cd $(NATIVE_DIR) && ./scripts/run-macos-ui-tests.sh $(if $(REMOTE),--remote $(REMOTE)) $(if $(GUEST),--guest $(GUEST)) $(if $(FULL_DERIVED_DATA),--full-derived-data)
+endif
+
+# iOS UI tests run in the bridged Tart guest VM by default so sim runs stop
+# competing with the host's desktop, device installs, and the macOS suite
+# (see native-apple/scripts/run-ios-ui-tests.sh). RUN_ON_HOST=1 restores a
+# local xcodebuild run. ONLY_TESTING narrows the scope (space-separated);
+# CONFIGURATION defaults to Debug in the runner; SIMULATOR_NAME defaults to
+# iPhone 17e. GUEST defaults in the runner to the reserved-IP bridged VM
+# (admin@192.168.4.58); override per-run with GUEST=.
+ifeq ($(RUN_ON_HOST),1)
+test-ios-ui: xcodegen
+	@mkdir -p $(MODULE_CACHE)
+	cd $(NATIVE_DIR) && ./scripts/run-ios-ui-tests.sh --host
+else
+test-ios-ui:
+	cd $(NATIVE_DIR) && ./scripts/run-ios-ui-tests.sh $(if $(GUEST),--guest $(GUEST)) $(if $(FULL_DERIVED_DATA),--full-derived-data)
 endif
 
 $(DOCKER_DIR)/.env:
