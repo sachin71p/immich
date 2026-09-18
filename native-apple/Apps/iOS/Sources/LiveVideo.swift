@@ -304,9 +304,18 @@ struct VideoPage: View {
     if item.status == .failed {
       playbackFailed = true
       isPlaying = false
-      if let err = item.error {
-        playbackError = "load failed: \(err.localizedDescription)"
+      // F2-diag: full error identity (domain + code + server response). The
+      // one-line summary alone ("Operation Stopped") cannot name the cause.
+      var parts: [String] = []
+      if let err = item.error as NSError? {
+        parts.append("domain=\(err.domain) code=\(err.code)")
+        parts.append(err.localizedDescription)
       }
+      if let ev = item.errorLog()?.events.last {
+        let uri = ev.uri.map { String($0.suffix(80)) } ?? "?"
+        parts.append("http=\(ev.errorStatusCode) uri=\(uri)")
+      }
+      if !parts.isEmpty { playbackError = parts.joined(separator: " | ") }
       return
     }
     if item.status == .readyToPlay, isPlaying {
