@@ -98,3 +98,54 @@ Implement every test listed for **E1–E9** in TEST-PLAN §2, in files under `Ap
   phases, and `GestureInputs` controllers for pinch and smart zoom. All of these come from WP-T.
 - Report table: `ID | test(s) | red on base | green now | notes`. Only rows marked **H** in TEST-PLAN
   may lack an automated test.
+
+## Owner decisions (Final — accepted 2026-09-18)
+
+- **D1 — Selective Color scope: FULL 6-swatch control required for Gate 1.** Owner rejected
+  the Vibrance/Cast macro. Requires 6 hue swatches × Hue/Saturation/Luminance/Range, new
+  recipe keys, and renderer support before Gate 1 sign-off.
+- **D2 — Curves scope: FULL RGB + per-channel curve editor with pickers required for Gate 1.**
+  Owner rejected the Highlights/Shadows/Contrast macro (same bar as D1; a non-curve
+  "Curves" risks rejection at verdict). Requires custom curve canvas, point dragging,
+  per-channel state, and new recipe keys.
+- **D3 — Levels scope: REAL input/output handles required for Gate 1.** Owner rejected the
+  Black Point/Brightness/Contrast macro. Two dual-thumb sliders (input black/white,
+  output black/white) over existing keys — no canvas work.
+- **D4 — Red-Eye: REQUIRED for Gate 1 despite the P2 marking.** Owner overrode the
+  deferral recommendation. Requires tap-to-select eye regions, desaturation correction,
+  and new recipe keys. Note: combined with D1–D3, Gate 1 now carries four full builds.
+- **D5 — Tools tab: KEEP visible with the placeholder note.** Owner overrode the
+  hide-tab recommendation (and the spec's hide-if-empty clause). The "No retouch tools
+  are available on-device yet." panel stays for Gate 1.
+- **D6 — Done-save semantics: DONE VERSIONS.** Each Done persists a new recipe version,
+  keeping prior recipes restorable; Cancel discards the in-progress edit. Version
+  storage shape and retention limit are implementation detail, but old versions must
+  keep rendering identically as new keys land (D1–D4).
+- **D6a — Version store: PERSISTED PER-ASSET STACK, CAP 10, WITH HISTORY TIMESTAMP
+  LIST.** Tap-to-restore appends a new version (never overwrites). Recipes are ~1KB
+  JSON so the cap bounds worst-case storage. Rejected the two-slot fallback (one
+  level of "oops" is not restorable history).
+
+## Implementation briefs (Final — from D1–D6a; build order D3, D1, D2, D4, D6a; D5 needs no work)
+
+- **D3 Levels (first):** two dual-thumb sliders (input black/white, output black/white).
+  New dedicated keys `levelsInBlack/levelsInWhite/levelsOutBlack/levelsOutWhite`
+  (decouple from the Light section's shared keys); renderer applies a true levels
+  transform; section enable/reset owns the four keys. Tests: unit (levels math,
+  clamping/order invariants) + UI (handles drag, Done persists, viewer shows it).
+- **D1 Selective Color:** 6 hue swatches × Hue/Saturation/Luminance/Range. New
+  per-hue keys; swatch picker UI; CoreImage hue-range adjustment in the renderer.
+  Tests: unit (per-hue isolation, key defaults) + UI (swatch select, sliders move).
+- **D2 Curves:** RGB + per-channel curve canvas with point dragging and
+  black/grey/white pickers. New point-array keys; tone-curve renderer path.
+  Tests: unit (curve evaluation, monotonicity) + UI (add/drag point, pickers set).
+- **D4 Red-Eye:** tap-to-select eye regions + desaturation correction. New region
+  keys; renderer spot correction. Tests: unit + UI (tap places correction).
+- **D5 Tools tab:** no work — placeholder panel stays per owner override.
+- **D6/D6a Versions:** per-asset persisted stack (cap 10) beside the single-slot
+  recipe store; History timestamp list UI; tap-to-restore appends. Old versions
+  must decode and render identically as D1–D4 keys land. Tests: unit (cap prune
+  order, restore-appends, back-compat decode) + UI (History lists, restore works).
+- **Estimate impact:** D1–D4 + D6a are four full builds plus a version store —
+  roughly double the macro-based E scope. D3 first to validate the keys → UI →
+  renderer → tests pattern the siblings follow.
