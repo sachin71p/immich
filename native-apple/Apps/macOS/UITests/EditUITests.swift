@@ -40,6 +40,14 @@ final class EditUITests: XCTestCase {
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30))
     XCTAssertTrue(el("sidebar").waitForExistence(timeout: 30), "sidebar renders")
     XCTAssertTrue(el("asset-grid").waitForExistence(timeout: 30), "grid renders")
+    // Same toolbar-overflow guard as the functional suite: the default 1400px
+    // window hides trailing toolbar items (including the viewer Edit button)
+    // where AX clicks cannot reach them.
+    let zoom = app.windows.firstMatch.buttons["_XCUI:FullScreenWindow"]
+    XCTAssertTrue(zoom.waitForExistence(timeout: 10), "zoom button renders")
+    XCUIElement.perform(withKeyModifiers: .option) { zoom.click() }
+    XCTAssertTrue(
+      el("favorite-button").waitForExistence(timeout: 10), "toolbar unfurls after zoom")
   }
 
   private func firstCell() -> XCUIElement {

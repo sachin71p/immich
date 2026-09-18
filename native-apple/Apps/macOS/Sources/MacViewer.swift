@@ -176,6 +176,7 @@ struct MacViewerView: View {
         Text(rotationError).foregroundStyle(.red).font(.caption).padding()
       }
     }
+    .accessibilityIdentifier(AXIDs.viewer)
     .frame(minWidth: 640, minHeight: 480)
     .background(
       GeometryReader { proxy in
