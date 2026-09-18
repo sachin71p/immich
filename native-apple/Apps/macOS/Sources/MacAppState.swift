@@ -75,7 +75,8 @@ final class MacAppState {
   }
 
   private static func makeConnectionState(
-    serverURL: URL, token: String?, store: PhotosLocalStore, diskCache: TieredMediaCache
+    serverURL: URL, token: String?, store: PhotosLocalStore, diskCache: TieredMediaCache,
+    protocolClasses: [AnyClass] = []
   ) throws -> ConnectionState {
     let connection = try ImmichConnection(serverURL: serverURL, accessToken: token)
     let tokenStore = connection.tokenStore
@@ -91,17 +92,21 @@ final class MacAppState {
       connection: connection,
       sync: SyncCoordinator(connection: connection, localStore: store),
       uploadQueue: UploadQueue(store: store, transport: ImmichUploadTransport(connection: connection)),
-      pipeline: MediaPipeline.makeDefault(diskCache: diskCache, server: server)
+      pipeline: MediaPipeline.makeDefault(
+        diskCache: diskCache, server: server, protocolClasses: protocolClasses)
     )
   }
 
-  private init(serverURL: URL, token: String?, store: PhotosLocalStore) throws {
+  private init(
+    serverURL: URL, token: String?, store: PhotosLocalStore, protocolClasses: [AnyClass] = []
+  ) throws {
     let diskCache = TieredMediaCache(
       rootDirectory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Heirloom/Media", isDirectory: true)
     )
     let built = try Self.makeConnectionState(
-      serverURL: serverURL, token: token, store: store, diskCache: diskCache)
+      serverURL: serverURL, token: token, store: store, diskCache: diskCache,
+      protocolClasses: protocolClasses)
 
     self.serverURL = built.serverURL
     self.store = store
@@ -124,7 +129,11 @@ final class MacAppState {
   static func seeded() throws -> MacAppState {
     let store = try PhotosLocalStore(inMemory: true)
     let state = try MacAppState(
-      serverURL: URL(string: "https://fixture.invalid")!, token: nil as String?, store: store
+      serverURL: URL(string: "https://fixture.invalid")!, token: nil as String?, store: store,
+      // The stub must ride Nuke's private session: global `URLProtocol.registerClass`
+      // (done in `seedForSmoke`) never intercepts it, so without this the fixture
+      // viewer/grid loads no bytes at all.
+      protocolClasses: [FixtureStubURLProtocol.self]
     )
     state.userId = FixtureSeed.userId
     return state

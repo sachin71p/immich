@@ -132,6 +132,8 @@ targets:
         product: CoreModel
       - package: PhotosCore
         product: LocalStore
+      - package: PhotosCore
+        product: Media
       - package: swift-snapshot-testing
         product: SnapshotTesting
     settings:

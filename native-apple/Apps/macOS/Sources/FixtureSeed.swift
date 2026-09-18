@@ -635,6 +635,9 @@ final class FixtureStubURLProtocol: URLProtocol {
 
 extension FixtureSeed {
   /// Idempotent: `URLProtocol.registerClass` is process-wide and safe to repeat.
+  /// Covers `URLSession.shared`/default sessions only — Nuke builds a private session
+  /// that ignores global registration, so media loads need the stub injected per-session
+  /// (`MediaPipeline.makeDefault(protocolClasses:)`, wired in `MacAppState.seeded()`).
   static func activateStubServer() {
     URLProtocol.registerClass(FixtureStubURLProtocol.self)
   }
