@@ -7,12 +7,6 @@ import Rules
 import Search
 import SwiftUI
 
-extension Notification.Name {
-  /// Return in the viewer: WP-E handles edit mode when it lands; until then
-  /// the viewer also opens its existing sheet (WP-V step 6).
-  static let macViewerOpenEdit = Notification.Name("Heirloom.MacViewerOpenEdit")
-}
-
 /// Asset viewer (WP-V): `NSPageController` pager (1:1 swipe, arrows), zoomable
 /// image pages with a Live Text overlay, video/live pages, pinch-to-close and
 /// open/close transitions, Photos-order toolbar/title/badges/chevrons/keys,
@@ -58,7 +52,13 @@ struct MacViewerView: View {
   @State private var pinchScale: CGFloat?
   @State private var showingInspector = false
   @State private var showingMove = false
-  @State private var showingEdit = false
+  /// WP-E E1/E2: full-window edit mode replaces the viewer content (first click
+  /// on Edit, Return, or the `HeirloomViewer.openEdit` notification).
+  @State private var showingEditMode = false
+  /// Pixel preview for the edit shell: the placeholder tier is enough to open
+  /// (mirrors WP-E's progressive `image`); cleared on page change.
+  @State private var editPreviewImage: NSImage?
+  @State private var editPreviewTask: Task<Void, Never>?
   @State private var showingAddToAlbum = false
   @State private var error: String?
   // Hosted inline, this view replaces an NSCollectionView (the grid) that held first responder —
@@ -165,6 +165,25 @@ struct MacViewerView: View {
   private var isLive: Bool { chromeAsset?.livePhotoVideoId != nil }
 
   var body: some View {
+    // WP-E E1/E2: full-window edit mode replaces the viewer content once the
+    // chrome asset and a pixel preview are present; otherwise the viewer.
+    if showingEditMode, let asset = chromeAsset, let preview = editPreviewImage {
+      MacEditModeView(
+        asset: asset, access: editAccess, preview: preview,
+        loadOriginalData: { [self] in try await self.downloadOriginal(asset) },
+        loadVideoFile: asset.type == .video
+          ? { [self] in try await self.downloadOriginalFile(asset) } : nil,
+        persistence: editPersistence,
+        isFavorite: asset.isFavorite,
+        onFavorite: { toggleFavorite() },
+        onDone: { _ in Task { await loadChrome() } },
+        onExit: { showingEditMode = false })
+    } else {
+      viewerBody
+    }
+  }
+
+  private var viewerBody: some View {
     // AnyView boundary: keeps each half of the modifier chain small enough
     // for the type-checker (the full chain times out as one expression).
     AnyView(chrome)
@@ -180,9 +199,12 @@ struct MacViewerView: View {
       closeOrDismissPreview()
       return .handled
     }
-    // Return → Edit (V13 key map): WP-E handles the notification when it
-    // lands; until then the existing sheet opens.
-    .onKeyPress(.return) { openEdit(); return .handled }
+    // WP-E E1: Return opens edit mode (first-click parity for keyboard).
+    .onKeyPress(.return) {
+      guard !showingEditMode, let asset = chromeAsset, canEdit(asset) else { return .ignored }
+      enterEditMode()
+      return .handled
+    }
     // Character keys (V8/V13): Z toggles zoom; ⌘+/⌘− step ×1.5; ⌥⌘R rotates
     // counter-clockwise (⌘R clockwise lives in the menus). Modifiers are
     // matched inside — `onKeyPress` offers no modifiers filter.
@@ -221,11 +243,21 @@ struct MacViewerView: View {
       rotationError = nil
       sliderValue = 1
       pinchScale = nil
+      editPreviewTask?.cancel()
+      editPreviewTask = nil
+      editPreviewImage = nil
       await ensureFallbackContext()
       await loadChrome()
     }
     .onChange(of: assetId) { _, new in selectedID = new }
     .onAppear { isFocused = true }
+    .onReceive(NotificationCenter.default.publisher(for: .heirloomOpenEdit)) { note in
+      // WP-E E1: open on the viewer notification (menus and external hosts;
+      // the toolbar and key map call `enterEditMode()` directly).
+      if let id = note.userInfo?["assetId"] as? String, id != selectedID { return }
+      guard !showingEditMode, let asset = chromeAsset, canEdit(asset) else { return }
+      enterEditMode()
+    }
   }
 
   /// Content + chrome (title, toolbar, inspector, sheets, menu, focus). The
@@ -236,7 +268,6 @@ struct MacViewerView: View {
       .navigationTitle(viewerTitle)
       .navigationSubtitle(viewerSubtitle)
       .focusedValue(\.macAssetActions, assetActions)
-      .accessibilityIdentifier(AXIDs.viewer)
       .toolbar {
         viewerToolbar
       }
@@ -254,9 +285,6 @@ struct MacViewerView: View {
           MacAssetChangeCenter.shared.post(.albumsChanged)
         }
       }
-      .sheet(isPresented: $showingEdit) {
-        editSheetContent
-      }
       .contextMenu { viewerContextMenu }
       .focusable()
       .focused($isFocused)
@@ -270,6 +298,10 @@ struct MacViewerView: View {
         badgesOverlay
         errorOverlay
       }
+      // Explicit group: the pager's AppKit-hosted subtree leaves SwiftUI with
+      // no AX element of its own here, which drops a bare identifier.
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier(AXIDs.viewer)
     }
   }
 
@@ -319,9 +351,15 @@ struct MacViewerView: View {
       Button { toggleAutoEnhance() } label: { enhanceLabel }
         .accessibilityIdentifier("toolbar.autoEnhance")
     }
-    ToolbarItem {
-      Button { openEdit() } label: { Text("Edit") }
-        .accessibilityIdentifier(AXIDs.toolbarEdit)
+    // WP-E E1: a single click opens edit mode at once (no double-click).
+    // Render-gated on the permission verdict so the button only exists when
+    // actionable: personal assets pass on user id alone; space/library rows
+    // resolve when memberships land and re-render.
+    if let asset = chromeAsset, canEdit(asset) {
+      ToolbarItem {
+        Button { enterEditMode() } label: { Text("Edit") }
+          .accessibilityIdentifier(AXIDs.toolbarEdit)
+      }
     }
   }
 
@@ -356,19 +394,36 @@ struct MacViewerView: View {
 
   private var zoomPercentText: String { "\(Int(sliderValue * 100)) percent" }
 
-  @ViewBuilder
-  private var editSheetContent: some View {
-    if let chromeAsset, let editImage {
-      MacEditView(
-        asset: chromeAsset, access: editAccess, preview: editImage,
-        loadOriginalData: { [self] in try await downloadOriginal(chromeAsset) },
-        loadVideoFile: chromeAsset.type == .video
-          ? { [self] in try await downloadOriginalFile(chromeAsset) } : nil,
-        persistence: editPersistence,
-        onDone: { _ in })
-        .frame(minWidth: 900, minHeight: 640)
-    } else {
-      ProgressView().controlSize(.large).padding(40)
+  /// WP-E E1 entry: full-window edit replaces viewer content as soon as the
+  /// chrome asset and a pixel preview are both present (`body` flips when
+  /// they land; no intent queue — the toolbar only renders when actionable
+  /// and the shell appears the moment its inputs exist).
+  private func enterEditMode() {
+    showingEditMode = true
+    loadEditPreviewIfNeeded()
+  }
+
+  /// Pixel preview for the edit shell: the placeholder tier is enough to open
+  /// (mirrors WP-E's progressive `image`, which also starts life as a
+  /// placeholder in fixture mode); later tiers upgrade it in place.
+  private func loadEditPreviewIfNeeded() {
+    guard editPreviewImage == nil, editPreviewTask == nil else { return }
+    guard let asset = chromeAsset else { return }
+    let id = asset.id
+    editPreviewTask = Task {
+      defer { editPreviewTask = nil }
+      guard
+        let stream = await pageStore?.previewStream(id: id, thumbhash: asset.thumbhash)
+      else { return }
+      do {
+        for try await step in stream {
+          try Task.checkCancellation()
+          switch step.content {
+          case .placeholder(let next): editPreviewImage = next
+          case .tier(_, let next, _): editPreviewImage = next
+          }
+        }
+      } catch {}
     }
   }
 
@@ -547,34 +602,6 @@ struct MacViewerView: View {
     } else {
       MacPreviewPanel.dismiss()
     }
-  }
-
-  private func openEdit() {
-    NotificationCenter.default.post(name: .macViewerOpenEdit, object: selectedID)
-    guard canEditCurrent else { return }
-    showingEdit = true
-    // The sheet needs a pixel preview; page controllers own the tiers, so load
-    // one here through the page store.
-    Task {
-      guard let asset = chromeAsset,
-        let stream = await pageStore?.previewStream(id: asset.id, thumbhash: asset.thumbhash)
-      else { return }
-      do {
-        for try await step in stream {
-          if case .tier(_, let next, _) = step.content {
-            editImage = next
-            break
-          }
-        }
-      } catch {}
-    }
-  }
-
-  @State private var editImage: NSImage?
-
-  private var canEditCurrent: Bool {
-    guard let asset = chromeAsset else { return false }
-    return canEdit(asset)
   }
 
   @State private var autoEnhanceApplied = false
