@@ -21,7 +21,7 @@ final class LibraryChromeUITests: XCTestCase {
     // common case performs no extra toolbar taps before menu tests.
     let grid = app.descendants(matching: .any)["library-grid"]
     if !grid.waitForExistence(timeout: 10) {
-      let allPhotos = app.buttons["All Photos"]
+      let allPhotos = app.buttons["All"]
       if allPhotos.waitForExistence(timeout: 10) { allPhotos.tap() }
     }
     XCTAssertTrue(

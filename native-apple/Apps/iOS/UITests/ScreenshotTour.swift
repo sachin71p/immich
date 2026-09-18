@@ -162,7 +162,7 @@ final class ScreenshotTourUITests: XCTestCase {
   func tourLibrary() {
     // Zoom persists across runs — normalize to All before expecting the grid.
     goTab("Library", expect: app.descendants(matching: .any)["library-zoom"])
-    if tap(app.buttons["All Photos"], timeout: 10) {
+    if tap(app.buttons["All"], timeout: 10) {
       sleep(1)
     }
     XCTAssertTrue(
