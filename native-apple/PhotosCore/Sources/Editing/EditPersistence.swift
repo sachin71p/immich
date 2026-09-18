@@ -185,13 +185,13 @@ public struct RESTEditPersistence: EditPersistence, Sendable {
     return req
   }
 
-  private func get(path: String) async throws -> (Data, Int) {
+  func get(path: String) async throws -> (Data, Int) {
     var req = try await authorized(path)
     req.httpMethod = "GET"
     return try await send(req, body: nil)
   }
 
-  private func put(path: String, json: Data) async throws -> (Data, Int) {
+  func put(path: String, json: Data) async throws -> (Data, Int) {
     var req = try await authorized(path)
     req.httpMethod = "PUT"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -218,7 +218,7 @@ public struct RESTEditPersistence: EditPersistence, Sendable {
     }
   }
 
-  private static func check(status: Int, data: Data) throws {
+  static func check(status: Int, data: Data) throws {
     guard (200..<300).contains(status) else {
       throw EditPersistenceError.http(
         status: status, body: String(data: data, encoding: .utf8) ?? "<binary>")

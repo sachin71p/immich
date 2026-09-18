@@ -53,6 +53,8 @@ struct MacEditModeView: View {
   var onExit: () -> Void
 
   @State private var history = EditHistory()
+  @State private var versionStore = EditVersionStore()
+  @State private var historyExpanded = false
   @State private var tab: EditModeTab = .adjust
   @State private var renderedPreview: NSImage
   @State private var canvasSource: NSImage
@@ -434,6 +436,7 @@ extension MacEditModeView {
       case .video: videoPanel
       }
       Spacer(minLength: 0)
+      historySection
       Button("Reset Adjustments", role: .destructive) {
         var r = history.current
         r.adjust = AdjustRecipe()
@@ -443,6 +446,81 @@ extension MacEditModeView {
       .padding(8)
     }
     .padding(8)
+  }
+
+  // MARK: - History (D6a version stack)
+
+  /// Timestamp list of persisted Done versions. Tap-to-restore appends the
+  /// restored recipe as a NEW version (never overwrites); Cancel still
+  /// discards the in-progress edit without touching the stack. A plain
+  /// button, not a DisclosureGroup: a collapsed DisclosureGroup is
+  /// AX-invisible, so UI tests could never expand it (same reason as the
+  /// section Options buttons).
+  private var historySection: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Button(historyExpanded ? "History ⌄" : "History ›") { historyExpanded.toggle() }
+        .accessibilityIdentifier(AXIDs.editHistory)
+        .font(.caption)
+        .buttonStyle(.plain)
+      if historyExpanded {
+        if versionStore.isEmpty {
+          Text("No saved versions yet.")
+            .font(.caption).foregroundStyle(.secondary)
+        } else {
+          ForEach(versionStore.versions.indices, id: \.self) { i in
+            HStack {
+              Text(versionStore.versions[i].savedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+              Spacer()
+              Button("Restore") { restoreVersion(at: i) }
+                .accessibilityIdentifier(AXIDs.editHistoryRestore(i))
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AXIDs.editHistoryRow(i))
+          }
+        }
+      }
+    }
+  }
+
+  private var isFixtureSeeded: Bool {
+    HeirloomLaunchFlag.isPresent("-fixture-seed", legacy: "--fixture-seed")
+  }
+
+  /// Fixture-only seed (no server under `-fixture-seed`): two deterministic
+  /// versions so UI tests can list History and exercise tap-to-restore
+  /// without pressing Done on a real asset. Production never calls this.
+  private func seedFixtureVersions() {
+    guard versionStore.isEmpty else { return }
+    versionStore = EditVersionStore(versions: [
+      EditRecipeVersion(
+        id: "fixture-v1", savedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        recipe: EditRecipe(adjust: AdjustRecipe(exposure: -40))),
+      EditRecipeVersion(
+        id: "fixture-v2", savedAt: Date(timeIntervalSince1970: 1_700_003_600),
+        recipe: EditRecipe(adjust: AdjustRecipe(exposure: 50))),
+    ])
+  }
+
+  private func restoreVersion(at index: Int) {
+    guard let recipe = versionStore.restore(at: index) else { return }
+    history.commit(recipe)
+    elements = recipe.markup?.elements ?? []
+    persistVersions()
+  }
+
+  /// Persists the stack beside the single-slot recipe. Fixture launches have
+  /// no server: the stack stays in memory (fixture flag only).
+  private func persistVersions() {
+    guard !isFixtureSeeded else { return }
+    let payload = EditVersionPayload(sourceAssetId: asset.id, versions: versionStore.versions)
+    Task {
+      do {
+        try await persistence.saveVersions(payload)
+      } catch {
+        await MainActor.run { saveError = "Could not save version history: \(error)" }
+      }
+    }
   }
 
   // MARK: Adjust (spec E4)
@@ -1269,8 +1347,17 @@ extension MacEditModeView {
         history = EditHistory(initial: payload.recipe)
         elements = payload.recipe.markup?.elements ?? []
       }
+      // D6a: the version stack lives beside the single-slot recipe.
+      if isFixtureSeeded {
+        seedFixtureVersions()
+      } else if let stack = try await persistence.fetchVersions(assetId: asset.id),
+        stack.format == EditVersionKey.current
+      {
+        versionStore = EditVersionStore(versions: stack.versions)
+      }
     } catch {
       // Offline or never edited — start clean, not an error.
+      if isFixtureSeeded { seedFixtureVersions() }
     }
     rerenderPreview()
     loader.beginLoading()
@@ -1479,6 +1566,9 @@ extension MacEditModeView {
     }
     try await persistence.saveRecipe(EditPersistencePayload(
       sourceAssetId: asset.id, recipe: recipe, renderedAssetId: renderedId))
+    // D6a: each Done appends a new version, never overwrites.
+    await MainActor.run { versionStore.append(recipe, renderedAssetId: renderedId) }
+    persistVersions()
     return renderedId
   }
 
@@ -1507,6 +1597,10 @@ extension MacEditModeView {
       sourceAssetId: asset.id, upload: upload, recipe: full)
     try await persistence.saveRecipe(EditPersistencePayload(
       sourceAssetId: asset.id, recipe: full, renderedAssetId: newId))
+    // D6a: each Done appends a new version, never overwrites.
+    let doneRecipe = full
+    await MainActor.run { versionStore.append(doneRecipe, renderedAssetId: newId) }
+    persistVersions()
     return newId
   }
 }

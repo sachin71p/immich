@@ -304,4 +304,89 @@ import Testing
     #expect(RenderedUpload.editedFilename(for: "IMG_1234.heic", fileExtension: "jpg") == "IMG_1234-edited.jpg")
     #expect(RenderedUpload.editedFilename(for: "", fileExtension: "jpg") == "edited-edited.jpg")
   }
+
+  // MARK: - Version store (D6a)
+
+  @Test("[D6a] Done appends; beyond cap 10 the oldest are pruned in order")
+  func versionCapPruneOrder() {
+    var store = EditVersionStore()
+    for i in 0..<12 {
+      store.append(EditRecipe(adjust: AdjustRecipe(exposure: i)))
+    }
+    #expect(store.count == EditVersionStore.maxVersions)
+    #expect(EditVersionStore.maxVersions == 10)
+    // Oldest-first: exposures 0 and 1 pruned, 2...11 retained in order.
+    #expect(store.versions.map(\.recipe.adjust.exposure) == Array(2..<12))
+    #expect(store.latest?.recipe.adjust.exposure == 11)
+  }
+
+  @Test("[D6a] Tap-to-restore appends a new version, never overwrites")
+  func versionRestoreAppends() {
+    var store = EditVersionStore()
+    store.append(EditRecipe(adjust: AdjustRecipe(exposure: 10)), id: "v1")
+    store.append(EditRecipe(adjust: AdjustRecipe(exposure: 20)), id: "v2")
+    let restored = store.restore(at: 0)
+    #expect(restored == EditRecipe(adjust: AdjustRecipe(exposure: 10)))
+    #expect(store.count == 3)
+    // Prior versions untouched (same ids, same recipes, same order).
+    #expect(store.versions[0].id == "v1")
+    #expect(store.versions[1].id == "v2")
+    #expect(store.versions[0].recipe.adjust.exposure == 10)
+    #expect(store.versions[1].recipe.adjust.exposure == 20)
+    // The restore is a NEW version carrying the old recipe.
+    #expect(store.versions[2].recipe == EditRecipe(adjust: AdjustRecipe(exposure: 10)))
+    #expect(store.versions[2].id != "v1")
+    // Out-of-range restore leaves the stack untouched.
+    #expect(store.restore(at: 99) == nil)
+    #expect(store.count == 3)
+    // Unknown id likewise.
+    #expect(store.restore(id: "nope") == nil)
+    #expect(store.count == 3)
+  }
+
+  @Test("[D6a] Old versions lacking newer keys decode with identity defaults")
+  func versionBackCompatDecode() throws {
+    // A v1-era persisted version: bare recipe with only `exposure`, no
+    // levels keys, no recipeVersion/rendererVersion, no renderedAssetId.
+    // Sibling D1–D4 keys land the same way (absent = neutral default).
+    let legacy = #"{"id":"v1","savedAt":1234567890,"recipe":{"adjust":{"exposure":25}}}"#
+      .data(using: .utf8)!
+    let version = try JSONDecoder().decode(EditRecipeVersion.self, from: legacy)
+    #expect(version.id == "v1")
+    #expect(version.recipe.adjust.exposure == 25)
+    #expect(version.renderedAssetId == nil)
+    let adjust = version.recipe.adjust
+    #expect(adjust.levelsInBlack == 0 && adjust.levelsInWhite == 100)
+    #expect(adjust.levelsOutBlack == 0 && adjust.levelsOutWhite == 100)
+    #expect(adjust.recipeVersion == 0 && adjust.rendererVersion == 0)
+    #expect(adjust.cast == 0 && adjust.grain == 0 && adjust.wbTemperature == 0)
+    // ... and renders identically to a fresh recipe with the same value.
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let old = renderer.pixelHash(source: src, recipe: version.recipe),
+      let fresh = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(exposure: 25)))
+    else { return }
+    #expect(old == fresh)
+  }
+
+  @Test("[D6a] Version stack round-trips; payload missing versions decodes empty")
+  func versionStoreCodable() throws {
+    var store = EditVersionStore()
+    store.append(EditRecipe(adjust: AdjustRecipe(exposure: 7)), id: "a")
+    let payload = EditVersionPayload(sourceAssetId: "asset-1", versions: store.versions)
+    #expect(payload.format == EditVersionKey.current)
+    #expect(EditVersionKey.current == "fork.editVersions.v1")
+    #expect(EditVersionKey.current != EditRecipeKey.current)
+    let data = try JSONEncoder().encode(payload)
+    let back = try JSONDecoder().decode(EditVersionPayload.self, from: data)
+    #expect(back == payload)
+    // Pre-D6a payload without the versions key: empty stack, not an error.
+    let bare = #"{"format":"fork.editVersions.v1","sourceAssetId":"asset-1"}"#
+      .data(using: .utf8)!
+    let empty = try JSONDecoder().decode(EditVersionPayload.self, from: bare)
+    #expect(empty.versions.isEmpty)
+    let bareStore = try JSONDecoder().decode(EditVersionStore.self, from: "{}".data(using: .utf8)!)
+    #expect(bareStore.isEmpty)
+  }
 }

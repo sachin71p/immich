@@ -236,4 +236,56 @@ final class EditUITests: XCTestCase {
       XCTAssertEqual(pasted, 60, accuracy: 2, "pasted value carried over")
     }
   }
+
+  // MARK: - D6a version history (fixture only; owner-run via `verify.sh mac-ui`)
+
+  private func historyRows() -> XCUIElementQuery {
+    app.descendants(matching: .any).matching(
+      NSPredicate(format: "identifier BEGINSWITH %@", "edit.history.row."))
+  }
+
+  /// History lists the fixture-seeded versions; tap-to-restore appends a new
+  /// version (never overwrites) and loads the restored recipe; Cancel still
+  /// discards the in-progress edit. Never presses Done on a real asset.
+  func testHistoryListsVersionsAndRestoreAppends() {
+    openViewer()
+    openEdit()
+    let history = el("edit.history")
+    XCTAssertTrue(history.waitForExistence(timeout: 10), "History disclosure renders")
+    history.click()
+    XCTAssertTrue(el("edit.history.row.0").waitForExistence(timeout: 10), "seeded version 0 lists")
+    XCTAssertTrue(el("edit.history.row.1").waitForExistence(timeout: 10), "seeded version 1 lists")
+    XCTAssertEqual(historyRows().count, 2, "fixture seeds two versions")
+    // Restore the first version (fixture exposure -40): the stack grows by
+    // one (append, never overwrite) and the recipe loads into the session.
+    el("edit.history.restore.0").click()
+    XCTAssertTrue(el("edit.history.row.2").waitForExistence(timeout: 10), "restore appends a new version")
+    XCTAssertEqual(historyRows().count, 3, "restore appends, never overwrites")
+    XCTAssertTrue(el("edit.history.row.0").exists, "prior versions untouched by restore")
+    XCTAssertTrue(el("edit.history.row.1").exists, "prior versions untouched by restore")
+    // The restored recipe is live: Exposure reads -40 under Light Options.
+    let options = el("edit.section.options.light")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Options disclosure renders")
+    options.click()
+    let raw = el("edit.slider.Exposure").value
+    let exposure: Double? = {
+      if let s = raw as? String {
+        return Double(s.filter { $0.isNumber || $0 == "." || $0 == "-" })
+      }
+      if let n = raw as? NSNumber { return n.doubleValue }
+      return nil
+    }()
+    XCTAssertNotNil(exposure, "Exposure slider renders after restore")
+    if let exposure {
+      XCTAssertEqual(exposure, -40, accuracy: 2, "restored recipe carried over")
+    }
+    // Cancel still discards the in-progress (restored) edit: Escape raises
+    // Discard, and Discard exits without saving.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    app.typeKey(.escape, modifierFlags: [])
+    let discard = app.sheets.buttons["Discard"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5), "Escape after restore shows Discard")
+    discard.click()
+    assertEditClosed("Discard after restore exits edit mode")
+  }
 }

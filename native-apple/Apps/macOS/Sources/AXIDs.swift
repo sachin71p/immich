@@ -94,6 +94,12 @@ enum AXIDs {
   static func editSlider(_ key: String) -> String { "edit.slider.\(key)" }
   static func editSectionOptions(_ section: String) -> String { "edit.section.options.\(section)" }
 
+  // MARK: - edit history (D6a version stack)
+
+  static let editHistory = "edit.history"
+  static func editHistoryRow(_ index: Int) -> String { "edit.history.row.\(index)" }
+  static func editHistoryRestore(_ index: Int) -> String { "edit.history.restore.\(index)" }
+
   // MARK: - connect (WP-F F3: signed-in launch never shows the form)
 
   static let connectForm = "connect.form"
