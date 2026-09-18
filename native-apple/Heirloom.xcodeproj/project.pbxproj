@@ -36,6 +36,7 @@
 		2C619338F3FAA35064EE3D05 /* Rules in Frameworks */ = {isa = PBXBuildFile; productRef = A1AB2DABA22196D637D75068 /* Rules */; };
 		2CFC71F750FE62CC4BFC6F03 /* MacAgentLoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */; };
 		2DD17A66FDED537AEB8EB606 /* MacDuplicatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDE1EF756578312D6F93758 /* MacDuplicatesView.swift */; };
+		32555707CF83483A87E4C774 /* HeirloomColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4300F57541E619B40FBDAA /* HeirloomColors.swift */; };
 		3567ED64A126E668E21A08BC /* ParityCollectionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58EDC43D9AE8A1595B8AFA4 /* ParityCollectionsUITests.swift */; };
 		3579EFBDCFB379B849E429A4 /* PhotoForkIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220BD30E984341379A611211 /* PhotoForkIntents.swift */; };
 		370AE557563121FFF80BE746 /* MacMoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B95AF9F4C147A63DA1C1CE0 /* MacMoveSheet.swift */; };
@@ -277,6 +278,7 @@
 		992CA42FB885FED500B3D213 /* MacMapPlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMapPlacesView.swift; sourceTree = "<group>"; };
 		9A200B4479469DD4C3817B69 /* BackupScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupScanner.swift; sourceTree = "<group>"; };
 		9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncUITests.swift; sourceTree = "<group>"; };
+		9B4300F57541E619B40FBDAA /* HeirloomColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomColors.swift; sourceTree = "<group>"; };
 		9F8C9D9FECBF534C26B94DC2 /* FreeUpSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeUpSpaceView.swift; sourceTree = "<group>"; };
 		A2968E433A0A5C31FDFAD3BB /* MacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebar.swift; sourceTree = "<group>"; };
 		A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentLoginItem.swift; sourceTree = "<group>"; };
@@ -597,6 +599,7 @@
 				BFE2BCF0B71A5320D0EE96B4 /* Spaces.swift */,
 				4BFC85FFBA7579C03CE7BAE6 /* Viewer.swift */,
 				CD88EFC653632EADF09AEE3C /* Account */,
+				C090F6A194619578D7DACDD2 /* Appearance */,
 				0C744912EE50B3D8CF96DD15 /* Collections */,
 				683549FBD7B58A52DC3C7CF5 /* Grid */,
 				AE5AC37478A7488803456FDF /* Library */,
@@ -666,6 +669,14 @@
 			);
 			name = Sources;
 			path = Apps/macOS/Sources;
+			sourceTree = "<group>";
+		};
+		C090F6A194619578D7DACDD2 /* Appearance */ = {
+			isa = PBXGroup;
+			children = (
+				9B4300F57541E619B40FBDAA /* HeirloomColors.swift */,
+			);
+			path = Appearance;
 			sourceTree = "<group>";
 		};
 		CD88EFC653632EADF09AEE3C /* Account */ = {
@@ -1199,6 +1210,7 @@
 				E6DED1853529ACA4D2511877 /* GridSelectionModel.swift in Sources */,
 				EB27BEF28DAA01723107CBB0 /* GridSnapshot.swift in Sources */,
 				5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */,
+				32555707CF83483A87E4C774 /* HeirloomColors.swift in Sources */,
 				CB8D8A8C1B250E5C7240C58B /* HeirloomIOSApp.swift in Sources */,
 				C183FED2724261FCAD785610 /* KeyAssetPhoto.swift in Sources */,
 				6F36BCFA6CD47B187D3D4BB1 /* LibraryFilter.swift in Sources */,
