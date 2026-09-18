@@ -130,17 +130,23 @@ Implement every test listed for **E1–E9** in TEST-PLAN §2, in files under `Ap
 
 - **D3 Levels (first):** two dual-thumb sliders (input black/white, output black/white).
   New dedicated keys `levelsInBlack/levelsInWhite/levelsOutBlack/levelsOutWhite`
-  (decouple from the Light section's shared keys); renderer applies a true levels
-  transform; section enable/reset owns the four keys. Tests: unit (levels math,
+  (decouple from the Light section's shared keys); renderer applies input remap via
+  `CIToneCurve` + output range scale (per on-device-AI §13 Tier B). Also adds
+  `recipeVersion`/`rendererVersion` fields now (forward-compat; full v2 migration is
+  E1's). Section enable/reset owns the four keys. Tests: unit (levels math,
   clamping/order invariants) + UI (handles drag, Done persists, viewer shows it).
 - **D1 Selective Color:** 6 hue swatches × Hue/Saturation/Luminance/Range. New
-  per-hue keys; swatch picker UI; CoreImage hue-range adjustment in the renderer.
-  Tests: unit (per-hue isolation, key defaults) + UI (swatch select, sliders move).
+  per-hue keys; swatch picker UI; custom `CIColorKernel` for 6-range HSL in the
+  renderer (per on-device-AI §13 Tier B). Tests: unit (per-hue isolation, key
+  defaults) + UI (swatch select, sliders move).
 - **D2 Curves:** RGB + per-channel curve canvas with point dragging and
-  black/grey/white pickers. New point-array keys; tone-curve renderer path.
-  Tests: unit (curve evaluation, monotonicity) + UI (add/drag point, pickers set).
-- **D4 Red-Eye:** tap-to-select eye regions + desaturation correction. New region
-  keys; renderer spot correction. Tests: unit + UI (tap places correction).
+  black/grey/white pickers. New point-array keys; `CIToneCurve` renderer path
+  (already used in `EditRenderer.toneCurve`). Tests: unit (curve evaluation,
+  monotonicity) + UI (add/drag point, pickers set).
+- **D4 Red-Eye:** tap-to-select eye regions + `CIRedEyeCorrection` driven by
+  Vision face landmarks (`VNDetectFaceLandmarksRequest` eye positions), per
+  on-device-AI §13 Tier A (E2 work package). New region keys. Tests: unit + UI
+  (tap places correction).
 - **D5 Tools tab:** no work — placeholder panel stays per owner override.
 - **D6/D6a Versions:** per-asset persisted stack (cap 10) beside the single-slot
   recipe store; History timestamp list UI; tap-to-restore appends. Old versions
@@ -149,3 +155,14 @@ Implement every test listed for **E1–E9** in TEST-PLAN §2, in files under `Ap
 - **Estimate impact:** D1–D4 + D6a are four full builds plus a version store —
   roughly double the macro-based E scope. D3 first to validate the keys → UI →
   renderer → tests pattern the siblings follow.
+- **Native-frameworks alignment (on-device-AI §13):** D1–D4 render via Core Image
+  (`CIToneCurve`, custom `CIColorKernel`, `CIRedEyeCorrection`) + Vision (face
+  landmarks), no custom CPU pixel code. The **Neural Engine plays no role in
+  D1–D4/D6a** — it enters with Tier C tools (Clean Up, retouch, masked
+  adjustments), which are out of Gate 1; nothing here needs Core ML models.
+  Verification bar from §13: tune D1–D3 against Apple Photos references toward
+  median ΔE < 3 (full E3 harness later; bronze now — exact match where the math
+  is Apple's own pipeline, e.g. tone curves).
+- **E1 dependency note:** full recipe-v2 migration (KV bump, rendition-on-same-asset,
+  server contract) belongs to work package E1 and is out of parity-branch scope.
+  D3 adds only the two version fields so D1–D4 keys land forward-compatibly.
