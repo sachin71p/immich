@@ -871,9 +871,8 @@ extension MacEditModeView {
 /// One Adjust section: header row (title, AUTO, reset, enable toggle), a smart
 /// filmstrip slider for the headline param, and an Options disclosure with fine
 /// sliders. Sections with dedicated UI (D3 levels handles, D1 selective-color
-/// swatches, D4 red-eye tools) render it instead of fine sliders; sections
-/// still without dedicated keys (curves freeform) expose honest macros or a
-/// deferred note — see `deferredNote`.
+/// swatches, D2 curve editor, D4 red-eye tools) render it instead of fine
+/// sliders — see `deferredNote` for the rest.
 enum EditAdjustSection: String, CaseIterable {
   case light, color, blackWhite, whiteBalance, curves, levels, definition
   case selectiveColor, noiseReduction, sharpen, vignette, depth, redEye
@@ -921,7 +920,7 @@ enum EditAdjustSection: String, CaseIterable {
     case .color: return [\.saturation, \.vibrance, \.cast]
     case .blackWhite: return [\.bwIntensity, \.bwNeutrals, \.bwTone, \.grain]
     case .whiteBalance: return [\.wbTemperature, \.wbTint, \.warmth, \.tint]
-    case .curves: return [\.highlights, \.shadows, \.contrast, \.blackPoint, \.brightness]
+    case .curves: return []
     case .levels: return [\.levelsInBlack, \.levelsInWhite, \.levelsOutBlack, \.levelsOutWhite]
     case .definition: return [\.definition]
     case .selectiveColor:
@@ -941,6 +940,16 @@ enum EditAdjustSection: String, CaseIterable {
     }
   }
 
+  /// Point-array recipe keys owned by the section (D2 Curves: master RGB plus
+  /// per-channel state). The header reset/enable toggle owns these alongside
+  /// `keys` above.
+  var curveKeys: [WritableKeyPath<AdjustRecipe, [CurvePoint]>] {
+    switch self {
+    case .curves: return [\.curvesMaster, \.curvesRed, \.curvesGreen, \.curvesBlue]
+    default: return []
+    }
+  }
+
   /// Fine sliders in Options: (label, key path).
   var fineSliders: [(String, WritableKeyPath<AdjustRecipe, Int>)] {
     switch self {
@@ -953,8 +962,7 @@ enum EditAdjustSection: String, CaseIterable {
       return [("Intensity", \.bwIntensity), ("Neutrals", \.bwNeutrals), ("Tone", \.bwTone), ("Grain", \.grain)]
     case .whiteBalance:
       return [("Temperature", \.wbTemperature), ("Tint", \.wbTint), ("Warmth", \.warmth), ("Cast Tint", \.tint)]
-    case .curves:
-      return [("Highlights", \.highlights), ("Shadows", \.shadows), ("Contrast", \.contrast)]
+    case .curves: return []
     case .levels: return []
     case .definition: return [("Definition", \.definition)]
     case .selectiveColor: return []
@@ -987,7 +995,7 @@ enum EditAdjustSection: String, CaseIterable {
   var deferredNote: String? {
     switch self {
     case .curves:
-      return "Curve presets are macros over Highlights / Shadows / Contrast. A freeform RGB + per-channel curve editor is deferred."
+      return nil
     case .levels:
       return nil
     case .selectiveColor:
@@ -1011,6 +1019,8 @@ private struct EditAdjustSectionView: View {
   @State private var optionsExpanded = false
   @State private var selectiveHue = 0
   @State private var redEyeThumb: CGImage?
+  @State private var curveChannel: CurveChannel = .master
+  @State private var armedPicker: CurvePicker? = nil
 
   var body: some View {
     // Sections default expanded: the filmstrip headline and Options rows are the
@@ -1036,7 +1046,7 @@ private struct EditAdjustSectionView: View {
               whiteBalanceExtras
             }
             if section == .curves {
-              curvePresets
+              curveEditor
             }
             if section == .levels {
               levelsHandles
@@ -1073,10 +1083,11 @@ private struct EditAdjustSectionView: View {
         for key in section.keys { recipe[keyPath: key] = 0 }
         // Region taps are not Int keys, so the generic reset cannot reach them.
         if section == .redEye { recipe.redEyeRegions = [] }
+        for key in section.curveKeys { recipe[keyPath: key] = [] }
       } label: { Image(systemName: "arrow.counterclockwise") }
         .buttonStyle(.plain)
         .help("Reset \(section.title)")
-      if !section.keys.isEmpty {
+      if !section.keys.isEmpty || !section.curveKeys.isEmpty {
         Toggle("", isOn: Binding(
           get: { sectionActive },
           set: { v in
@@ -1084,6 +1095,7 @@ private struct EditAdjustSectionView: View {
             if !v {
               for key in section.keys { recipe[keyPath: key] = 0 }
               if section == .redEye { recipe.redEyeRegions = [] }
+              for key in section.curveKeys { recipe[keyPath: key] = [] }
             }
           }))
           .toggleStyle(.switch)
@@ -1330,19 +1342,243 @@ private struct EditAdjustSectionView: View {
     }
   }
 
-  private var curvePresets: some View {
-    HStack {
-      Text("Preset").font(.caption)
-      Spacer()
-      Menu("Curve") {
-        Button("Linear") { recipe.highlights = 0; recipe.shadows = 0; recipe.contrast = 0 }
-        Button("Soft Contrast") { recipe.contrast = 25; recipe.highlights = -10; recipe.shadows = 10 }
-        Button("Strong Contrast") { recipe.contrast = 55; recipe.highlights = -20; recipe.shadows = 20 }
-        Button("Lift Shadows") { recipe.shadows = 40; recipe.blackPoint = -20 }
-        Button("Crush Blacks") { recipe.blackPoint = 35; recipe.shadows = -15 }
+  /// Points binding for the selected curve channel (D2 per-channel state).
+  private var curvePoints: Binding<[CurvePoint]> {
+    Binding(
+      get: { curveChannel.points(recipe) },
+      set: { curveChannel.set(&recipe, $0) })
+  }
+
+  /// Full RGB + per-channel curve editor (D2): channel selector, custom curve
+  /// canvas with point add/drag, and black/grey/white pickers.
+  private var curveEditor: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 4) {
+        ForEach(CurveChannel.allCases) { ch in
+          Button(ch.title) { curveChannel = ch }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .fontWeight(ch == curveChannel ? .bold : .regular)
+            .accessibilityIdentifier(ch.axID)
+        }
       }
-      .menuStyle(.borderlessButton)
+      .accessibilityIdentifier(AXIDs.editSlider("curves-channel"))
+      CurveCanvas(
+        points: curvePoints, picker: $armedPicker,
+        axCanvas: AXIDs.editSlider("curves-canvas"),
+        axReadout: AXIDs.editSlider("curves-readout"),
+        axPoint: AXIDs.editSlider("curves-point"))
+      HStack(spacing: 4) {
+        ForEach(CurvePicker.allCases) { p in
+          Button(armedPicker == p ? "\(p.title)…" : p.title) {
+            armedPicker = (armedPicker == p) ? nil : p
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .accessibilityIdentifier(p.axID)
+        }
+        Spacer()
+        Button("Clear") { curvePoints.wrappedValue = [] }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .accessibilityIdentifier(AXIDs.editSlider("curves-clear"))
+      }
     }
+  }
+}
+
+/// Curve channel (D2): master RGB composite plus isolated per-channel state.
+private enum CurveChannel: String, CaseIterable, Identifiable {
+  case master, red, green, blue
+
+  var id: String { rawValue }
+  var title: String { rawValue.capitalized }
+  var axID: String { AXIDs.editSlider("curves-channel-" + rawValue) }
+
+  func points(_ recipe: AdjustRecipe) -> [CurvePoint] {
+    switch self {
+    case .master: return recipe.curvesMaster
+    case .red: return recipe.curvesRed
+    case .green: return recipe.curvesGreen
+    case .blue: return recipe.curvesBlue
+    }
+  }
+
+  func set(_ recipe: inout AdjustRecipe, _ pts: [CurvePoint]) {
+    switch self {
+    case .master: recipe.curvesMaster = pts
+    case .red: recipe.curvesRed = pts
+    case .green: recipe.curvesGreen = pts
+    case .blue: recipe.curvesBlue = pts
+    }
+  }
+}
+
+/// Black/grey/white pickers (D2): arming one makes the next canvas click pin
+/// the black rail (`x = 0`), the white rail (`x = 1`), or a midtone anchor.
+private enum CurvePicker: String, CaseIterable, Identifiable {
+  case black, grey, white
+
+  var id: String { rawValue }
+  var title: String { rawValue.capitalized }
+  var axID: String { AXIDs.editSlider("curves-picker-" + rawValue) }
+}
+
+/// Custom curve canvas (D2): click/drag adds a point or moves the nearest one
+/// (25pt grab radius), an armed picker pins rails instead, and arrow keys nudge
+/// the last-touched point ±0.01 (keyboard-accessible editing, and UI-test
+/// drivable like the D3 handles).
+private struct CurveCanvas: View {
+  private static let height: Double = 160
+  private static let grabRadius: Double = 25
+  private static let keyStep = 0.01
+  private static let railSnap = 0.02
+
+  @Binding var points: [CurvePoint]
+  @Binding var picker: CurvePicker?
+  let axCanvas: String
+  let axReadout: String
+  let axPoint: String
+  @State private var dragIndex: Int? = nil
+  @State private var lastIndex: Int? = nil
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(verbatim: "points: \(points.count)")
+        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        .accessibilityIdentifier(axReadout)
+      Text(verbatim: lastText)
+        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        .accessibilityIdentifier(axPoint)
+      GeometryReader { geo in
+        let size = CGSize(width: geo.size.width, height: Self.height)
+        ZStack {
+          Rectangle().fill(.gray.opacity(0.15))
+          grid(in: size)
+          curveLine(in: size)
+          ForEach(points.indices, id: \.self) { i in
+            Circle()
+              .fill(.white)
+              .frame(width: 12, height: 12)
+              .overlay(Circle().stroke(Color.accentColor, lineWidth: i == lastIndex ? 3 : 1))
+              .position(position(of: points[i], in: size))
+          }
+        }
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
+        .gesture(
+          DragGesture(minimumDistance: 0)
+            .onChanged { d in apply(at: d.location, in: size) }
+            .onEnded { _ in dragIndex = nil })
+      }
+      .frame(height: Self.height)
+    }
+    .accessibilityIdentifier(axCanvas)
+    .focusable()
+    .onKeyPress(.upArrow) { nudge(dx: 0, dy: Self.keyStep); return .handled }
+    .onKeyPress(.downArrow) { nudge(dx: 0, dy: -Self.keyStep); return .handled }
+    .onKeyPress(.leftArrow) { nudge(dx: -Self.keyStep, dy: 0); return .handled }
+    .onKeyPress(.rightArrow) { nudge(dx: Self.keyStep, dy: 0); return .handled }
+  }
+
+  private var lastText: String {
+    let idx = (lastIndex.flatMap { points.indices.contains($0) ? $0 : nil }) ?? points.indices.last
+    guard let i = idx else { return "last: —" }
+    return String(format: "last: (%.2f, %.2f)", points[i].x, points[i].y)
+  }
+
+  private func position(of p: CurvePoint, in size: CGSize) -> CGPoint {
+    CGPoint(x: p.x * size.width, y: (1 - p.y) * size.height)
+  }
+
+  private func distance(of p: CurvePoint, from origin: CGPoint, in size: CGSize) -> Double {
+    let q = position(of: p, in: size)
+    return hypot(q.x - origin.x, q.y - origin.y)
+  }
+
+  private func unit(at loc: CGPoint, in size: CGSize) -> CurvePoint {
+    CurvePoint(x: loc.x / size.width, y: 1 - loc.y / size.height)
+  }
+
+  private func upsert(_ pt: CurvePoint) {
+    if let i = points.firstIndex(where: { abs($0.x - pt.x) < Self.railSnap }) {
+      points[i] = pt
+      lastIndex = i
+    } else {
+      points.append(pt)
+      lastIndex = points.indices.last
+    }
+  }
+
+  private func apply(at loc: CGPoint, in size: CGSize) {
+    guard size.width > 1, size.height > 1 else { return }
+    let pt = unit(at: loc, in: size)
+    if picker == .black {
+      upsert(CurvePoint(x: 0, y: pt.y))
+      picker = nil
+      return
+    }
+    if picker == .white {
+      upsert(CurvePoint(x: 1, y: pt.y))
+      picker = nil
+      return
+    }
+    picker = nil
+    if dragIndex == nil {
+      let origin = position(of: pt, in: size)
+      var near: Int? = nil
+      var best = Self.grabRadius
+      for i in points.indices {
+        let d = distance(of: points[i], from: origin, in: size)
+        if d <= best {
+          best = d
+          near = i
+        }
+      }
+      if let near {
+        dragIndex = near
+      } else {
+        points.append(pt)
+        dragIndex = points.indices.last
+      }
+    }
+    if let i = dragIndex, points.indices.contains(i) {
+      points[i] = pt
+      lastIndex = i
+    }
+  }
+
+  private func nudge(dx: Double, dy: Double) {
+    let idx = (lastIndex.flatMap { points.indices.contains($0) ? $0 : nil }) ?? points.indices.last
+    guard let i = idx else { return }
+    points[i] = CurvePoint(x: points[i].x + dx, y: points[i].y + dy)
+    lastIndex = i
+  }
+
+  private func grid(in size: CGSize) -> some View {
+    Path { path in
+      for f in [1.0 / 3, 2.0 / 3] {
+        path.move(to: CGPoint(x: size.width * f, y: 0))
+        path.addLine(to: CGPoint(x: size.width * f, y: size.height))
+        path.move(to: CGPoint(x: 0, y: size.height * f))
+        path.addLine(to: CGPoint(x: size.width, y: size.height * f))
+      }
+      path.move(to: CGPoint(x: 0, y: size.height))
+      path.addLine(to: CGPoint(x: size.width, y: 0))
+    }
+    .stroke(.gray.opacity(0.4), lineWidth: 1)
+  }
+
+  private func curveLine(in size: CGSize) -> some View {
+    Path { path in
+      let n = 64
+      for k in 0...n {
+        let x = Double(k) / Double(n)
+        let p = CGPoint(x: x * size.width, y: (1 - CurvePoint.evaluate(points, at: x)) * size.height)
+        if k == 0 { path.move(to: p) } else { path.addLine(to: p) }
+      }
+    }
+    .stroke(Color.accentColor, lineWidth: 2)
   }
 }
 

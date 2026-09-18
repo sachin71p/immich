@@ -159,6 +159,81 @@ import Testing
     #expect(identity == plain)
   }
 
+  // MARK: - Curves (D2)
+
+  @Test("[D2] Curve keys default to identity; points clamp to unit space and cap length")
+  func curvesDefaults() {
+    let a = AdjustRecipe()
+    #expect(a.curvesMaster.isEmpty && a.curvesRed.isEmpty)
+    #expect(a.curvesGreen.isEmpty && a.curvesBlue.isEmpty)
+    #expect(a.isEmpty)
+    let p = CurvePoint(x: -0.5, y: 1.5)
+    #expect(p.x == 0 && p.y == 1)
+    #expect(
+      AdjustRecipe(curvesMaster: [CurvePoint(x: 2, y: 2)]).curvesMaster == [CurvePoint(x: 1, y: 1)])
+    let many = Array(repeating: CurvePoint(x: 0.5, y: 0.5), count: 500)
+    #expect(AdjustRecipe(curvesBlue: many).curvesBlue.count == AdjustRecipe.maxCurvePoints)
+  }
+
+  @Test("[D2] Curve evaluation interpolates with implicit (0,0)/(1,1); clamps out-of-range")
+  func curvesEvaluate() {
+    #expect(CurvePoint.evaluate([], at: 0.3) == 0.3)
+    let pts = [CurvePoint(x: 0.5, y: 0.75)]
+    #expect(CurvePoint.evaluate(pts, at: 0.5) == 0.75)
+    #expect(abs(CurvePoint.evaluate(pts, at: 0.25) - 0.375) < 1e-9)
+    #expect(CurvePoint.evaluate(pts, at: 0) == 0)
+    #expect(CurvePoint.evaluate(pts, at: 1) == 1)
+    #expect(CurvePoint.evaluate(pts, at: -2) == 0)
+    #expect(CurvePoint.evaluate(pts, at: 2) == 1)
+    // Endpoint overrides (black/white pickers move the rails).
+    #expect(CurvePoint.evaluate([CurvePoint(x: 0, y: 0.2)], at: 0) == 0.2)
+    #expect(CurvePoint.evaluate([CurvePoint(x: 1, y: 0.8)], at: 1) == 0.8)
+  }
+
+  @Test("[D2] Monotonic point sets evaluate monotonically regardless of storage order")
+  func curvesMonotonic() {
+    let pts = [CurvePoint(x: 0.75, y: 0.9), CurvePoint(x: 0.25, y: 0.4)]
+    var prev = 0.0
+    for i in 0...20 {
+      let y = CurvePoint.evaluate(pts, at: Double(i) / 20)
+      #expect(y >= prev - 1e-9)
+      prev = y
+    }
+  }
+
+  @Test("[D2] Curve keys round-trip; legacy payloads decode to identity; decode clamps")
+  func curvesCodable() throws {
+    var a = AdjustRecipe()
+    a.curvesMaster = [CurvePoint(x: 0.25, y: 0.3), CurvePoint(x: 0.75, y: 0.8)]
+    a.curvesRed = [CurvePoint(x: 0, y: 0.1)]
+    let data = try JSONEncoder().encode(EditRecipe(adjust: a))
+    let back = try JSONDecoder().decode(EditRecipe.self, from: data).adjust
+    #expect(back.curvesMaster == a.curvesMaster)
+    #expect(back.curvesRed == a.curvesRed)
+    #expect(back.curvesGreen.isEmpty && back.curvesBlue.isEmpty)
+    // Legacy payload without the new keys: identity curves.
+    let legacy = #"{"exposure":25}"#.data(using: .utf8)!
+    let old = try JSONDecoder().decode(AdjustRecipe.self, from: legacy)
+    #expect(old.exposure == 25)
+    #expect(old.curvesMaster.isEmpty && old.curvesRed.isEmpty)
+    #expect(old.curvesGreen.isEmpty && old.curvesBlue.isEmpty)
+    // Out-of-range stored points clamp on decode.
+    let wild = #"{"curvesMaster":[{"x":2,"y":-1}]}"#.data(using: .utf8)!
+    #expect(
+      try JSONDecoder().decode(AdjustRecipe.self, from: wild).curvesMaster
+        == [CurvePoint(x: 1, y: 0)])
+  }
+
+  @Test("[D2] Identity curves render pixel-identical (curves path is a no-op at defaults)")
+  func curvesIdentityNoOp() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let identity = renderer.pixelHash(source: src, recipe: EditRecipe(adjust: AdjustRecipe()))
+    else { return }
+    #expect(identity == plain)
+  }
+
   @Test("[D1] Non-default selective shift changes pixels")
   func selectiveChangePixels() {
     let renderer = EditRenderer()
@@ -288,6 +363,23 @@ import Testing
     } catch {
       #expect(error as? EditRenderError == .noFacesFound)
     }
+  }
+
+  @Test("[D2] Non-default master and per-channel curves change pixels")
+  func curvesChangePixels() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let lifted = renderer.pixelHash(
+        source: src,
+        recipe: EditRecipe(adjust: AdjustRecipe(curvesMaster: [CurvePoint(x: 0.5, y: 0.9)]))),
+      let redOnly = renderer.pixelHash(
+        source: src,
+        recipe: EditRecipe(adjust: AdjustRecipe(curvesRed: [CurvePoint(x: 0, y: 0.2)])))
+    else { return }
+    #expect(lifted != plain)
+    #expect(redOnly != plain)
+    #expect(redOnly != lifted)
   }
 
   @Test("Recipe KV key and payload format tag are pinned")

@@ -233,6 +233,64 @@ final class EditUITests: XCTestCase {
     assertEditClosed("Discard exits edit mode")
   }
 
+  // MARK: - D2 Curves canvas
+
+  /// Curves canvas drives the new point-array keys: clicking the canvas adds a
+  /// point, arrow keys on the focused canvas move it (the point readout proves
+  /// it), the channel selector swaps per-channel state, and the black picker
+  /// pins a point at x=0. The change marks the recipe dirty (the Discard
+  /// confirm on Escape proves the new keys participate in dirty tracking).
+  /// Done-save itself stays fixture-gated (E7): Done is disabled with no
+  /// server original.
+  func testCurvesCanvasAddDragPickersAndDirtyEdit() {
+    openViewer()
+    openEdit()
+    let options = el("edit.section.options.curves")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Curves Options renders")
+    options.click()
+    let canvas = el("edit.slider.curves-canvas")
+    XCTAssertTrue(canvas.waitForExistence(timeout: 10), "curve canvas renders")
+    XCTAssertTrue(
+      el("edit.slider.curves-channel").waitForExistence(timeout: 10), "channel selector renders")
+    for picker in ["black", "grey", "white"] {
+      XCTAssertTrue(
+        el("edit.slider.curves-picker-\(picker)").waitForExistence(timeout: 10),
+        "\(picker) picker renders")
+    }
+    let readout = el("edit.slider.curves-readout")
+    XCTAssertTrue(readout.waitForExistence(timeout: 10), "curve readout renders")
+    // macOS exposes StaticText content as `value`, not `label`.
+    XCTAssertEqual(readout.value as? String, "points: 0")
+    // Clicking the canvas adds a point at the click position.
+    canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    XCTAssertEqual(readout.value as? String, "points: 1")
+    // The click focuses the canvas, so arrow keys nudge the point ±0.01 —
+    // the point readout moves, proving drag state moves keys.
+    let point = el("edit.slider.curves-point")
+    XCTAssertTrue(point.waitForExistence(timeout: 10), "curve point readout renders")
+    let before = point.value as? String
+    for _ in 0..<10 { app.typeKey(.downArrow, modifierFlags: []) }
+    XCTAssertNotEqual(before, point.value as? String, "arrow keys move the curve point")
+    // Per-channel state: the Red channel starts empty.
+    el("edit.slider.curves-channel-red").click()
+    XCTAssertEqual(readout.value as? String, "points: 0", "channels hold separate state")
+    // Black picker: arming then clicking the canvas pins a point at x=0.
+    el("edit.slider.curves-picker-black").click()
+    canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    XCTAssertEqual(readout.value as? String, "points: 1")
+    XCTAssertTrue(
+      (point.value as? String ?? "").hasPrefix("last: (0.00,"),
+      "black picker pins x=0")
+    // The drag leaves focus on the canvas, which eats Escape as cancelOperation:
+    // click the photo canvas first so Escape reaches the mode handler.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    app.typeKey(.escape, modifierFlags: [])
+    let discard = app.sheets.buttons["Discard"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5), "dirty Escape shows Discard confirm")
+    discard.click()
+    assertEditClosed("Discard exits edit mode")
+  }
+
   // MARK: - E7 Done gating
 
   func testDoneGatedWhileOriginalLoads() {

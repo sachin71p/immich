@@ -61,13 +61,54 @@ public struct EditRecipe: Sendable, Codable, Equatable {
   }
 }
 
+/// One Curves control point in unit `0...1` space (`x` = input tone,
+/// `y` = output tone). Both components clamp into `0...1` on init, so stored
+/// and decoded points are always in range.
+public struct CurvePoint: Sendable, Codable, Equatable {
+  public var x: Double
+  public var y: Double
+
+  public init(x: Double, y: Double) {
+    self.x = Self.clampUnit(x)
+    self.y = Self.clampUnit(y)
+  }
+
+  public static func clampUnit(_ v: Double) -> Double { min(1, max(0, v)) }
+
+  /// Piecewise-linear evaluation with implicit `(0, 0)` / `(1, 1)` endpoints:
+  /// user points at `x == 0` / `x == 1` override the black/white rails, inner
+  /// points interpolate, and storage order is irrelevant (sorted here).
+  /// Inputs and outputs clamp to `0...1`.
+  public static func evaluate(_ points: [CurvePoint], at x: Double) -> Double {
+    let t = clampUnit(x)
+    let sorted = points.sorted { $0.x < $1.x }
+    var prev = CurvePoint(x: 0, y: 0)
+    for p in sorted {
+      if t <= p.x {
+        let span = p.x - prev.x
+        if span <= 1e-9 {
+          prev = p
+          continue
+        }
+        return clampUnit(prev.y + (t - prev.x) / span * (p.y - prev.y))
+      }
+      prev = p
+    }
+    let span = 1 - prev.x
+    guard span > 1e-9 else { return clampUnit(prev.y) }
+    return clampUnit(prev.y + (t - prev.x) / span * (1 - prev.y))
+  }
+}
+
 /// All `-100...100` adjust sliders. Values are clamped on set; neutral is `0`.
 ///
 /// WP-E section map: Light (exposure…blackPoint), Color (saturation, vibrance, cast),
 /// Black & White (bwIntensity, bwNeutrals, bwTone, grain), White Balance
 /// (wbTemperature, wbTint; warmth/tint are the legacy pair and keep rendering),
 /// Sharpen (sharpness legacy + sharpenEdges/sharpenFalloff), Vignette (legacy vignette
-/// + vignetteStrength/Radius/Softness), plus definition/noiseReduction.
+/// + vignetteStrength/Radius/Softness), Curves (curvesMaster/Red/Green/Blue point
+/// arrays), Levels (levelsInBlack/White/OutBlack/OutWhite), plus
+/// definition/noiseReduction.
 ///
 /// Back-compat: every WP-E key decodes with `decodeIfPresent`, so recipes written
 /// before this WP (missing keys) decode with neutral defaults and render identically.
@@ -144,6 +185,13 @@ public struct AdjustRecipe: Sendable, Equatable {
   /// regardless of strength, so legacy payloads (missing keys) render unchanged.
   public var redEyeRegions: [RedEyeRegion]
   public var redEyeStrength: Int
+  /// Curves section (D2): per-channel tone curves as point arrays in unit
+  /// `0...1` space. Empty = identity (legacy payloads missing these keys
+  /// decode to `[]` and render identically).
+  public var curvesMaster: [CurvePoint]
+  public var curvesRed: [CurvePoint]
+  public var curvesGreen: [CurvePoint]
+  public var curvesBlue: [CurvePoint]
   /// Recipe/pipeline versions (on-device-AI §13.2; full v2 migration is E1's).
   /// 0 = legacy unversioned payload; new saves write 1.
   public var recipeVersion: Int
@@ -166,6 +214,8 @@ public struct AdjustRecipe: Sendable, Equatable {
     selBlueHue: Int = 0, selBlueSat: Int = 0, selBlueLum: Int = 0, selBlueRange: Int = 0,
     selMagentaHue: Int = 0, selMagentaSat: Int = 0, selMagentaLum: Int = 0, selMagentaRange: Int = 0,
     redEyeRegions: [RedEyeRegion] = [], redEyeStrength: Int = 0,
+    curvesMaster: [CurvePoint] = [], curvesRed: [CurvePoint] = [],
+    curvesGreen: [CurvePoint] = [], curvesBlue: [CurvePoint] = [],
     recipeVersion: Int = 1, rendererVersion: Int = 1
   ) {
     self.exposure = Self.clamp(exposure)
@@ -226,6 +276,10 @@ public struct AdjustRecipe: Sendable, Equatable {
     self.selMagentaRange = Self.clampRange(selMagentaRange)
     self.redEyeRegions = redEyeRegions.map { $0.clamped() }
     self.redEyeStrength = Self.clamp(redEyeStrength)
+    self.curvesMaster = Self.clampCurve(curvesMaster)
+    self.curvesRed = Self.clampCurve(curvesRed)
+    self.curvesGreen = Self.clampCurve(curvesGreen)
+    self.curvesBlue = Self.clampCurve(curvesBlue)
     self.recipeVersion = recipeVersion
     self.rendererVersion = rendererVersion
   }
@@ -234,6 +288,14 @@ public struct AdjustRecipe: Sendable, Equatable {
 
   /// 0...100 clamp for Selective Color Range keys.
   public static func clampRange(_ v: Int) -> Int { min(100, max(0, v)) }
+  /// Per-channel point cap: bounds worst-case recipe payload (D6a notes recipes
+  /// are ~1KB JSON; 64 points × 4 channels stays well inside that).
+  public static let maxCurvePoints = 64
+
+  /// Clamps every point into unit space (via `CurvePoint.init`) and caps length.
+  public static func clampCurve(_ pts: [CurvePoint]) -> [CurvePoint] {
+    Array(pts.prefix(maxCurvePoints).map { CurvePoint(x: $0.x, y: $0.y) })
+  }
 
   public var isEmpty: Bool { self == AdjustRecipe() }
 
@@ -266,6 +328,7 @@ extension AdjustRecipe: Codable {
       selBlueHue, selBlueSat, selBlueLum, selBlueRange,
       selMagentaHue, selMagentaSat, selMagentaLum, selMagentaRange,
       redEyeRegions, redEyeStrength,
+      curvesMaster, curvesRed, curvesGreen, curvesBlue,
       recipeVersion, rendererVersion
   }
 
@@ -280,6 +343,12 @@ extension AdjustRecipe: Codable {
     func vd(_ k: CodingKeys, dflt: Int) -> Int {
       guard let outer = (try? c.decodeIfPresent(Int.self, forKey: k)) else { return dflt }
       return outer ?? dflt
+    }
+    /// Missing point-array key decodes to `[]` (identity), clamping + capping
+    /// whatever a newer writer stored, so legacy payloads render identically.
+    func vp(_ k: CodingKeys) -> [CurvePoint] {
+      guard let outer = (try? c.decodeIfPresent([CurvePoint].self, forKey: k)) else { return [] }
+      return AdjustRecipe.clampCurve(outer ?? [])
     }
     let autoEnhance: Bool = {
       guard let outer = (try? c.decodeIfPresent(Bool.self, forKey: .autoEnhance)) else { return false }
@@ -313,6 +382,8 @@ extension AdjustRecipe: Codable {
       selMagentaLum: v(.selMagentaLum), selMagentaRange: v(.selMagentaRange),
       redEyeRegions: (try? c.decodeIfPresent([RedEyeRegion].self, forKey: .redEyeRegions)) ?? [],
       redEyeStrength: v(.redEyeStrength),
+      curvesMaster: vp(.curvesMaster), curvesRed: vp(.curvesRed),
+      curvesGreen: vp(.curvesGreen), curvesBlue: vp(.curvesBlue),
       recipeVersion: v(.recipeVersion), rendererVersion: v(.rendererVersion))
   }
 
@@ -376,6 +447,10 @@ extension AdjustRecipe: Codable {
     try c.encode(selMagentaRange, forKey: .selMagentaRange)
     try c.encode(redEyeRegions, forKey: .redEyeRegions)
     try c.encode(redEyeStrength, forKey: .redEyeStrength)
+    try c.encode(curvesMaster, forKey: .curvesMaster)
+    try c.encode(curvesRed, forKey: .curvesRed)
+    try c.encode(curvesGreen, forKey: .curvesGreen)
+    try c.encode(curvesBlue, forKey: .curvesBlue)
     try c.encode(recipeVersion, forKey: .recipeVersion)
     try c.encode(rendererVersion, forKey: .rendererVersion)
   }

@@ -166,6 +166,13 @@ public final class EditRenderer: @unchecked Sendable {
     if !a.redEyeRegions.isEmpty && a.redEyeStrength != 0 {
       img = redEyeCorrected(img, regions: a.redEyeRegions, strength: a.redEyeStrength)
     }
+    if !a.curvesMaster.isEmpty || !a.curvesRed.isEmpty || !a.curvesGreen.isEmpty
+      || !a.curvesBlue.isEmpty
+    {
+      img = curves(
+        img, master: a.curvesMaster, red: a.curvesRed, green: a.curvesGreen,
+        blue: a.curvesBlue)
+    }
     if a.vibrance != 0 {
       img = filtered("CIVibrance", img, ["inputAmount": a.unit(a.vibrance)])
     }
@@ -620,6 +627,75 @@ public final class EditRenderer: @unchecked Sendable {
       return vec4(sel_hsl2rgb(h, sat, l), s.a);
     }
     """)
+  /// Full RGB + per-channel curves (D2): per-channel `CIToneCurve` stages
+  /// masked to one channel each and recombined additively, then the master
+  /// curve over the composite. Core Image only (on-device-AI §13 Tier B —
+  /// no Neural Engine, no Core ML, no custom CPU pixel code).
+  private func curves(
+    _ image: CIImage, master: [CurvePoint], red: [CurvePoint], green: [CurvePoint],
+    blue: [CurvePoint]
+  ) -> CIImage {
+    var img = image
+    if !red.isEmpty || !green.isEmpty || !blue.isEmpty {
+      img = perChannelCurves(img, red: red, green: green, blue: blue)
+    }
+    if !master.isEmpty {
+      img = toneCurve(img, points: master)
+    }
+    return img
+  }
+
+  /// One channel isolated via `CIColorMatrix`. Only the red stage keeps alpha,
+  /// so the additive recombine restores the original alpha exactly.
+  private func channelMasked(_ image: CIImage, channel: Int, keepAlpha: Bool) -> CIImage {
+    let m = CIFilter(name: "CIColorMatrix")
+    m?.setValue(image, forKey: kCIInputImageKey)
+    m?.setValue(CIVector(x: channel == 0 ? 1 : 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
+    m?.setValue(CIVector(x: 0, y: channel == 1 ? 1 : 0, z: 0, w: 0), forKey: "inputGVector")
+    m?.setValue(CIVector(x: 0, y: 0, z: channel == 2 ? 1 : 0, w: 0), forKey: "inputBVector")
+    m?.setValue(CIVector(x: 0, y: 0, z: 0, w: keepAlpha ? 1 : 0), forKey: "inputAVector")
+    return m?.outputImage ?? image
+  }
+
+  private func added(_ foreground: CIImage, _ background: CIImage) -> CIImage {
+    let f = CIFilter(name: "CIAdditionCompositing")
+    f?.setValue(foreground, forKey: kCIInputImageKey)
+    f?.setValue(background, forKey: kCIInputBackgroundImageKey)
+    return f?.outputImage ?? foreground
+  }
+
+  private func perChannelCurves(
+    _ image: CIImage, red: [CurvePoint], green: [CurvePoint], blue: [CurvePoint]
+  ) -> CIImage {
+    // Empty channel = identity: mask without a curve stage so the untouched
+    // channel passes through. Re-mask after each curve because `CIToneCurve`
+    // maps 0 -> curve(0), which would leak into the zeroed sibling channels.
+    var r = channelMasked(image, channel: 0, keepAlpha: true)
+    if !red.isEmpty { r = channelMasked(toneCurve(r, points: red), channel: 0, keepAlpha: true) }
+    var g = channelMasked(image, channel: 1, keepAlpha: false)
+    if !green.isEmpty {
+      g = channelMasked(toneCurve(g, points: green), channel: 1, keepAlpha: false)
+    }
+    var b = channelMasked(image, channel: 2, keepAlpha: false)
+    if !blue.isEmpty {
+      b = channelMasked(toneCurve(b, points: blue), channel: 2, keepAlpha: false)
+    }
+    return added(added(r, g), b).cropped(to: image.extent)
+  }
+
+  /// `toneCurve` resampled from an arbitrary point array (extends the
+  /// black/white helper below): the filter's 5 fixed points take
+  /// `x = 0 / .25 / .5 / .75 / 1` with `y` from the piecewise-linear
+  /// `CurvePoint` evaluation. Callers skip empty (identity) arrays.
+  private func toneCurve(_ image: CIImage, points: [CurvePoint]) -> CIImage {
+    let f = CIFilter(name: "CIToneCurve")
+    f?.setValue(image, forKey: kCIInputImageKey)
+    for (i, x) in [0.0, 0.25, 0.5, 0.75, 1.0].enumerated() {
+      f?.setValue(
+        CIVector(x: x, y: CurvePoint.evaluate(points, at: x)), forKey: "inputPoint\(i)")
+    }
+    return f?.outputImage ?? image
+  }
 
   private func toneCurve(_ image: CIImage, black: Double, white: Double) -> CIImage {
     let f = CIFilter(name: "CIToneCurve")
