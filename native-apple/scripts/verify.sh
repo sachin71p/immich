@@ -23,8 +23,13 @@ ios() {
 
 mac() {
   cd "$root"
-  xcodegen generate
-  xcodebuild -project Heirloom.xcodeproj -scheme Heirloom-macOS -destination 'platform=macOS' -skipPackagePluginValidation CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" CODE_SIGN_ENTITLEMENTS="" DEVELOPMENT_TEAM="" build test
+  if [ "${RUN_ON_HOST:-0}" = "1" ]; then
+    xcodegen generate
+    xcodebuild -project Heirloom.xcodeproj -scheme Heirloom-macOS -destination 'platform=macOS' -skipPackagePluginValidation CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" CODE_SIGN_ENTITLEMENTS="" DEVELOPMENT_TEAM="" build test
+  else
+    # Default: isolated Tart VM run (host desktop untouched).
+    "$root/scripts/run-macos-ui-tests.sh"
+  fi
 }
 
 case "$mode" in
