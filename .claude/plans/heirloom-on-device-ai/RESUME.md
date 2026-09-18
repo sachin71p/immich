@@ -35,4 +35,4 @@
   Foundation Models (image input iOS 27) for titles/captions.
 
 ## Status
-PLAN.md written 2026-09-17 (+ editing §13, research-editing.md, recon-editing.md on 2026-09-18) — awaiting owner decisions 1–11 in §11. Next: WP0 spikes; editing starts with E0 (iOS editor P0s).
+PLAN.md written 2026-09-17; editing §13 added and plan RE-BASED TO SERVER-FIRST (RTX A4500 GPU) on 2026-09-18. Pre-rebase version: git history / scratchpad backup. Awaiting owner decisions 1–11 in §11. Next: WP0 server model bake-off; editing starts with E0 (iOS editor P0s).

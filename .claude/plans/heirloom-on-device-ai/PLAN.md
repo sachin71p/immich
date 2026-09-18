@@ -1,42 +1,47 @@
 # Heirloom On-Device AI — Plan
 
-Status: DRAFT for owner review · 2026-09-17, editing §13 added 2026-09-18 · Author: Opus (main session)
+Status: DRAFT for owner review · 2026-09-17 · editing §13 added and plan re-based to **server-first** (RTX A4500) 2026-09-18 · Author: Opus (main session)
 Inputs: [research-apple-frameworks.md](research-apple-frameworks.md) · [research-cloudkit.md](research-cloudkit.md) · [recon-codebase.md](recon-codebase.md) · [research-editing.md](research-editing.md) · [recon-editing.md](recon-editing.md)
 
 ---
 
 ## 0. TL;DR
 
-- **Devices extract, server aggregates.** iPhone and Mac run Apple Vision + Core ML on the
-  Neural Engine and upload *per-asset features* (CLIP vector, face boxes + face vectors, labels,
-  OCR, aesthetics, document/QR flags, video audio tags). The server does everything that needs
-  the *whole library*: face clustering into People, duplicate grouping, smart-collection
-  membership, Trips, Memories.
-- **Same models everywhere → one vector space.** Convert the server's own models (OpenAI CLIP
-  ViT-B/32 and InsightFace buffalo_l) to Core ML so a vector from an iPhone, a Mac and the server
-  are interchangeable. Then the server's existing duplicate detection, smart search and face
-  clustering keep working unchanged no matter who processed an asset. Apple-only signals
-  (aesthetics, `isUtility`, scene labels, document structure) are *additive* on top.
-- **Routing:** iPhone-origin assets → iPhone; Mac-origin → Mac; everything else (web/CLI/
-  existing library/shared) → the processor chosen in settings (`ios` | `macos` | `server`).
-  Every asset records `analysisProcessor` + `analysisDeviceId`, and a per-capability history table
-  records exactly which device/model produced each result.
-- **Devices never download originals for analysis** — local PHAsset pixels on the origin device,
-  or the server's ~1440px preview for assigned non-local assets (consistent with the
-  "no full originals" rule).
-- **CloudKit: no.** The server cannot durably reach a user's private CloudKit DB (30-min / 2-week
-  per-user web tokens only), it breaks for family members on different Apple IDs, ADP can make it
-  unreadable, and iCloud Photos already moves photos between one person's devices. Heirloom server
-  stays the single source of truth; APNs sent by the server provides the push. (§9)
-- **Foundation Models** (on-device LLM) writes Trip/Memory titles and captions on Apple
-  Intelligence devices; server provides a template fallback.
-- **Editing (§13):** extend the existing non-destructive `EditRecipe` editor. Apple devices are the
-  only renderers (no Core Image on Linux) and upload the rendered result as the asset's *edited
-  rendition*. Build Apple's exact public pipelines first (RAW 9, HDR gain maps, Portrait depth,
-  Cinematic focus + Audio Mix, Live Photo, video), then close approximations (sliders, filters as
-  LUTs, curves/levels/selective color), then our own Neural Engine tools (Clean Up, Retouch, smart
-  crop, subject masks, "make it warmer" edits). Not reproducible with public APIs: Portrait Lighting,
-  re-editing Apple's Photographic Styles, Spatial Scenes, Reframe/Extend.
+- **Server-first (re-based 2026-09-18).** The homelab has an **NVIDIA RTX A4500 (20 GB, Ampere)**.
+  With that GPU the server can run *larger* models than an iPhone for almost every analysis, over
+  the whole library, with one consistent result. So all photo/video AI runs on the server; the
+  iPhone and Mac contribute what **only they have**.
+- **Server (GPU):** search vectors (SigLIP2), faces (winner of a bake-off), OCR, and one
+  vision-language model (Qwen-VL class, 7–8B, 4-bit) that in a single pass writes a caption,
+  document type (receipt / ID / handwriting / illustration…), utility-photo flag and tags. Plus
+  Whisper for video speech and an audio tagger for video sounds. The server also does everything
+  that needs the whole library: People clustering, duplicate groups, smart collections, Trips,
+  Memories and their titles.
+- **Devices:** (1) Apple photo-library facts sent with every upload (Live/Portrait/Cinematic/
+  Slo-mo/Screenshot flags, bursts, favourite/hidden, "saved from other app"); (2) edits made in
+  Apple Photos; (3) all editing and rendering (§13 — Core Image, Cinematic, depth, Neural Engine
+  editing tools); (4) optional cheap Apple signals at upload (aesthetics + `isUtility`, document
+  structure) stored as *extra* evidence.
+- **"Processed by" is kept.** Every asset records `analysisProcessor` (`server` | `ios` | `macos`)
+  + device id, and a per-capability history records exactly which processor and model produced
+  each result. The routing setting stays so device offload can be switched on later
+  (for a GPU-less install); building it is deferred.
+- **CloudKit: no** (§9). Server = single source of truth; server-sent APNs for push.
+- **Editing (§13):** unchanged by the re-base — Apple devices are the renderers. The GPU adds one
+  option: heavy generative edits (Extend) can run on the server.
+
+### Why server-first (owner asked 2026-09-18)
+| Analysis | On device | On the A4500 server | Verdict |
+|---|---|---|---|
+| Search / faces / OCR | same models converted to Core ML | same models natively, and larger ones fit | server ≥ device |
+| Scene labels, doc types, utility flag | Apple classifiers (private tuning) | vision-language model + zero-shot search model | close; VLM is more flexible |
+| Aesthetics | Apple `CalculateImageAestheticsScoresRequest` | aesthetic head on the search vector | close; Apple signal kept as extra |
+| Video speech / sounds | SpeechAnalyzer / ~300 classes | Whisper / 527 AudioSet classes | server better |
+| Titles & captions | ~3B on-device LLM, text-only until iOS 27 | 7–8B VLM that *looks at* the photos | server better |
+| Library facts, Apple Photos edits, editing render | ✅ only here | ✗ | device-only → devices keep these |
+Device-side analysis would have cost: Core ML conversion + parity proofs, cross-device routing and
+leases, OS updates silently changing Apple model outputs, uneven coverage, battery/iOS background
+limits. None of that buys quality once the GPU exists.
 
 ---
 
@@ -64,7 +69,7 @@ Inputs: [research-apple-frameworks.md](research-apple-frameworks.md) · [researc
 | `ClassifyImageRequest` | ~1,303 scene/object labels + confidence | Scene labels → search facets, Illustrations/Documents/Receipts signals, memory themes | iOS 13 |
 | `CalculateImageAestheticsScoresRequest` | `overallScore` [-1,1], `isUtility` | "Best shot", Memory curation, key photo; `isUtility` separates screenshots/receipts/docs from real photos | iOS 18 |
 | `DetectFaceRectanglesRequest` / `DetectFaceLandmarksRequest` / `DetectFaceCaptureQualityRequest` | boxes, landmarks, quality | Face crops + alignment; best face for person cover | iOS 11/13 |
-| *(no Apple face-identity API)* → **Core ML ArcFace** (buffalo_l `w600k_r50`) | 512-d face vector | People clustering (server) | Core ML |
+| *(no Apple face-identity API)* | — | Faces are embedded on the server GPU (§6) | — |
 | `RecognizeTextRequest` (rev 3) | lines + boxes | OCR → existing `asset_ocr` + search | iOS 13 |
 | `RecognizeDocumentsRequest` | paragraphs, tables, lists, barcodes | Documents / Receipts / Identity Documents / Handwriting signals | iOS 26 |
 | `DetectBarcodesRequest` | payload + symbology | QR Codes utility | iOS 11 |
@@ -73,7 +78,7 @@ Inputs: [research-apple-frameworks.md](research-apple-frameworks.md) · [researc
 | `GenerateForegroundInstanceMaskRequest`, person segmentation | masks | Memory cover/title effects, later | iOS 17 |
 | `DetectLensSmudgeRequest` | confidence | Quality penalty in best-shot ranking | iOS 26 |
 | **VisionKit** `ImageAnalyzer` / `ImageAnalysisInteraction` | Live Text, subject lift UI | Viewer UX (already on macOS) — not the batch pipeline | iOS 16 |
-| **Core ML** (+ `MLTensor`, ML Program) | — | Runs CLIP ViT-B/32 image encoder + text encoder, ArcFace, SCRFD | iOS 15+ |
+| **Core ML** (+ `MLTensor`, ML Program) | — | Editing models (LaMa, depth); device-side search/face models only if the deferred device-offload mode is ever built | iOS 15+ |
 | "Core AI" (WWDC26) | — | UNVERIFIED — track; no dependency | iOS 27 |
 | **Foundation Models** (`@Generable`, tools; image input in 27) | structured text | Trip/Memory titles, subtitles, captions; iOS 27 image-attached captioning | iOS 26 |
 | **Natural Language** `NLContextualEmbedding`, `NLTagger` | token vectors, entities | Optional: OCR/caption text search, language ID | iOS 17 |
@@ -108,76 +113,70 @@ Heirloom's Postgres tables.
 ## 2. Architecture
 
 ```
- iPhone (origin: ios)                Mac (origin: macos)             Heirloom server
- ┌──────────────────────┐            ┌──────────────────────┐        ┌─────────────────────────────┐
- │ PHAsset (local px)   │            │ PHAsset (local px)   │        │ assets + previews           │
- │   or server preview  │            │   or server preview  │        │                             │
- │ PhotosCore/Analysis  │            │ PhotosCore/Analysis  │        │ Analysis API                │
- │  Vision + Core ML    │──results──▶│  (same package)      │─results▶│  • work queue + leases      │
- │  (ANE)               │  (REST)    │  login-item agent    │ (REST) │  • results ingest           │
- │ BGProcessingTask /   │◀─work──────│                      │◀─work──│ Aggregators (jobs)          │
- │ BGContinuedProcessing│            │                      │        │  • face clustering (People) │
- └──────────────────────┘            └──────────────────────┘        │  • duplicate groups         │
-          ▲  Foundation Models title jobs (Apple Intelligence devices) │  • smart-collection rules   │
-          └──────────────────────────────────────────────────────────│  • trips / memories         │
-                                                                     │ Fallback ML (python) when   │
-                                                                     │  processor = server/timeout │
-                                                                     └─────────────────────────────┘
+ iPhone / Mac (Heirloom apps)                       Heirloom server (LXC 403, RTX A4500 20 GB)
+ ┌──────────────────────────────┐   upload + apple  ┌──────────────────────────────────────────────┐
+ │ PhotoKit: originals, library │ ─────metadata───▶ │ immich-ml (resident on GPU)                  │
+ │   facts, Apple Photos edits  │                   │   SigLIP2 search · faces · OCR               │
+ │ Optional Apple signals at    │ ─apple signals──▶ │ heirloom-vlm (vLLM, batch, loads on demand)  │
+ │   upload (aesthetics, docs)  │                   │   caption · doc kind · utility · tags · titles│
+ │ Editor (Core Image, Cinematic│ ─edit rendition─▶ │ heirloom-av (batch): Whisper · audio tags    │
+ │   depth, LaMa Clean Up)      │                   │ CPU: pHash · QR (zxing) · EXIF media types   │
+ │                              │ ◀─render jobs──── │ Aggregators: People clustering · duplicates  │
+ │ tvOS: viewer only            │ ◀──APNs / sync─── │   smart collections · Trips · Memories       │
+ └──────────────────────────────┘                   └──────────────────────────────────────────────┘
 ```
 
-### 2.1 Division of labour
-| Work | Where | Why |
-|---|---|---|
-| CLIP image vector, face detect + face vector, OCR | Any processor (device or server) | Same models → comparable results |
-| Aesthetics, `isUtility`, scene labels, document structure, QR, animals, lens smudge, feature print, sound tags | Devices only | Apple-only APIs; server has no equivalent (server gets CLIP zero-shot fallback for the few that feed collections, §5) |
-| Face clustering → People | Server | Needs all faces across the library (existing Immich job, unchanged) |
-| Duplicate groups | Server | Existing CLIP-distance job; devices add a feature-print "confirm" signal |
-| Smart-collection membership | Server rules over stored signals | One definition, all clients agree |
-| Trips, Memories (selection) | Server | Whole-library + time + GPS |
-| Trip/Memory titles & captions | Device (Foundation Models) → server fallback template | LLM is on-device only |
+### 2.1 Server ML stack on the A4500
+| Service | Model (license) | Approx. VRAM | Runs |
+|---|---|---|---|
+| immich-ml · search | **ViT-SO400M-16-SigLIP2-384__webli** (Apache-2.0), 1152-d — already in the fork's model list; fallback ViT-L-16-SigLIP2-384 | ~2–2.5 GB fp16 | resident (queries need the text encoder) |
+| immich-ml · faces | bake-off winner: antelopev2 / buffalo_l (InsightFace, non-commercial) or AdaFace IR-101 (MIT) | ~0.3–0.6 GB | resident |
+| immich-ml · OCR | PP-OCRv5 (Apache-2.0) — already supported | ~0.3 GB | resident |
+| **heirloom-vlm** (new) | Qwen-VL 7–8B instruct, 4-bit AWQ (Apache-2.0; exact version picked in WP0 — Qwen3-VL-8B if available, else Qwen2.5-VL-7B) served by vLLM with JSON-schema guided output | ~6–9 GB incl. KV cache (`gpu_memory_utilization` capped) | nightly batch + on new uploads; unloads when idle |
+| **heirloom-av** (new) | faster-whisper large-v3-turbo (MIT); PANNs/BEATs AudioSet tagger (MIT) | ~2 GB | videos only, batch |
+| aesthetics | small MLP head over the SigLIP2 vector (no extra image pass); head choice/licence checked in WP0 | ~0 | with search job |
+| CPU | perceptual hash, zxing-cpp QR (Apache-2.0), EXIF/QuickTime media-type rules | — | on metadata extraction |
+All fp16 on Ampere (no FP8). Peak ≈ 13–15 GB with everything loaded, leaving room for NVENC
+transcoding. Numbers are estimates — WP0 measures them on the real card.
 
-### 2.2 Model manifest = the compatibility contract
-Server exposes `GET /analysis/manifest`: for each capability, the server's configured model
-(`clip: ViT-B-32__openai, dim 512`; `face: buffalo_l, dim 512`; `ocr: …`) plus the minimum
-device-model version it accepts. A device uploads a vector **only** if it ships a Core ML
-conversion of that exact model; otherwise it uploads only Apple-native signals and leaves that
-capability to the server. If the admin switches the CLIP model, device vectors stop being accepted
-and the existing re-index job regenerates them (server or re-queued to devices).
+### 2.2 One VLM pass per photo (structured output)
+```json
+{ "caption": "Family selfie in front of the USS Alabama battleship on a sunny day",
+  "kind": "photo | screenshot | document | receipt | id_document | handwriting | illustration | whiteboard | menu | other",
+  "is_utility": false,
+  "tags": ["ship","family","selfie","outdoors","sunny"],
+  "event": "none | birthday | wedding | holiday | graduation | party | …",
+  "people_count": 3 }
+```
+Enum-constrained decoding (vLLM guided JSON), so outputs are always valid. Videos: one pass on the
+poster frame + Whisper transcript. Estimated 1–3 images/s batched → a 50k-photo backlog is roughly
+5–14 hours once; new uploads take seconds. The caption is stored and indexed for search alongside
+the vector (so "the battleship photo" finds it by words too).
 
-Model licences: OpenAI CLIP weights = MIT ✅. InsightFace buffalo_l = non-commercial research
-licence — same terms Immich already runs under for personal self-hosting; acceptable for a
-personal homelab, flag if Heirloom is ever distributed commercially. MobileCLIP = research-only
-and a *different* vector space → **not used**.
+### 2.3 Division of labour
+| Work | Where |
+|---|---|
+| Search vector, faces, OCR, VLM description, aesthetics, pHash, QR, video speech/sounds | Server GPU/CPU |
+| Library facts (media subtypes, bursts, favourite/hidden, source), Apple Photos edits | Device, sent with upload |
+| Optional Apple signals (`CalculateImageAestheticsScoresRequest`, `RecognizeDocumentsRequest`, lens smudge) | Device at upload, stored with `source = apple` |
+| People clustering, duplicate groups, smart collections, Trips, Memories, titles | Server |
+| Editing, rendering, Clean Up | Device (§13); Extend can use the server GPU |
 
 ---
 
-## 3. Routing — which device processes which asset
+## 3. Routing & "processed by"
 
-### 3.1 Rules
-1. Asset uploaded by the iOS app (asset has `deviceId` of a registered iOS device) → that iOS
-   device (the "origin device").
-2. Asset uploaded by the macOS app → that Mac.
-3. Everything else (web upload, CLI, external library, pre-existing library, partner/shared) →
-   `defaultProcessor` setting: `ios` | `macos` | `server` (+ which device if several).
-4. Fallback: if an assigned device has not completed an asset within `deviceTimeout` (default 7
-   days) the server either re-assigns to `defaultProcessor` or processes it itself
-   (`fallbackToServer`, default on). Prevents a lost iPhone from stalling the library forever.
-5. Per-capability override (advanced): e.g. `clip: server` if the owner wants the server GPU to do
-   vectors while devices do Apple-only signals.
-
-### 3.2 Work queue & leases (server-side, not CloudKit)
-- `GET /analysis/work?limit=50` → assets assigned to the calling device and not leased;
-  returns `assetId`, `deviceAssetId` (local PHAsset id if origin), `checksum`, preview URL,
-  required capabilities, manifest version.
-- Lease row per asset (`expiresAt` = now + 30 min, renewed per batch). Expired leases return to
-  the pool. Assets with a live device lease are skipped by the server's own ML jobs.
-- Origin device resolves `deviceAssetId` → PHAsset (via `PHCloudIdentifier` if local id changed);
-  if not found locally, falls back to the server preview.
-
-### 3.3 Where the server must stop doing its own ML
-Server ML jobs (smart search, face detection, OCR) check `resolveProcessor(asset)`; if it's a
-device and the device hasn't timed out → skip and let the device do it. `asset_job_status`
-timestamps are set by the ingest endpoint so existing "missing" queues don't re-enqueue.
+- Setting `analysis.processor` per origin (iPhone uploads / Mac uploads / everything else), values
+  `server` | `ios` | `macos`, **default `server` for all**. Only `server` is implemented in v1; the
+  device values stay in the schema so an offload mode can be added later without a migration.
+- `asset.analysisProcessor` / `analysisDeviceId` record the primary processor; `analysis_run`
+  records every capability separately (e.g. `vlm` by server, `apple-aesthetics` by iPhone X).
+- **Light device job queue** (kept for editing and Apple-signal backfill, not for core AI):
+  `GET /analysis/work?capabilities=render,apple-signals` returns jobs for this device with a
+  30-min lease; used for batch Copy/Paste Edits renders (§13.4) and, if enabled, computing Apple
+  signals for older assets the device still has locally.
+- **Deferred — device offload mode:** full device analysis (Core ML conversions of the server
+  models, parity harness, BG processing, Mac agent) — only if a future install has no GPU.
 
 ---
 
@@ -187,189 +186,147 @@ timestamps are set by the ingest endpoint so existing "missing" queues don't re-
 enum analysis_processor  = 'server' | 'ios' | 'macos'
 
 asset (+)
-  analysisProcessor        analysis_processor NULL   -- who produced the primary analysis (owner's "which device" field)
-  analysisDeviceId         text NULL                  -- registered device id (null for server)
-  analysisCompletedAt      timestamptz NULL
+  analysisProcessor     analysis_processor NULL   -- owner's "which device processed its AI"
+  analysisDeviceId      text NULL
+  analysisCompletedAt   timestamptz NULL
+  appleMetadata         jsonb NULL                -- mediaSubtypes, burstIdentifier, representsBurst,
+                                                  -- sourceType, playbackStyle, isFavorite, hidden,
+                                                  -- hasAdjustments, captureDeviceModel
 
-analysis_device                                       -- registered processors
-  id, userId, platform ('ios'|'macos'), name, model ("iPhone 17 Pro"), osVersion,
-  appVersion, capabilities jsonb (models/versions, appleIntelligence bool), lastSeenAt
+analysis_device   id, userId, platform ('ios'|'macos'), name, model, osVersion, appVersion,
+                  capabilities jsonb, lastSeenAt
+analysis_run      assetId, capability ('clip'|'face'|'ocr'|'vlm'|'aesthetics'|'phash'|'barcode'|
+                  'speech'|'sound'|'apple-aesthetics'|'apple-document'|'render'),
+                  processor, deviceId, modelName, modelVersion, processedAt, durationMs,
+                  status, error                      PK(assetId, capability)
+analysis_lease    jobId PK, assetId, deviceId, capability, expiresAt
 
-analysis_run                                          -- one row per asset × capability (audit + re-run)
-  assetId, capability ('clip'|'face'|'ocr'|'labels'|'aesthetics'|'document'|'barcode'|
-                       'featureprint'|'sound'|'speech'|'caption'),
-  processor, deviceId, modelName, modelVersion, processedAt, durationMs, status, error
-  PK(assetId, capability)
+asset_description assetId PK, caption text, kind text, isUtility bool, event text, peopleCount int,
+                  modelName, modelVersion           -- VLM output; caption GIN/trigram indexed
+asset_label       assetId, label, score real, source ('vlm'|'clip-zeroshot'|'sound'|'apple'),
+                  PK(assetId, label, source)
+asset_quality     assetId PK, aestheticScore real, appleAestheticScore real NULL,
+                  appleIsUtility bool NULL, lensSmudge real NULL, faceQualityMax real
+asset_document    assetId PK, barcodes jsonb, appleParagraphs int NULL, appleTables int NULL
+asset_phash       assetId PK, hash bit(64)
+asset_transcript  assetId PK, language, text, segments jsonb, modelName
 
-analysis_lease   assetId PK, deviceId, expiresAt
+trip / trip_asset (as before; titleSource 'template' | 'vlm' | 'user')
 
-asset_label      assetId, label, score real, source ('vision-classify'|'clip-zeroshot'|'sound'),
-                 PK(assetId, label, source)                   -- scene/object/sound tags
-asset_quality    assetId PK, aestheticScore real, isUtility bool, faceQualityMax real,
-                 lensSmudge real, sharpness real NULL
-asset_document   assetId PK, kind ('document'|'receipt'|'id'|'handwriting'|'illustration'|'qr'|null),
-                 kindScore real, paragraphCount, tableCount, barcodes jsonb, docText text
-asset_feature_print  assetId PK, revision smallint, embedding vector(N)   -- N fixed per revision (WP0)
-
-existing, reused as-is:
-  smart_search (512-d CLIP)       ← device vectors when manifest matches
-  asset_face (+ sourceType stays MachineLearning), face_search (512-d)
-  asset_ocr                        ← device OCR lines
-  memory / memory_asset            ← new memory types (§7)
-  asset.duplicateId                ← server duplicate job
-
-trip        id, ownerId, title, subtitle, startAt, endAt, centroid, places jsonb,
-            coverAssetId, titleSource ('template'|'foundation-models'), titleDeviceId
-trip_asset  tripId, assetId
-
-system/user config
-  analysis.defaultProcessor, analysis.defaultDeviceId, analysis.deviceTimeoutDays,
-  analysis.fallbackToServer, analysis.capabilityOverrides, trips.homeLocation (user), …
+existing, reused:
+  smart_search (dimension becomes 1152 with SigLIP2 SO400M — existing re-index path)
+  asset_face / face_search, person (clustering unchanged)
+  asset_ocr, memory / memory_asset, asset.duplicateId, asset_job_status (+ vlm/speech timestamps)
 ```
-
-Access control: every analysis endpoint must enforce the fork's S2 access-control rules — a device
-may only submit results for assets its user owns (or shared-library assets where the user has
-edit rights). Ties into the existing deploy gate.
+Access control: all endpoints follow the fork's S2 rules (a device only submits metadata/signals
+for assets its user may edit).
 
 ### 4.1 API (OpenAPI → regenerates `ImmichAPI` Swift client)
 | Endpoint | Purpose |
 |---|---|
-| `POST /analysis/devices` / `PUT …/{id}` | Register device + capabilities (heartbeat) |
-| `GET /analysis/manifest` | Server model contract (§2.2) |
-| `GET /analysis/work` | Pull assigned assets + take leases |
-| `POST /analysis/results` | Batch ingest (≤50 assets): vectors, faces, OCR, labels, quality, document, sound, feature print; per-capability model ids |
-| `POST /analysis/leases/release` | Give back unfinished leases on suspend |
-| `GET /analysis/title-jobs` / `POST …/{id}` | Foundation Models title/caption jobs for trips/memories |
-| `GET /analysis/stats` | Per-processor progress for settings UI |
-| `POST /analysis/reprocess` | Re-queue assets (by processor/device/capability/model) |
-
-Ingest writes in one transaction per asset, upserts `analysis_run`, sets `asset.analysis*`,
-stamps `asset_job_status`, then queues server aggregators: `FacialRecognition` (clustering),
-`DuplicateDetection`, `SmartCollectionEvaluate`, and debounced `TripDetect` / `MemoryGenerate`.
+| upload DTO (+ `appleMetadata`) | Library facts ride on the existing upload call; `PUT /assets/{id}/apple-metadata` for later changes (favourite/hidden/edits) |
+| `POST /analysis/devices` | Register device + capabilities |
+| `POST /analysis/signals` | Batch Apple signals (optional) |
+| `GET /analysis/work` / `POST /analysis/work/{id}` | Render + apple-signal jobs with leases |
+| `GET /analysis/stats` | Progress per capability and processor |
+| `POST /analysis/reprocess` | Re-queue by capability / model / processor |
+Server jobs added: `AssetDescribe` (VLM), `VideoTranscribe`, `VideoSoundTag`, `AssetPHash`,
+`SmartCollectionEvaluate`, `TripDetect`, `MemoryGenerate`, `TitleGenerate`.
 
 ---
 
 ## 5. Smart collections — signal → rule
 
-Membership is computed on the server from stored signals (materialised in a
-`asset_collection_membership` view/table or evaluated by the existing search filters).
-Sources: **PK** = PhotoKit on origin device · **EXIF** = server metadata (works for every asset) ·
-**V** = Vision on device · **S** = server state/events · **C** = CLIP zero-shot on server (fallback
-for non-device assets).
+Membership computed on the server. Sources: **AM** = Apple metadata from upload · **EXIF** =
+server metadata · **VLM** = server vision-language pass · **S** = server state/events ·
+**A** = optional Apple signal (extra evidence, never required).
 
 ### Utilities
 | Collection | Rule | Sources |
 |---|---|---|
-| Favorites / Hidden / Recently Deleted | existing `isFavorite`, locked folder/`visibility`, trash | S (+PK sync of favorite/hidden on upload) |
-| Duplicates | `duplicateId` groups (CLIP distance) confirmed by feature-print distance when both present | S + V |
-| Captured by Me | EXIF make/model matches one of the user's registered devices, or PK `sourceType == userLibrary` and camera EXIF present | EXIF + PK |
-| Identity Documents | `asset_document.kind='id'` (document request + ID-like label/text heuristics: MRZ `<<<`, "passport", DOB fields) | V (+C) |
-| Receipts | `kind='receipt'` (classify label receipt + totals/currency lines + table) | V (+C) |
-| Handwriting | `kind='handwriting'` (UNVERIFIED Vision signal → Create ML fallback) | V |
-| Illustrations | classify labels drawing/illustration/cartoon, `isUtility`, no camera EXIF | V (+C) |
-| QR Codes | `barcodes` contains QR | V |
-| Recently Saved | assets whose origin is "saved from another app" (no camera EXIF, PK `sourceType`, filename patterns) added in last 30 days | PK + EXIF |
-| Recently Viewed / Edited / Shared | new `asset_event` log (viewed, edited in Heirloom editor, shared-link/album add) — not ML | S |
-| Documents | `kind in (document, receipt, id)` or `isUtility && paragraphCount>0` | V |
-| Imports | upload batches from web/CLI/external library (group by upload session) | S |
-| Map | existing GPS | EXIF |
+| Favorites / Hidden / Recently Deleted | existing favourite, locked/hidden visibility, trash | S + AM |
+| Duplicates | `duplicateId` (SigLIP2 distance) + pHash Hamming ≤ 6 for exact re-encodes | S |
+| Captured by Me | camera EXIF make/model matches one of the user's registered devices, or AM `sourceType = userLibrary` with camera EXIF | EXIF + AM |
+| Identity Documents | VLM `kind = id_document` (+ MRZ `<<<` in OCR) | VLM + OCR |
+| Receipts | VLM `kind = receipt` (+ totals/currency lines in OCR) | VLM + OCR (+A tables) |
+| Handwriting | VLM `kind = handwriting` | VLM |
+| Illustrations | VLM `kind = illustration` and no camera EXIF | VLM + EXIF |
+| QR Codes | zxing finds a QR code | CPU |
+| Documents | `kind in (document, receipt, id_document, whiteboard, menu)` | VLM (+A) |
+| Recently Saved | no camera EXIF / AM source says saved from another app, added in last 30 days | AM + EXIF |
+| Recently Viewed / Edited / Shared | new `asset_event` log — not AI | S |
+| Imports | upload sessions from web / CLI / external library | S |
+| Map | GPS | EXIF |
 
-### Media Types (device PhotoKit is authoritative for its own assets; EXIF fallback for all others)
-| Collection | PhotoKit | EXIF / file fallback |
+### Media Types (AM is authoritative for app uploads; EXIF/QuickTime fallback for everything else)
+| Collection | Apple metadata | EXIF / file fallback |
 |---|---|---|
-| Videos | `mediaType == .video` | mime type |
-| Selfies | smart album SelfPortraits | lens model contains "front" |
-| Live Photos | `.photoLive` | existing `livePhotoVideoId` |
-| Portrait | `.photoDepthEffect` | ImageIO depth / portrait-matte aux data (device) or Apple maker note |
+| Videos | mediaType video | mime |
+| Selfies | SelfPortraits / front camera | lens model contains "front" |
+| Live Photos | `.photoLive` | `livePhotoVideoId` |
+| Portrait | `.photoDepthEffect` | depth / portrait-matte aux data, Apple maker note |
 | Slo-mo | `.videoHighFrameRate` | fps ≥ 120 |
-| Cinematic | `.videoCinematic` | Apple QuickTime metadata (verify key in WP0) |
-| Bursts | `burstIdentifier` | Apple maker note BurstUUID |
-| Screenshots | `.photoScreenshot` | no camera EXIF + screen-resolution + UserComment "Screenshot" |
-| Screen Recordings | `.videoScreenRecording`? UNVERIFIED | no camera, screen resolution video |
-| RAW | resource type / smart album RAW | file extension / mime |
+| Cinematic | `.videoCinematic` | Apple QuickTime metadata (key confirmed in WP0) |
+| Bursts | `burstIdentifier` | maker note BurstUUID |
+| Screenshots | `.photoScreenshot` | no camera EXIF + screen size + "Screenshot" UserComment; VLM `kind = screenshot` |
+| Screen Recordings | subtype (verify) | no camera + screen-size video |
+| RAW | resource type | extension / mime |
 | Panoramas, Time-lapse, Spatial, Long Exposure | subtypes | aspect ratio / metadata |
-
-Implementation: on upload (existing `Upload` package) the app already has the PHAsset → send
-`mediaSubtypes`, `burstIdentifier`, `sourceType`, `playbackStyle` as upload metadata into a new
-`asset_apple_metadata` jsonb column. Cheap, no ML, lights up most of Media Types immediately.
 
 ---
 
 ## 6. People (faces)
 
-1. Device: Vision `DetectFaceRectanglesRequest` → for exact parity with the server's alignment,
-   run the converted **SCRFD (det_10g)** detector too, OR derive the 5 alignment points from Vision
-   landmarks — WP0 measures both; pick whichever keeps cosine(device, server) ≥ 0.95 on the same
-   face.
-2. Align to 112×112, run ArcFace Core ML → 512-d vector; attach `DetectFaceCaptureQualityRequest`
-   score and bounding box (normalised to the asset's original dimensions/orientation).
-3. Upload to `asset_face` + `face_search`; server's existing incremental clustering assigns
-   `personId`. Face quality picks the person's cover face.
-4. Naming: app offers Contacts picker (`CNContactPickerViewController`) → sets person name;
-   birthday from contact enables "birthday" memories.
-5. Later (optional): Apple's paper also clusters **upper bodies** to catch turned-away faces —
-   body-crop feature print as a within-event linker. Not v1.
+1. Server detects + embeds faces with the WP0 bake-off winner (buffalo_l vs antelopev2 vs AdaFace
+   IR-101) on the owner's own labelled set (~20 people incl. a child at several ages).
+2. Existing incremental clustering assigns people; tune max distance / min faces in WP0 with the
+   same labelled set (moves quality as much as the model does).
+3. Face quality score (detector confidence × size × blur) picks each person's cover.
+4. Naming in the apps via Contacts picker; contact birthday feeds birthday memories.
+5. Known weakness for every model: babies/young children change fast — expect manual merges.
 
 ## 7. Trips & Memories
 
-### Trips (server job `TripDetect`, runs nightly + after ingest bursts)
-1. Home: user setting, else infer = most frequent GPS cluster of night-time photos over the last
-   12 months (DBSCAN, 1 km).
-2. Take GPS-tagged assets ordered by time; mark "away" when > `awayKm` (default 80 km) from home.
-3. Segment contiguous away runs; merge gaps ≤ 36 h and returns home < 12 h; require ≥ 1 night or
-   ≥ `minAssets` (default 20).
-4. Include non-GPS assets captured inside the window by the user's devices.
-5. Place set = reverse-geocoded states/countries (server already has local geodata) → template
-   title: 1 region "Florida", 2 "Alabama & Florida", 3+ "Southeast US" / country; subtitle
-   = date range ("APR 6–19, 2026" as in the screenshot).
-6. Cover = highest `aestheticScore` non-utility photo with faces preferred.
-7. Title job enqueued → an Apple-Intelligence device calls Foundation Models with a `@Generable`
-   `TripTitle { title, subtitle }` given places, POIs (`MKLocalSearch`), dates, top labels, people
-   names; server keeps the template if no device answers. User edits always win.
-UI: Trips screen with All / year segments (matches screenshot) in iOS & macOS Collections.
+### Trips (server `TripDetect`, nightly + after ingest bursts)
+1. Home = user setting, else the most frequent night-time GPS cluster over 12 months (DBSCAN 1 km).
+2. Away when > 80 km from home; segment contiguous away runs; merge gaps ≤ 36 h / home visits
+   < 12 h; require ≥ 1 night or ≥ 20 assets.
+3. Include non-GPS assets from the user's devices inside the window.
+4. Template title from reverse-geocoded regions ("Alabama & Florida"), subtitle = date range
+   ("APR 6–19, 2026").
+5. Cover = best aesthetic, non-utility photo, faces preferred.
+6. `TitleGenerate`: the VLM sees the cover + 6 top photos + places + dates + named people and
+   returns `{title, subtitle}`; template kept if it fails. User edits always win.
+UI: Trips with All / year segments in iOS & macOS Collections (as in the screenshot).
 
-### Memories (extend existing `memory` table types; server job `MemoryGenerate`)
+### Memories (extend `memory` types; server `MemoryGenerate`)
 | Type | Selection |
 |---|---|
-| On this day (exists) | + curate with `aestheticScore`, drop `isUtility`, dedupe by `duplicateId`/burst |
-| Trip | each trip ≥ 1 year old, or just-finished trip |
-| Person / "Together" | person (or pair) with many high-quality photos in a period |
-| Pets | `RecognizeAnimals` labels cat/dog over time |
-| Year / season in review | top-N by aesthetics per month, diversity via CLIP clustering |
-| Celebrations | labels (cake, fireworks, Christmas tree…) + sound tags (singing, applause) + calendar (opt-in) |
-| Place | home-city repeated location outside trips (e.g. a beach you visit every summer) |
-Curation for all: drop `isUtility`, drop screenshots/docs, collapse duplicates/bursts to the best
-shot, limit N, spread across time. Titles via the same Foundation Models job path.
+| On this day (exists) | curate: drop utility/screenshots/docs, collapse duplicates + bursts, rank by aesthetics |
+| Trip | trips ≥ 1 year old, or just finished |
+| Person / Together | person or pair with many good photos in a period |
+| Pets | VLM tags cat/dog over time |
+| Year / season in review | top aesthetics per month, diversity via vector clustering |
+| Celebrations | VLM `event` + sound tags (singing, applause, fireworks) |
+| Place | a recurring non-home place outside trips |
+Titles via the same `TitleGenerate` job.
 
 ---
 
-## 8. Device pipeline (new `PhotosCore/Sources/Analysis` package)
+## 8. Device work (new `PhotosCore/Sources/AppleSignals`, small)
 
-```
-AnalysisCoordinator
-  ├─ WorkSource        pull /analysis/work (+ local PHPersistentChangeToken for new captures)
-  ├─ PixelProvider     PHImageManager (local) | Nuke fetch of server preview (remote); ~1024px, sRGB
-  ├─ Analyzers         (each: capability, modelId, version, `analyze(CGImage) async throws -> Result`)
-  │    ClipImageAnalyzer (Core ML), FaceAnalyzer (Vision + Core ML), OCRAnalyzer, DocumentAnalyzer,
-  │    ClassifyAnalyzer, AestheticsAnalyzer, BarcodeAnalyzer, FeaturePrintAnalyzer,
-  │    VideoAnalyzer (AVAssetImageGenerator keyframes → image analyzers; SoundAnalysis; Speech opt-in)
-  ├─ ResultStore       GRDB table of pending results (survives suspension)
-  ├─ Uploader          batch POST /analysis/results, retries, releases leases
-  └─ Governor          thermal state, low-power, battery/charging, user "only while charging"
-```
-- One `VNImageRequestHandler` per image, all Vision requests in a single `perform` to share decode.
-- Core ML models compiled `.mlmodelc`, `computeUnits = .cpuAndNeuralEngine`; loaded once per run.
-- Models shipped via on-demand download from the Heirloom server (`/analysis/models/{id}`) rather
-  than bundled, keeping the app small and letting the manifest drive versions (~150 MB CLIP-B/32
-  fp16 + ~170 MB ArcFace r50 fp16 — WP0 to try int8 palettisation).
-- **iOS scheduling:** `BGProcessingTask` (`requiresExternalPower`, network) nightly; foreground
-  opportunistic batches while the app is open and cool; `BGContinuedProcessingTask` for
-  "Analyze now" with progress. New iPhone captures are analysed from local pixels *before or at*
-  upload time so the server never runs its own ML for them.
-- **macOS:** `SMAppService` login-item agent sharing the App Group container; runs while on AC and
-  idle; also processes `defaultProcessor = macos` assets from server previews — the Mac is the
-  natural choice for the existing library backlog.
-- **tvOS:** consumer only (no analysis, no durable storage).
+- **Upload path (`Upload` package):** attach `appleMetadata` from the `PHAsset` already in hand;
+  watch `PHPersistentChangeToken` for favourite/hidden/edit changes and send
+  `PUT /assets/{id}/apple-metadata`; upload Apple Photos edit renders (§13.4).
+- **Optional Apple signals at upload** (setting, default on for new uploads only): one
+  `ImageRequestHandler` running `CalculateImageAestheticsScoresRequest` +
+  `RecognizeDocumentsRequest` (+ `DetectLensSmudgeRequest`) on a ~1024 px image — tens of ms,
+  no custom models, no backlog processing unless the owner enables it (then via the light job
+  queue while charging).
+- **Editing** — §13.
+- **tvOS:** viewer only.
+- **Deferred:** full device analysis (the previous WP2–WP4 design) — kept in the git history of this
+  file for a future GPU-less install.
 
 ---
 
@@ -384,7 +341,7 @@ AnalysisCoordinator
   copies would double-bill iCloud quota and contradict the budgeted-cache rule.
 - Constraints: 1 MB records, 250-record batches, no unique constraints in SwiftData/CK mirroring.
 
-**Instead:** server = source of truth; device↔device coordination through server leases (§3.2);
+**Instead:** server = source of truth; device jobs through server leases (§3);
 change notification via APNs sent by the Heirloom server (own `.p8` key) + existing sync/WebSocket.
 **Allowed, optional:** `NSUbiquitousKeyValueStore` for a handful of per-user UI preferences.
 
@@ -398,52 +355,54 @@ Immich community pattern); not part of this program.
 
 | WP | Scope | Owner tier | Depends |
 |---|---|---|---|
-| **WP0 Spikes & verification** | (a) convert CLIP ViT-B/32 image+text and buffalo_l (SCRFD+ArcFace) to Core ML; parity harness vs server ML on 300 assets: CLIP cosine ≥ 0.99, face cosine ≥ 0.95, same clusters; (b) iPhone/Mac throughput + thermals (target ≥ 5 assets/s Mac, ≥ 1.5/s iPhone plugged in); (c) confirm: feature-print dims per revision, handwriting signal, ID-doc heuristics, screen-recording subtype, cinematic metadata key; (d) confirm server CLIP model/dim + duplicate threshold in fork config | Opus designs harness; implementer (Sonnet) builds; Opus judges numbers | — |
-| **WP1 Server schema + API** | migrations (§4), analysis module (devices, manifest, work/leases, results ingest, stats, reprocess), job gating (§3.3), S2 access checks, OpenAPI regen | implementer | WP0d |
-| **WP2 PhotosCore Analysis package** | coordinator, pixel provider, analyzers, GRDB result store, uploader, governor, model downloader | implementer | WP0a, WP1 API |
-| **WP3 iOS integration** | device registration, BG tasks, Analyze-now, origin analysis at capture/upload, Apple metadata on upload (§5) | implementer | WP2 |
-| **WP4 macOS agent** | login item, AC/idle governor, backlog processing from previews | implementer | WP2 |
-| **WP5 Smart collections** | server rules + endpoints, `asset_event` log, iOS/macOS Utilities & Media Types wiring (replace current placeholders) | implementer; Opus reviews rules | WP1, WP3 |
-| **WP6 Duplicates review UI** | group view, keep-best (aesthetics), merge metadata, trash others (+ optional delete local copy via `PHAssetChangeRequest`) | implementer | WP5 |
-| **WP7 People** | face ingest → clustering, Contacts naming, cover by quality | implementer; Opus reviews parity | WP0a, WP2 |
-| **WP8 Trips + Memories** | TripDetect, memory types, curation, Foundation Models title jobs, Trips UI | Opus designs heuristics; implementer | WP5, WP7 |
-| **WP9 Video** | keyframes, sound tags, opt-in transcripts | implementer | WP2 |
-| **WP10 Settings & admin** | processor routing UI (user + admin), per-processor stats, reprocess actions, "processed by" in asset info panel | implementer | WP1 |
-| **WP11 Verification** | server unit/e2e for ingest & routing; device tests on real hardware (Vision aesthetics/instance masks don't run in Simulator) | verifier | each WP |
+| **WP0 Server model bake-off & capacity** | (a) search: SigLIP2 B/16 vs L/16-384 vs SO400M-16-384 on ~50 of the owner's real queries, recall + query latency; (b) faces: buffalo_l vs antelopev2 vs AdaFace on a labelled set + clustering thresholds; (c) VLM: pick the model, accuracy of `kind`/`is_utility`/`event` on 300 labelled assets, images/s; (d) co-residency: all services + NVENC under load on the A4500; (e) duplicate threshold for the new vectors; (f) confirm Cinematic / screen-recording metadata keys | Opus designs the eval + judges; implementer builds the harness | — |
+| **WP1 Server schema + API** | migrations (§4), analysis module (devices, signals, light job queue, stats, reprocess, processed-by), upload DTO `appleMetadata`, S2 checks, OpenAPI regen | implementer | WP0 model choice |
+| **WP2 Server ML extensions** | `heirloom-vlm` (vLLM) + `AssetDescribe`; `heirloom-av` (Whisper, sound tags); aesthetics head; pHash; zxing QR; caption + transcript search; switch search model + re-index; Docker Compose/GPU wiring on LXC 403 | implementer; Opus reviews prompts/schema | WP0, WP1 |
+| **WP3 Apple metadata + Apple Photos edits** | upload `appleMetadata`, change-token sync of favourite/hidden/edits, edit-render upload | implementer | WP1 |
+| **WP4 Apple signals (optional)** | at-upload aesthetics / document structure / lens smudge; opt-in backfill job | implementer | WP1 |
+| **WP5 Smart collections** | server rules + endpoints, `asset_event` log, iOS/macOS Utilities & Media Types wiring | implementer; Opus reviews rules | WP2, WP3 |
+| **WP6 Duplicates review UI** | groups, keep best (aesthetics), merge metadata, trash others (+ optional delete from iPhone via `PHAssetChangeRequest`) | implementer | WP5 |
+| **WP7 People** | model + threshold from WP0, Contacts naming, cover by quality | implementer | WP0, WP2 |
+| **WP8 Trips + Memories** | TripDetect, memory types + curation, TitleGenerate, Trips UI | Opus designs heuristics; implementer | WP5, WP7 |
+| **WP10 Settings & admin** | processor setting per origin (server-only active), Apple-signals toggle, per-capability stats, reprocess, "processed by" in the asset info panel | implementer | WP1 |
+| **WP11 Verification** | server unit/e2e, GPU load test, device tests on real hardware | verifier | each |
+| *Deferred* | Device offload mode (Core ML conversions, parity harness, BG analysis, Mac agent) | — | GPU-less install |
 
-Suggested order: WP0 → WP1 → WP2 → (WP3 ∥ WP4 ∥ WP10) → WP5 → WP7 → WP6 → WP8 → WP9.
+Order: WP0 → WP1 → (WP2 ∥ WP3 ∥ WP10) → WP4 → WP5 → WP7 → WP6 → WP8. Editing E0–E8 (§13) runs in
+parallel; it only shares WP1's light job queue.
 
 ---
 
 ## 11. Decisions for the owner (recommended default in **bold**)
 
-1. Default processor for existing + web-uploaded assets: **macos** (your Mac, while plugged in) | ios | server.
-2. Fallback when an assigned device is silent for 7 days: **server processes it** | reassign | wait.
-3. Ship InsightFace buffalo_l on devices (same non-commercial licence Immich uses) for face parity: **yes** | use a permissively licensed face model and re-embed server-side too.
-4. Model delivery: **download from your Heirloom server on demand** | bundle in app.
-5. Opt-in extras: video speech transcripts (off), calendar titles via EventKit (off), Foundation Models titles (**on** where available).
+1. Where AI runs: **server GPU for all analysis; devices send library facts + Apple Photos edits**
+   | device-first as originally planned.
+2. Optional Apple signals at upload (aesthetics, document structure): **on for new uploads, no
+   backfill** | off | on with backfill while charging.
+3. Face model: **decide by WP0 bake-off** (buffalo_l / antelopev2 are non-commercial — fine for a
+   personal homelab; AdaFace is MIT).
+4. Vision-language model: **Qwen-VL 7–8B 4-bit via vLLM** (Apache-2.0), exact version from WP0 |
+   skip VLM and rely on zero-shot search-model labels (weaker documents/receipts/titles).
+5. Extras: video speech transcripts **on** (server Whisper), calendar titles via EventKit off.
 6. Trip threshold: **80 km from home, ≥ 1 night** — or set Home explicitly.
-7. Model choice (see §2.2 — ViT-B/32 + buffalo_l were placeholders = server defaults):
-   search → **ViT-B-16-SigLIP2__webli** (Apache-2.0, 768-d, big recall gain, fits iPhone ANE);
-   faces → WP0 bake-off on the owner's own labelled faces: buffalo_l vs antelopev2 vs AdaFace IR-101
-   (MIT). Whatever wins is set on the server first, then converted for devices.
-8. Where an edited version lives: **a rendition file on the same asset** (one timeline item;
-   Revert = drop it) | keep today's "rendered copy uploaded as a new asset".
-9. Import edits you make in Apple Photos into Heirloom (as a rendition; Apple's recipe is private):
-   **yes**.
-10. Write Heirloom edits back into Apple Photos for iPhone-origin photos (revertible there):
-    **off by default, per-edit "Also save to Photos"**.
-11. Clean Up engine: **LaMa (Apache-2.0) converted to Core ML** — approve bundling/downloading a
-    ~200 MB model.
+7. Search model: **ViT-SO400M-16-SigLIP2-384** if WP0 shows query latency is fine, else
+   ViT-L-16-SigLIP2-384. One-time full re-index.
+8. Where an edited version lives: **a rendition file on the same asset** | today's "rendered copy
+   uploaded as a new asset".
+9. Import edits you make in Apple Photos into Heirloom (render only): **yes**.
+10. Write Heirloom edits back into Apple Photos for iPhone photos: **off by default, per-edit
+    "Also save to Photos"**.
+11. Clean Up engine: **LaMa (Apache-2.0) on device via Core ML** (~200 MB download).
 
 ## 12. Risks
-- Face-alignment drift between Vision landmarks and SCRFD → mixed clusters. Mitigated by WP0 gate.
-- Apple-only signals missing on server-processed assets → collections like Receipts are weaker for
-  those; CLIP zero-shot fallback + recommending `macos` as default processor.
-- Device backlog on first run (tens of thousands of assets) — Mac first, iPhone only new captures
-  unless the user chooses otherwise.
-- iOS background time is scarce; the plugged-in overnight window is the main budget.
-- Admin changing the server CLIP model invalidates device vectors — manifest check + re-queue.
+- GPU contention: VLM backlog + transcoding + search queries on one 20 GB card. Mitigate: VLM and
+  Whisper as batch services with capped memory, idle unload, run the backlog overnight; search
+  models stay resident.
+- VLM hallucinated document types → wrong Receipts/IDs. Mitigate: enum-constrained output, OCR
+  cross-checks (MRZ, totals), WP0 accuracy gate, user "not a receipt" correction feeds a label.
+- Re-index to 1152-d vectors takes the search and duplicate features down briefly — schedule it.
+- Children's faces cluster poorly on every model — expect manual merges.
+- The server becomes a single point of AI failure; the deferred device-offload mode is the escape hatch.
 
 ---
 
@@ -521,7 +480,7 @@ median ΔE < 3. Also a golden-image test to catch iPhone ↔ Mac render drift.
 | Edit by instruction ("make it warmer and brighter") | Foundation Models `@Generable EditRecipeDelta` with `@Guide` ranges → applied as normal slider values (reviewable) | P2 |
 | "Make portrait" on photos without depth | Monocular depth model (Apple's Core ML **Depth Anything V2 Small**, Apache-2.0) → synthetic disparity → the same `depthBlurEffectFilter` | P2 |
 | Portrait Lighting look-alikes | Matte + custom relight kernels | P3 / probably skip |
-| Extend (outpainting) | Mac-only experiment later (Core ML Stable Diffusion inpainting / MLX); too heavy for iPhone | P3 |
+| Extend (outpainting) | Too heavy for iPhone; run on the server GPU (an openly licensed diffusion inpainting model, licence checked first) as an async "Extend" job whose result is stored as a patch | P3 |
 
 **Not doing (no public API, poor approximation value):** Apple's exact Portrait Lighting,
 re-driving Apple Photographic Styles metadata, Spatial Scene conversion (visionOS-only APIs),
@@ -544,8 +503,8 @@ Reframe.
 - **Write-back to Apple Photos** (decision 10): `PHContentEditingOutput` + `PHAdjustmentData`
   (`formatIdentifier = com.heirloom.edit`, recipe JSON). The existing Photo Editing Extension
   uses the same code, so "Edit with Heirloom" inside Apple Photos round-trips.
-- Batch: Copy/Paste Edits across many assets queues **render jobs** on the analysis work queue
-  (§3.2, new capability `render`), so the Mac agent renders a 200-photo paste in the background.
+- Batch: Copy/Paste Edits across many assets queues **render jobs** on the light device job queue
+  (§3, capability `render`), so the Mac agent renders a 200-photo paste in the background.
 
 ### 13.5 Performance targets
 - Slider tick ≤ 16 ms on a 2048 px proxy (existing WP-E target), full-res export in the background.
