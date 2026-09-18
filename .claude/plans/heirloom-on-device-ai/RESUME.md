@@ -34,7 +34,5 @@
   PHBackgroundResourceUpload(Job)Extension (static URL-base problem for self-hosted),
   Foundation Models (image input iOS 27) for titles/captions.
 
-## Next step
-Opus: read the three reports and write PLAN.md (architecture, DB schema changes incl.
-asset.aiProcessedBy + model-version columns, device routing/leases, pipeline per capability,
-phased work packages), then send the framework list + plan to the owner.
+## Status
+PLAN.md written 2026-09-17 — awaiting owner decisions in §11. Next: WP0 spikes.
