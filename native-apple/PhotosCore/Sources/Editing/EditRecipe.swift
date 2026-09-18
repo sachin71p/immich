@@ -106,6 +106,15 @@ public struct AdjustRecipe: Sendable, Equatable {
   public var vignetteStrength: Int
   public var vignetteRadius: Int
   public var vignetteSoftness: Int
+  /// Levels section (D3): dedicated input/output handle positions, 0...100.
+  public var levelsInBlack: Int
+  public var levelsInWhite: Int
+  public var levelsOutBlack: Int
+  public var levelsOutWhite: Int
+  /// Recipe/pipeline versions (on-device-AI §13.2; full v2 migration is E1's).
+  /// 0 = legacy unversioned payload; new saves write 1.
+  public var recipeVersion: Int
+  public var rendererVersion: Int
 
   public init(
     exposure: Int = 0, brilliance: Int = 0, highlights: Int = 0, shadows: Int = 0,
@@ -114,7 +123,10 @@ public struct AdjustRecipe: Sendable, Equatable {
     definition: Int = 0, noiseReduction: Int = 0, vignette: Int = 0, autoEnhance: Bool = false,
     cast: Int = 0, bwIntensity: Int = 0, bwNeutrals: Int = 0, bwTone: Int = 0, grain: Int = 0,
     wbTemperature: Int = 0, wbTint: Int = 0, sharpenEdges: Int = 0, sharpenFalloff: Int = 0,
-    vignetteStrength: Int = 0, vignetteRadius: Int = 0, vignetteSoftness: Int = 0
+    vignetteStrength: Int = 0, vignetteRadius: Int = 0, vignetteSoftness: Int = 0,
+    levelsInBlack: Int = 0, levelsInWhite: Int = 100,
+    levelsOutBlack: Int = 0, levelsOutWhite: Int = 100,
+    recipeVersion: Int = 1, rendererVersion: Int = 1
   ) {
     self.exposure = Self.clamp(exposure)
     self.brilliance = Self.clamp(brilliance)
@@ -144,6 +156,12 @@ public struct AdjustRecipe: Sendable, Equatable {
     self.vignetteStrength = Self.clamp(vignetteStrength)
     self.vignetteRadius = Self.clamp(vignetteRadius)
     self.vignetteSoftness = Self.clamp(vignetteSoftness)
+    self.levelsInBlack = Self.clamp(levelsInBlack)
+    self.levelsInWhite = Self.clamp(levelsInWhite)
+    self.levelsOutBlack = Self.clamp(levelsOutBlack)
+    self.levelsOutWhite = Self.clamp(levelsOutWhite)
+    self.recipeVersion = recipeVersion
+    self.rendererVersion = rendererVersion
   }
 
   public static func clamp(_ v: Int) -> Int { min(100, max(-100, v)) }
@@ -159,7 +177,9 @@ extension AdjustRecipe: Codable {
     case exposure, brilliance, highlights, shadows, contrast, brightness, blackPoint,
       saturation, vibrance, warmth, tint, sharpness, definition, noiseReduction, vignette,
       autoEnhance, cast, bwIntensity, bwNeutrals, bwTone, grain, wbTemperature, wbTint,
-      sharpenEdges, sharpenFalloff, vignetteStrength, vignetteRadius, vignetteSoftness
+      sharpenEdges, sharpenFalloff, vignetteStrength, vignetteRadius, vignetteSoftness,
+      levelsInBlack, levelsInWhite, levelsOutBlack, levelsOutWhite,
+      recipeVersion, rendererVersion
   }
 
   public init(from decoder: Decoder) throws {
@@ -167,6 +187,12 @@ extension AdjustRecipe: Codable {
     func v(_ k: CodingKeys) -> Int {
       guard let outer = (try? c.decodeIfPresent(Int.self, forKey: k)) else { return 0 }
       return outer ?? 0
+    }
+    /// Missing key decodes to `dflt` (for keys whose default isn't 0, so
+    /// legacy payloads keep identity semantics).
+    func vd(_ k: CodingKeys, dflt: Int) -> Int {
+      guard let outer = (try? c.decodeIfPresent(Int.self, forKey: k)) else { return dflt }
+      return outer ?? dflt
     }
     let autoEnhance: Bool = {
       guard let outer = (try? c.decodeIfPresent(Bool.self, forKey: .autoEnhance)) else { return false }
@@ -183,7 +209,10 @@ extension AdjustRecipe: Codable {
       bwTone: v(.bwTone), grain: v(.grain), wbTemperature: v(.wbTemperature),
       wbTint: v(.wbTint), sharpenEdges: v(.sharpenEdges), sharpenFalloff: v(.sharpenFalloff),
       vignetteStrength: v(.vignetteStrength), vignetteRadius: v(.vignetteRadius),
-      vignetteSoftness: v(.vignetteSoftness))
+      vignetteSoftness: v(.vignetteSoftness),
+      levelsInBlack: v(.levelsInBlack), levelsInWhite: vd(.levelsInWhite, dflt: 100),
+      levelsOutBlack: v(.levelsOutBlack), levelsOutWhite: vd(.levelsOutWhite, dflt: 100),
+      recipeVersion: v(.recipeVersion), rendererVersion: v(.rendererVersion))
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -216,6 +245,12 @@ extension AdjustRecipe: Codable {
     try c.encode(vignetteStrength, forKey: .vignetteStrength)
     try c.encode(vignetteRadius, forKey: .vignetteRadius)
     try c.encode(vignetteSoftness, forKey: .vignetteSoftness)
+    try c.encode(levelsInBlack, forKey: .levelsInBlack)
+    try c.encode(levelsInWhite, forKey: .levelsInWhite)
+    try c.encode(levelsOutBlack, forKey: .levelsOutBlack)
+    try c.encode(levelsOutWhite, forKey: .levelsOutWhite)
+    try c.encode(recipeVersion, forKey: .recipeVersion)
+    try c.encode(rendererVersion, forKey: .rendererVersion)
   }
 }
 

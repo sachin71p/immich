@@ -130,6 +130,43 @@ final class EditUITests: XCTestCase {
     XCTAssertTrue(el("sidebar").waitForExistence(timeout: 10), "exiting edit restores the sidebar")
   }
 
+  // MARK: - D3 Levels handles
+
+  /// Levels input/output handles drive the dedicated keys: arrow keys on the
+  /// focused handle move values ±1, and the change marks the recipe dirty
+  /// (the Discard confirm on Escape proves the new keys participate in dirty
+  /// tracking). Done-save itself stays fixture-gated (E7): Done is disabled
+  /// with no server original.
+  func testLevelsHandlesDriveKeysAndDirtyEdit() {
+    openViewer()
+    openEdit()
+    let options = el("edit.section.options.levels")
+    XCTAssertTrue(options.waitForExistence(timeout: 10), "Levels Options renders")
+    options.click()
+    let inputBlack = el("edit.slider.levels-input-black")
+    XCTAssertTrue(inputBlack.waitForExistence(timeout: 10), "input black handle renders")
+    // The custom handles expose AX role Other (no readable value and no
+    // XCUI adjustable action), so the visible numeric readout carries the
+    // assertion; arrow keys drive the focused handle ±1, proving handles
+    // move keys. Handles are focusable with arrow support in the product,
+    // not just for tests (keyboard-accessible editing).
+    let readout = el("edit.slider.levels-input-readout")
+    XCTAssertTrue(readout.waitForExistence(timeout: 10), "input readout renders")
+    // macOS exposes StaticText content as `value`, not `label`.
+    XCTAssertEqual(readout.value as? String, "0 - 100")
+    inputBlack.click()
+    for _ in 0..<10 { app.typeKey(.upArrow, modifierFlags: []) }
+    XCTAssertEqual(readout.value as? String, "10 - 100")
+    // The drag leaves focus on the handle, which eats Escape as cancelOperation:
+    // click the canvas first so Escape reaches the mode handler.
+    app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    app.typeKey(.escape, modifierFlags: [])
+    let discard = app.sheets.buttons["Discard"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5), "dirty Escape shows Discard confirm")
+    discard.click()
+    assertEditClosed("Discard exits edit mode")
+  }
+
   // MARK: - E7 Done gating
 
   func testDoneGatedWhileOriginalLoads() {

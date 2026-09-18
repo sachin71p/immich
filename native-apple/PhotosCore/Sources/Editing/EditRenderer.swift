@@ -156,6 +156,13 @@ public final class EditRenderer: @unchecked Sendable {
     if a.blackPoint != 0 {
       img = toneCurve(img, black: a.unit(a.blackPoint) * 0.25, white: 0)
     }
+    if a.levelsInBlack != 0 || a.levelsInWhite != 100 || a.levelsOutBlack != 0
+      || a.levelsOutWhite != 100
+    {
+      img = levels(
+        img, inBlack: Double(a.levelsInBlack) / 100, inWhite: Double(a.levelsInWhite) / 100,
+        outBlack: Double(a.levelsOutBlack) / 100, outWhite: Double(a.levelsOutWhite) / 100)
+    }
     if a.vibrance != 0 {
       img = filtered("CIVibrance", img, ["inputAmount": a.unit(a.vibrance)])
     }
@@ -416,6 +423,40 @@ public final class EditRenderer: @unchecked Sendable {
     pattern = pattern.cropped(to: CGRect(x: e.minX, y: e.minY, width: max(e.width, 2), height: max(e.height, 2)))
     return dissolve(foreground: pattern, background: image, amount: min(0.35, amount * 0.25))
       .cropped(to: e)
+  }
+
+  /// True levels transform (D3): input remap [inBlack, inWhite] -> [0, 1] via
+  /// CIToneCurve, then output range scale to [outBlack, outWhite] via
+  /// CIColorMatrix. Degenerate input ranges fall back to identity.
+  private func levels(
+    _ image: CIImage, inBlack: Double, inWhite: Double, outBlack: Double, outWhite: Double
+  ) -> CIImage {
+    let lo = min(1, max(0, min(inBlack, inWhite)))
+    let hi = min(1, max(0, max(inBlack, inWhite)))
+    var img = image
+    if hi - lo > 1e-3 && (lo > 0 || hi < 1) {
+      let f = CIFilter(name: "CIToneCurve")
+      f?.setValue(img, forKey: kCIInputImageKey)
+      f?.setValue(CIVector(x: 0, y: 0), forKey: "inputPoint0")
+      f?.setValue(CIVector(x: lo, y: 0), forKey: "inputPoint1")
+      f?.setValue(CIVector(x: (lo + hi) / 2, y: (lo + hi) / 2), forKey: "inputPoint2")
+      f?.setValue(CIVector(x: hi, y: 1), forKey: "inputPoint3")
+      f?.setValue(CIVector(x: 1, y: 1), forKey: "inputPoint4")
+      img = f?.outputImage ?? img
+    }
+    let scale = outWhite - outBlack
+    if scale != 1 || outBlack != 0 {
+      let m = CIFilter(name: "CIColorMatrix")
+      m?.setValue(img, forKey: kCIInputImageKey)
+      m?.setValue(CIVector(x: scale, y: 0, z: 0, w: 0), forKey: "inputRVector")
+      m?.setValue(CIVector(x: 0, y: scale, z: 0, w: 0), forKey: "inputGVector")
+      m?.setValue(CIVector(x: 0, y: 0, z: scale, w: 0), forKey: "inputBVector")
+      m?.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputAVector")
+      m?.setValue(
+        CIVector(x: outBlack, y: outBlack, z: outBlack, w: 0), forKey: "inputBiasVector")
+      img = m?.outputImage ?? img
+    }
+    return img
   }
 
   private func toneCurve(_ image: CIImage, black: Double, white: Double) -> CIImage {

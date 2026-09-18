@@ -1065,49 +1065,49 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					0D85D641350A0972877BA40F = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					1687D3DFBCC71FF95AB63C24 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 						TestTargetID = E6E2BF7C79DF5ABC1FF5CACA;
 					};
 					22A3362055562D724946234D = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 						TestTargetID = 5AA476FDB0B8F81FFFEB1022;
 					};
 					278B2FEA8D40D4B9AC7EBC7C = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					5AA476FDB0B8F81FFFEB1022 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					684DE8B8868C09C81C09DDF0 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					9B35EFA422FCFD3E02A23CCE = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					BC47A3776A4147CF189475AB = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					BEFA62EBF592CE1BEC3D2747 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					D84723B5E7BCA06F495A86D2 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					E6E2BF7C79DF5ABC1FF5CACA = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1471,7 +1471,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1538,7 +1538,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;

@@ -57,6 +57,59 @@ import Testing
     #expect(crop?["aspect"] as? String == "1:1")
   }
 
+  // MARK: - Levels (D3)
+
+  @Test("[D3] Levels keys default to identity; versions default to 1; clamping holds")
+  func levelsDefaults() {
+    let a = AdjustRecipe()
+    #expect(a.levelsInBlack == 0 && a.levelsInWhite == 100)
+    #expect(a.levelsOutBlack == 0 && a.levelsOutWhite == 100)
+    #expect(a.recipeVersion == 1 && a.rendererVersion == 1)
+    #expect(AdjustRecipe(levelsInWhite: 500).levelsInWhite == 100)
+    #expect(AdjustRecipe(levelsInBlack: -500).levelsInBlack == -100)
+  }
+
+  @Test("[D3] Levels keys round-trip; legacy payloads decode to identity + version 0")
+  func levelsCodable() throws {
+    var a = AdjustRecipe()
+    a.levelsInBlack = 10
+    a.levelsInWhite = 90
+    a.levelsOutBlack = 5
+    a.levelsOutWhite = 95
+    let data = try JSONEncoder().encode(EditRecipe(adjust: a))
+    let back = try JSONDecoder().decode(EditRecipe.self, from: data).adjust
+    #expect(back.levelsInBlack == 10 && back.levelsInWhite == 90)
+    #expect(back.levelsOutBlack == 5 && back.levelsOutWhite == 95)
+    // Legacy payload without the new keys: identity levels, version 0.
+    let legacy = #"{"exposure":25}"#.data(using: .utf8)!
+    let old = try JSONDecoder().decode(AdjustRecipe.self, from: legacy)
+    #expect(old.exposure == 25)
+    #expect(old.levelsInBlack == 0 && old.levelsInWhite == 100)
+    #expect(old.levelsOutBlack == 0 && old.levelsOutWhite == 100)
+    #expect(old.recipeVersion == 0 && old.rendererVersion == 0)
+  }
+
+  @Test("[D3] Identity levels render pixel-identical (levels path is a no-op at defaults)")
+  func levelsIdentityNoOp() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let identity = renderer.pixelHash(source: src, recipe: EditRecipe(adjust: AdjustRecipe()))
+    else { return }
+    #expect(identity == plain)
+  }
+
+  @Test("[D3] Non-default levels change pixels")
+  func levelsChangePixels() {
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = renderer.pixelHash(source: src, recipe: EditRecipe()),
+      let leveled = renderer.pixelHash(
+        source: src, recipe: EditRecipe(adjust: AdjustRecipe(levelsInBlack: 30, levelsOutWhite: 80)))
+    else { return }
+    #expect(leveled != plain)
+  }
+
   @Test("Recipe KV key and payload format tag are pinned")
   func recipeKeyPinned() throws {
     #expect(EditRecipeKey.current == "fork.editRecipe.v1")

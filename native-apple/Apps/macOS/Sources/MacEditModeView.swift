@@ -843,7 +843,7 @@ enum EditAdjustSection: String, CaseIterable {
     case .blackWhite: return [\.bwIntensity, \.bwNeutrals, \.bwTone, \.grain]
     case .whiteBalance: return [\.wbTemperature, \.wbTint, \.warmth, \.tint]
     case .curves: return [\.highlights, \.shadows, \.contrast, \.blackPoint, \.brightness]
-    case .levels: return [\.blackPoint, \.brightness, \.contrast]
+    case .levels: return [\.levelsInBlack, \.levelsInWhite, \.levelsOutBlack, \.levelsOutWhite]
     case .definition: return [\.definition]
     case .selectiveColor: return [\.vibrance, \.cast]
     case .noiseReduction: return [\.noiseReduction]
@@ -867,8 +867,7 @@ enum EditAdjustSection: String, CaseIterable {
       return [("Temperature", \.wbTemperature), ("Tint", \.wbTint), ("Warmth", \.warmth), ("Cast Tint", \.tint)]
     case .curves:
       return [("Highlights", \.highlights), ("Shadows", \.shadows), ("Contrast", \.contrast)]
-    case .levels:
-      return [("Black Point", \.blackPoint), ("Brightness", \.brightness), ("Contrast", \.contrast)]
+    case .levels: return []
     case .definition: return [("Definition", \.definition)]
     case .selectiveColor: return [("Saturation", \.vibrance), ("Cast", \.cast)]
     case .noiseReduction: return [("Noise Reduction", \.noiseReduction)]
@@ -902,7 +901,7 @@ enum EditAdjustSection: String, CaseIterable {
     case .curves:
       return "Curve presets are macros over Highlights / Shadows / Contrast. A freeform RGB + per-channel curve editor is deferred."
     case .levels:
-      return "Level macros over Black Point / Brightness / Contrast. Free input/output handles are deferred."
+      return nil
     case .selectiveColor:
       return "Global saturation/cast macros. Per-hue (6 swatches × Hue / Saturation / Luminance / Range) editing is deferred to owner decision."
     case .redEye:
@@ -948,6 +947,9 @@ private struct EditAdjustSectionView: View {
             }
             if section == .curves {
               curvePresets
+            }
+            if section == .levels {
+              levelsHandles
             }
             if let note = section.deferredNote {
               Text(note).font(.caption2).foregroundStyle(.secondary)
@@ -1087,6 +1089,23 @@ private struct EditAdjustSectionView: View {
     }
   }
 
+  /// True input/output handles (D3): two dual-thumb sliders over the dedicated
+  /// levels keys. Crossing is clamped — low never passes high and vice versa.
+  private var levelsHandles: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      DualThumbSlider(
+        title: "Input", low: $recipe.levelsInBlack, high: $recipe.levelsInWhite,
+        axLow: AXIDs.editSlider("levels-input-black"),
+        axHigh: AXIDs.editSlider("levels-input-white"),
+        axReadout: AXIDs.editSlider("levels-input-readout"))
+      DualThumbSlider(
+        title: "Output", low: $recipe.levelsOutBlack, high: $recipe.levelsOutWhite,
+        axLow: AXIDs.editSlider("levels-output-black"),
+        axHigh: AXIDs.editSlider("levels-output-white"),
+        axReadout: AXIDs.editSlider("levels-output-readout"))
+    }
+  }
+
   private var curvePresets: some View {
     HStack {
       Text("Preset").font(.caption)
@@ -1100,6 +1119,79 @@ private struct EditAdjustSectionView: View {
       }
       .menuStyle(.borderlessButton)
     }
+  }
+}
+
+/// Dual-handle 0...100 range slider (D3 Levels input/output). Each handle drags
+/// continuously and is also an adjustable AX element (swipe steps ±5) so UI
+/// tests can drive it. Crossing is clamped: low never passes high and vice versa.
+private struct DualThumbSlider: View {
+  private static let diameter: Double = 14
+  private static let step = 5
+
+  let title: String
+  @Binding var low: Int
+  @Binding var high: Int
+  let axLow: String
+  let axHigh: String
+  let axReadout: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      HStack {
+        Text(title).font(.caption)
+        Spacer()
+        Text(verbatim: "\(low) - \(high)")
+          .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+          .accessibilityIdentifier(axReadout)
+      }
+      GeometryReader { geo in
+        let span = max(1, geo.size.width - Self.diameter)
+        ZStack(alignment: .leading) {
+          Capsule().fill(.gray.opacity(0.3)).frame(height: 4)
+          RoundedRectangle(cornerRadius: 2)
+            .fill(Color.accentColor)
+            .frame(width: span * CGFloat(high - low) / 100, height: 4)
+            .offset(x: span * CGFloat(low) / 100 + Self.diameter / 2)
+          handle(
+            value: low, span: span, ax: axLow, label: "\(title) low handle",
+            set: { low = min($0, high) })
+          handle(
+            value: high, span: span, ax: axHigh, label: "\(title) high handle",
+            set: { high = max($0, low) })
+        }
+        .frame(height: 22)
+      }
+      .frame(height: 22)
+    }
+  }
+
+  private func handle(
+    value: Int, span: Double, ax: String, label: String, set: @escaping (Int) -> Void
+  ) -> some View {
+    Circle()
+      .fill(.white)
+      .shadow(radius: 1)
+      .frame(width: Self.diameter, height: Self.diameter)
+      .offset(x: span * CGFloat(value) / 100)
+      .gesture(DragGesture(minimumDistance: 1).onChanged { d in
+        let v = Int(((d.location.x - Self.diameter / 2) / span * 100).rounded())
+        set(min(100, max(0, v)))
+      })
+      .focusable()
+      .onKeyPress(.upArrow) { set(min(100, value + 1)); return .handled }
+      .onKeyPress(.downArrow) { set(max(0, value - 1)); return .handled }
+      .accessibilityElement(children: .ignore)
+      .accessibilityAdjustableAction { dir in
+        switch dir {
+        case .increment: set(min(100, value + Self.step))
+        case .decrement: set(max(0, value - Self.step))
+        @unknown default: break
+        }
+      }
+      .accessibilityIdentifier(ax)
+      .accessibilityLabel(label)
+      .accessibilityValue("\(value)")
   }
 }
 
