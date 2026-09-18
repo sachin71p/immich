@@ -447,6 +447,32 @@ final class MacFunctionalTests: XCTestCase {
       "vertical scroll does not page")
   }
 
+  /// V1 pixels (Gate-1 black-viewer regression): the opened viewer must show a
+  /// content image with a real frame. Chrome-only assertions (Back button,
+  /// titles) passed while every page stayed blank, because the pager never
+  /// demanded its initial page — so this asserts pixels, not chrome.
+  func testViewerShowsImageOnOpen() {
+    launchAndWaitForLibrary()
+
+    let cell = el("grid-cell-asset-personal-1")
+    XCTAssertTrue(cell.waitForExistence(timeout: 10), "photo cell renders")
+    cell.doubleClick()
+    XCTAssertTrue(el("viewer").waitForExistence(timeout: 10), "viewer opens")
+
+    // Toolbar icons are ~12 px images; the content image fills the viewer.
+    let images = app.descendants(matching: .image)
+    var found = false
+    let deadline = Date().addingTimeInterval(15)
+    while !found, Date() < deadline {
+      for i in 0..<min(images.count, 12) {
+        let im = images.element(boundBy: i)
+        if im.exists, im.frame.width > 200 { found = true; break }
+      }
+      if !found { Thread.sleep(forTimeInterval: 0.5) }
+    }
+    XCTAssertTrue(found, "viewer shows a content image on open")
+  }
+
   /// Waits (sleep-free, via predicate expectations) until the window title
   /// differs from `before` or returns to `match`.
   private func waitForTitle(changeFrom before: String? = nil, equalTo match: String? = nil, timeout: TimeInterval) -> Bool {

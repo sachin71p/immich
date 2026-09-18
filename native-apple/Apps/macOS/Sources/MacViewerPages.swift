@@ -91,6 +91,24 @@ final class ImagePageController: NSViewController {
     click.numberOfClicksRequired = 2
     scrollView.addGestureRecognizer(click)
     view = scrollView
+    fitDocumentToViewport()
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    fitDocumentToViewport()
+  }
+
+  /// The scroll view never sizes its document: without this the image view
+  /// keeps its zero frame and valid images render as black (V1). Aspect-fit
+  /// comes from `scaleProportionallyUpOrDown`; zoom/pan ride the scroll view's
+  /// magnification, so the document stays viewport-sized at fit.
+  private func fitDocumentToViewport() {
+    let bounds = scrollView.contentView.bounds
+    guard bounds.width > 0, bounds.height > 0,
+      scrollView.magnification <= 1.001
+    else { return }
+    if imageView.frame != bounds { imageView.frame = bounds }
   }
 
   override func viewDidAppear() {

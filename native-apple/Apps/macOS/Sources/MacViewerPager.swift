@@ -85,6 +85,7 @@ final class ViewerPagerViewController: NSViewController, NSPageControllerDelegat
 
   private let pager = NSPageController()
   private var ids: [String] = []
+  private var selectedID: String?
   private var isTransitioning = false
   /// Rapid-press coalescing (V6): at most one pending step; a pending jump
   /// lands without animation.
@@ -111,19 +112,89 @@ final class ViewerPagerViewController: NSViewController, NSPageControllerDelegat
     pager.view.frame = view.bounds
     pager.view.autoresizingMask = [.width, .height]
     view.addSubview(pager.view)
-    reloadArrangedObjects()
+    // Deliberately no arrange here. The strip demands the selected page (and
+    // neighbours) synchronously on arrange, and an arrange that lands before
+    // the host is windowed creates controllers whose views the strip never
+    // installs — a permanently blank viewer. The first arrange happens in
+    // `ensureSelectedPage` once real size and a window exist.
   }
 
   func update(ids: [String], selectedID: String) {
+    self.selectedID = selectedID
     // Never reset arranged objects mid-gesture: SwiftUI re-renders on every
     // slider tick, so only reload when the context itself changed.
     if ids != self.ids {
       self.ids = ids
-      reloadArrangedObjects(preserving: selectedID)
+      lastForcedDemand = nil
+      arrangeIfReady(preserving: selectedID)
     }
-    guard selectedID != currentID, let index = ids.firstIndex(of: selectedID),
-      index != pager.selectedIndex
+    ensureSelectedPage()
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    ensureSelectedPage()
+  }
+
+  /// Token for the last forced demand: re-arranging triggers layout, which
+  /// re-enters `ensureSelectedPage` — without this the repair would repeat
+  /// while the demand is in flight.
+  private var lastForcedDemand: String?
+
+  /// Demands are only meaningful once the host is windowed with real size
+  /// (see `loadView`): arranging earlier creates controllers the strip never
+  /// installs. Context changes that arrive before that moment just store ids;
+  /// `ensureSelectedPage` performs the deferred arrange.
+  private func arrangeIfReady(preserving selectedID: String) {
+    guard view.bounds.width > 0, view.bounds.height > 0, view.window != nil else { return }
+    reloadArrangedObjects(preserving: selectedID)
+  }
+
+  /// Guarantees the selected page is actually displayed. A cache hit alone
+  /// proves nothing: controllers demanded by a pre-window arrange sit in
+  /// `pageCache` while the strip shows nothing, so the check is whether the
+  /// selected page's view made it into a window. A cached-but-never-installed
+  /// page is evicted and re-demanded below; a plain re-assert of the same
+  /// `selectedIndex` is a no-op, so selection bounces through a neighbour to
+  /// force a fresh demand. A no-op when the selected page is showing.
+  private func ensureSelectedPage() {
+    guard !isTransitioning,
+      let sel = selectedID ?? pendingSelection,
+      let index = ids.firstIndex(of: sel)
     else { return }
+    // The strip only ever holds our ids, so a count mismatch means this
+    // exact context was never arranged (deferred pre-window arrange, or a
+    // change that landed mid-transition): arrange now. This is also the only
+    // path that runs against an empty strip, where any direct selection
+    // assignment would fault (NSPageController.m:288).
+    if pager.arrangedObjects.count != ids.count {
+      guard view.bounds.width > 0, view.bounds.height > 0, view.window != nil else { return }
+      reloadArrangedObjects(preserving: sel)
+      return
+    }
+    if let cached = pageCache[ids[index]], cached.view.window != nil {
+      if index != pager.selectedIndex { pager.selectedIndex = index }
+      return
+    }
+    pageCache.removeValue(forKey: ids[index])
+    guard view.bounds.width > 0, view.bounds.height > 0, view.window != nil else { return }
+    let token = "\(ids.count):\(index):\(sel)"
+    guard lastForcedDemand != token else { return }
+    lastForcedDemand = token
+    HeirloomLog.media.debug("viewer forcing page demand index=\(index) of \(self.ids.count)")
+    // Re-asserting the same `selectedIndex` is a no-op that never re-demands,
+    // and clearing arrangedObjects to force one is illegal while the
+    // selection points past the cleared array (`setArrangedObjects:`
+    // re-validates the current index and faults — NSPageController.m:288),
+    // so bounce through a neighbour instead: counts match here, so both
+    // assignments stay in range; each forces a demand plus install, and the
+    // transient neighbour selection converges back to the target below (a
+    // frame at most, from a blank screen). Single-page contexts have no
+    // neighbour, but they arrange correctly on first layout, so eviction
+    // can't arise for them.
+    if ids.count > 1 {
+      pager.selectedIndex = index == 0 ? 1 : index - 1
+    }
     pager.selectedIndex = index
   }
 
@@ -133,9 +204,15 @@ final class ViewerPagerViewController: NSViewController, NSPageControllerDelegat
   }
 
   private func reloadArrangedObjects(preserving selectedID: String? = nil) {
-    pager.arrangedObjects = ids
     let target = selectedID ?? pendingSelection
     pendingSelection = nil
+    // `setArrangedObjects:` re-validates the current selection and faults on
+    // out-of-range (NSPageController.m:288), so park at 0 first when the new
+    // context is smaller than the current index.
+    if !ids.isEmpty, !pager.arrangedObjects.isEmpty, pager.selectedIndex >= ids.count {
+      pager.selectedIndex = 0
+    }
+    pager.arrangedObjects = ids
     if let target, let index = ids.firstIndex(of: target) {
       pager.selectedIndex = index
     }
@@ -252,6 +329,18 @@ struct MacViewerPager: NSViewControllerRepresentable {
   var onPinchCloseEnd: (String, CGFloat) -> Void = { _, _ in }
 
   func makeNSViewController(context: Context) -> ViewerPagerViewController {
+    // The pager demands the selected page (and strip neighbours)
+    // synchronously during the initial arrange in `loadView` — before
+    // SwiftUI's first `updateNSViewController`. If the coordinator still
+    // holds its default blank factory at that point, blank pages get cached
+    // and the viewer stays empty forever. Install the real closures first so
+    // no demand can precede them.
+    context.coordinator.onSelect = onSelect
+    context.coordinator.factory = pageController
+    context.coordinator.preload = onPreload
+    context.coordinator.magnification = onMagnification
+    context.coordinator.pinchClose = onPinchClose
+    context.coordinator.pinchCloseEnd = onPinchCloseEnd
     let host = ViewerPagerViewController(ids: ids, selectedID: selectedID)
     sync(host: host, context: context)
     context.coordinator.host = host
