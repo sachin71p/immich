@@ -57,7 +57,11 @@ targets:
   Heirloom-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [Apps/iOS/UITests]
+    sources:
+      - Apps/iOS/UITests
+      # WP-F: GridPrefetchPolicy is Foundation-only and runs in-process in the
+      # UITest bundle (no XCUI); xcodegen dual-members it into both targets.
+      - Apps/iOS/Sources/Grid/GridPrefetchPolicy.swift
     dependencies:
       - target: Heirloom-iOS
     settings:

@@ -42,6 +42,13 @@ final class PhotoGridViewController: UIViewController {
   private var selectedIds = Set<String>()
   private var lastFiredRange: String = ""
   private var lastScrubSection = -1
+  /// Last ids forwarded to `onPrefetch`, in priority order (F5): scroll-event
+  /// cancellation keeps these plus the visible window, so look-ahead prefetch
+  /// survives the viewport moving. Reset on snapshot apply (windows go stale).
+  private var lastPrefetchedIds: [String] = []
+  /// Gates `pageVisibleRows` (F5): the `assetsLite` query only helps when the
+  /// visible set actually moved — every-scroll-event paging churns the store.
+  private var visibleGate = VisibleWindowGate()
   private var firstPaintFired = false
   private var didApplyNonEmpty = false
   private var lastSummaryUpdate = Date.distantPast
@@ -57,6 +64,9 @@ final class PhotoGridViewController: UIViewController {
     monitor?.currentPhase = "apply"
     appliedGeneration = snapshot.generation
     currentSnapshot = snapshot
+    // Membership/order changed: prefetch and paging windows reference stale ids.
+    lastPrefetchedIds = []
+    visibleGate.reset()
     // Animated diffs of thousands of items wedge the main thread for minutes (the
     // 100k first paint never finished): animate only small updates to a live grid.
     let animated = animating && didApplyNonEmpty && snapshot.allIds.count <= 2000
@@ -339,6 +349,8 @@ final class PhotoGridViewController: UIViewController {
   // MARK: - visible window: paging, range, scroller
 
   /// Pages rows for the visible window plus one screen ahead when the cache misses.
+  /// Gated on the visible set moving (F5): with an unchanged window the ahead-100
+  /// is identical too, so the store query is skipped.
   private func pageVisibleRows() {
     let visible = collectionView.indexPathsForVisibleItems.sorted()
     guard !visible.isEmpty else { return }
@@ -347,6 +359,7 @@ final class PhotoGridViewController: UIViewController {
     for indexPath in visible {
       if let id = dataSource.itemIdentifier(for: indexPath) { ids.append(id) }
     }
+    guard visibleGate.shouldPage(visible: Set(ids)) else { return }
     // One screen ahead in the scroll direction (approx: next 100 items in section order).
     if let last = visible.last {
       var ahead = IndexPath(item: last.item + 1, section: last.section)
@@ -499,13 +512,17 @@ extension PhotoGridViewController: UICollectionViewDelegate {
     monitor?.currentPhase = "scroll"
     updateScroller()
     updatePerfSummary()
-    // Keep prefetch work to the visible window as it moves.
+    // Keep prefetch work to the visible window plus the last forwarded look-ahead
+    // as it moves (F5). Cancelling with the visible set alone kills the cells the
+    // collection view just asked to prefetch, so prefetch never gets in front of a
+    // fling and tiles configure with no image content.
     if let pipeline {
       let ids = Set(
         collectionView.indexPathsForVisibleItems.compactMap {
           dataSource.itemIdentifier(for: $0)
         })
-      pipeline.cancelPrefetch(keeping: ids)
+      pipeline.cancelPrefetch(
+        keeping: GridPrefetchPolicy.keepSet(visible: ids, prefetched: lastPrefetchedIds))
     }
     // Page + range fire only when the visible set actually changed (gated inside).
     pageVisibleRows()
@@ -545,6 +562,7 @@ extension PhotoGridViewController: UICollectionViewDataSourcePrefetching {
       .prefix(60)
       .map(\.0)
     guard !ids.isEmpty else { return }
+    lastPrefetchedIds = ids
     let missing = ids.filter { rowProvider?($0) == nil }
     if !missing.isEmpty { onNeedRows?(missing) }
     onPrefetch?(ids)

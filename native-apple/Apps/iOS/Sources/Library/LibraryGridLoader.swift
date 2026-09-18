@@ -108,19 +108,56 @@ final class LibraryGridLoader: ObservableObject {
   private var debounceTask: Task<Void, Never>?
   private var lastReloadStart = Date.distantPast
   private var loadStart = Date()
+  /// The request behind the currently published snapshot (F4 early-out below).
+  private var lastLoadedRequest: GridDataRequest?
+
+  /// Cross-instance retained timeline product (F4): tab switches recreate the
+  /// SwiftUI view and with it this loader, and a cold `timelineIndex` over 102k
+  /// rows plus snapshot build plus first-window page is what blanks the grid for
+  /// ~4 s on return. Retaining the last timeline product lets a fresh loader
+  /// paint synchronously from what was on screen, then refresh in the background
+  /// without blanking. Timelines only — `.ids` (search) results go stale by
+  /// definition and are never retained. Bounded: one snapshot (~10 MB at 102k
+  /// ids) plus the already-paged rows; thumbnails themselves live in the
+  /// pipeline's budgeted memory/disk caches, not here.
+  private struct RetainedTimeline: Sendable {
+    var request: GridDataRequest
+    var snapshot: GridSnapshot
+    var rows: [String: TimelineRow]
+    var flags: [String: PhotosLocalStore.TimelineIndexFlags]
+  }
+
+  private static var retainedTimeline: RetainedTimeline?
 
   func row(for id: String) -> TimelineRow? { rowsById[id] }
   func flags(for id: String) -> PhotosLocalStore.TimelineIndexFlags { flagsById[id] ?? [] }
 
   /// Loads one pass for `request`, replacing any in-flight load. Empty `.ids` publishes an
   /// empty snapshot immediately (search with no results never spins).
-  func load(request: GridDataRequest, store: PhotosLocalStore) async {
+  /// - Parameter force: sync bumps (`noteSyncBump`) always re-query; a tab return
+  ///   re-issuing the identical request skips it (F4 early-out below).
+  func load(request: GridDataRequest, store: PhotosLocalStore, force: Bool = false) async {
     loadTask?.cancel()
     debounceTask?.cancel()
+    loadStart = Date()
+    // F4: a tab return re-issues the identical load. When this instance already
+    // holds it, the published snapshot is right — skip the index re-query entirely.
+    if !force, request == lastLoadedRequest, !snapshot.isEmpty { return }
+    // F4: a fresh instance (recreated tab view) replays the retained timeline
+    // synchronously for first paint, then falls through to the background refresh
+    // below, which publishes only on change — the grid never blanks.
+    if snapshot.isEmpty, case .timeline = request,
+      let kept = Self.retainedTimeline, kept.request == request
+    {
+      rowsById = kept.rows
+      flagsById = kept.flags
+      lastFirstPaintMs = Date().timeIntervalSince(loadStart) * 1000
+      snapshot = kept.snapshot
+      lastLoadedRequest = request
+    }
     generation += 1
     let current = generation
     isLoading = true
-    loadStart = Date()
     defer {
       if current == generation { isLoading = false }
     }
@@ -130,14 +167,14 @@ final class LibraryGridLoader: ObservableObject {
   /// Sync landed: re-query with a leading load when idle, else one trailing load per 2 s.
   func noteSyncBump(request: GridDataRequest, store: PhotosLocalStore) {
     if Date().timeIntervalSince(lastReloadStart) >= 2 {
-      Task { await load(request: request, store: store) }
+      Task { await load(request: request, store: store, force: true) }
       return
     }
     debounceTask?.cancel()
     debounceTask = Task {
       try? await Task.sleep(nanoseconds: 2_000_000_000)
       guard !Task.isCancelled else { return }
-      await self.load(request: request, store: store)
+      await self.load(request: request, store: store, force: true)
     }
   }
 
@@ -193,6 +230,7 @@ final class LibraryGridLoader: ObservableObject {
     lastSnapshotBuildMs = product.buildMs
     let (snapshot, flags) = (product.snapshot, product.flags)
     guard current == self.generation && !Task.isCancelled else { return }
+    lastLoadedRequest = req
     for (id, flag) in flags { flagsById[id] = flag }
     let firstPaint = self.snapshot.isEmpty && !snapshot.isEmpty
     // Publish a new generation only when membership or order changed — identical sync
@@ -207,5 +245,12 @@ final class LibraryGridLoader: ObservableObject {
     }
     // Page the first window for badges/placeholders even when the snapshot was unchanged.
     await ensureRows(ids: Array(snapshot.allIds.prefix(300)), store: store)
+    // Refresh the retained product (F4) so the next fresh instance replays what is
+    // on screen now. Timelines only; later row pages stay instance-local (the
+    // pipeline caches serve their thumbnails after a return).
+    if case .timeline = req {
+      Self.retainedTimeline = RetainedTimeline(
+        request: req, snapshot: self.snapshot, rows: rowsById, flags: flagsById)
+    }
   }
 }

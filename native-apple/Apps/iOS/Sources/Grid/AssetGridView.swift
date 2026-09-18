@@ -158,6 +158,10 @@ private struct GridBridge: UIViewControllerRepresentable {
   /// Owns the loader→VC subscription (lives with the representable, dies with it).
   final class Coordinator {
     var snapshotCancellable: AnyCancellable?
+    /// Coalesced prefetch (F5): one in-flight window at a time, cancel-and-replace
+    /// on new windows, unchanged windows dropped by the gate below.
+    var prefetchTask: Task<Void, Never>?
+    var prefetchGate = PrefetchWindowGate()
   }
 
   func makeUIViewController(context: Context) -> PhotoGridViewController {
@@ -183,11 +187,20 @@ private struct GridBridge: UIViewControllerRepresentable {
     vc.onSelectionChange = { [weak selection] ids in
       selection?.ids = ids
     }
-    vc.onPrefetch = { [weak pipeline] ids in
+    // F5: coalesce prefetch events — a fling delivers many overlapping windows and
+    // each one used to spawn a full task group against the pipeline's fixed budget,
+    // so stale windows crowded out the current one. Now: unchanged windows are
+    // dropped, and a new window cancels the stale in-flight one (cancellation
+    // propagates through the pipeline's deduped fetch).
+    let coordinator = context.coordinator
+    vc.onPrefetch = { [weak pipeline, weak coordinator] ids in
+      guard let coordinator, let forward = coordinator.prefetchGate.idsToForward(ids)
+      else { return }
       // Fixture art never reaches the network (same guard the pre-WP1 grid had).
-      let real = ids.filter { !FixtureArtwork.isFixtureAsset($0) }
+      let real = forward.filter { !FixtureArtwork.isFixtureAsset($0) }
       guard !real.isEmpty else { return }
-      Task { await pipeline?.prefetch(ids: real, tier: .thumbnail) }
+      coordinator.prefetchTask?.cancel()
+      coordinator.prefetchTask = Task { await pipeline?.prefetch(ids: real, tier: .thumbnail) }
     }
     // Pinch writes straight through the binding (the parent owns the column state).
     let columnsBinding = _columns
