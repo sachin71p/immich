@@ -22,14 +22,15 @@ CONFIGURATION ?= Release
 
 .DEFAULT_GOAL := help
 
-.PHONY: help xcodegen build-ios build-macos build-macos-debug check-ios-device install-ios install-macos \
+.PHONY: help xcodegen build-ios build-macos build-macos-debug check-ios-device install-ios install-ios-release install-macos \
         test-core test-macos-ui \
         mock-server mock-server-down mock-server-logs ios-sim clean
 
 help:
 	@echo "Heirloom native app targets:"
 	@echo "  make build-ios          Build the iOS app for the Simulator"
-	@echo "  make install-ios        Build, install, and launch the iOS app on a connected iPhone"
+	@echo "  make install-ios        Build, install, and launch the iOS app on a connected iPhone (Debug)"
+	@echo "  make install-ios-release  Build, install, and launch the iOS app on a connected iPhone (Release)"
 	@echo "  make build-macos        Build the macOS app (CONFIGURATION=$(CONFIGURATION), default Release)"
 	@echo "  make build-macos-debug  Build the macOS app in Debug (developer iteration)"
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
@@ -42,7 +43,8 @@ help:
 	@echo "  make clean              Remove native-apple build output"
 	@echo ""
 	@echo "Override SIMULATOR_NAME=\"iPhone ...\" to target a different simulator."
-	@echo "Use IOS_DEVICE=spatel or IOS_DEVICE=bpatel with install-ios."
+	@echo "Use IOS_DEVICE=spatel or IOS_DEVICE=bpatel with install-ios / install-ios-release."
+	@echo "WARNING: install-ios-release reinstalls the app, which logs the owner out of Heirloom."
 	@echo "A literal iPhone name or UDID also works for IOS_DEVICE."
 
 xcodegen:
@@ -86,6 +88,33 @@ install-ios: check-ios-device xcodegen
 	xcrun devicectl device process launch --device "$(IOS_DEVICE_UDID)" --terminate-existing $(IOS_BUNDLE_ID); \
 	echo ""; \
 	echo "Heirloom is running on $(IOS_DEVICE)."
+
+# Release device install for honest performance measurement (F6). Mirrors
+# install-ios but with -configuration Release per the §5b working incantation.
+# Debug stays the default device target; use this only when measuring.
+# WARNING: installing the Release build reinstalls the app and logs the owner
+# out — coordinate with the owner before running it on their device.
+install-ios-release: check-ios-device xcodegen
+	@mkdir -p $(MODULE_CACHE)
+	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild \
+		-project Heirloom.xcodeproj \
+		-scheme Heirloom-iOS \
+		-configuration Release \
+		-destination 'generic/platform=iOS' \
+		-derivedDataPath .build/DerivedData \
+		-skipPackagePluginValidation \
+		-allowProvisioningUpdates \
+		-allowProvisioningDeviceRegistration \
+		DEVELOPMENT_TEAM=$(DEVELOPMENT_TEAM) \
+		build
+	@set -e; \
+	app="$(DERIVED_DATA)/Build/Products/Release-iphoneos/Heirloom-iOS.app"; \
+	if [ ! -d "$$app" ]; then echo "error: $$app not found after device build" >&2; exit 1; fi; \
+	xcrun devicectl device install app --device "$(IOS_DEVICE_UDID)" "$$app"; \
+	xcrun devicectl device process launch --device "$(IOS_DEVICE_UDID)" --terminate-existing $(IOS_BUNDLE_ID); \
+	echo ""; \
+	echo "WARNING: reinstalling the app logs the owner out of Heirloom."; \
+	echo "Heirloom (Release) is running on $(IOS_DEVICE)."
 
 # Uses the project's own (automatic) signing config, unlike verify.sh's ad-hoc
 # CI build, so the installed app keeps its App Group entitlement and the
