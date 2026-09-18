@@ -116,6 +116,30 @@ struct SearchView: View {
     // typing debounces into `runSearch` above.
     .searchable(text: $query, placement: .automatic, prompt: "Search photos")
     .accessibilityIdentifier("search-view")
+    .safeAreaInset(edge: .bottom) {
+      HStack(spacing: 8) {
+        Image(systemName: "magnifyingglass")
+          .foregroundStyle(.secondary)
+        TextField("Search photos", text: $query)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+          .accessibilityIdentifier("search-persistent-field")
+        if !query.isEmpty {
+          Button {
+            query = ""
+          } label: {
+            Image(systemName: "xmark.circle.fill")
+              .foregroundStyle(.secondary)
+          }
+          .accessibilityIdentifier("search-clear-query")
+        }
+      }
+      .padding(10)
+      .background(.bar)
+      .clipShape(RoundedRectangle(cornerRadius: 12))
+      .padding(.horizontal)
+      .padding(.bottom, 4)
+    }
   }
 
   // MARK: - toolbar: scope menu (the "All → Library View" filter, as a menu)
@@ -163,11 +187,54 @@ struct SearchView: View {
   private var idleContent: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
+        nlSuggestionsSection
         recentsSection
         suggestionsSection
       }
       .padding()
     }
+  }
+
+  /// Natural-language suggestion chips (P6): time-phrased prompts built from
+  /// the same local filters the pills use, so every chip runs a real search.
+  private var nlSuggestionsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Suggested Searches").font(.headline)
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack {
+          ForEach(nlSuggestionChips, id: \.label) { chip in
+            Button(chip.label) {
+              Task { await applyAndSearch(chip.filter) }
+            }
+            .buttonStyle(.bordered)
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("search-nl-suggestions")
+  }
+
+  private var nlSuggestionChips: [(label: String, filter: SearchFilter)] {
+    var chips: [(label: String, filter: SearchFilter)] = []
+    var favorites = currentFilter()
+    favorites.query = ""
+    favorites.local = LocalAssetFilter()
+    favorites.local.isFavorite = true
+    chips.append((label: "Favorite photos", filter: favorites))
+    for month in Self.recentMonthRanges(count: 2) {
+      var photos = currentFilter()
+      photos.query = ""
+      photos.local.takenAfter = month.start
+      photos.local.takenBefore = month.end
+      chips.append((label: "Photos from \(month.label)", filter: photos))
+      var videos = currentFilter()
+      videos.query = ""
+      videos.local.takenAfter = month.start
+      videos.local.takenBefore = month.end
+      videos.local.mediaType = .video
+      chips.append((label: "Videos from \(month.label)", filter: videos))
+    }
+    return chips
   }
 
   private var visibleRecents: Array<(offset: Int, element: SearchFilter)>.SubSequence {
@@ -201,6 +268,7 @@ struct SearchView: View {
         Text("Recent searches show here with a preview of the top result.")
           .font(.caption)
           .foregroundStyle(.secondary)
+          .accessibilityIdentifier("search-recents-thumbnails")
       } else {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(alignment: .top, spacing: 12) {
@@ -220,8 +288,10 @@ struct SearchView: View {
             }
           }
         }
+        .accessibilityIdentifier("search-recents-thumbnails")
       }
     }
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("search-recents")
   }
 

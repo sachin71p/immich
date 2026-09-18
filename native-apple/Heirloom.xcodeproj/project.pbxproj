@@ -113,6 +113,7 @@
 		AA6BA29CD7FC0168056D59AA /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = C861899D990206AFFFC3FEFD /* Upload */; };
 		AB034DACF8D205272A697724 /* HeirloomAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AEC1F2E0350651E6C9C7E7F /* HeirloomAgent.swift */; };
 		AD13E92873E276DFAF7170A7 /* MacTimelineLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488287F582CF2DB28F7C2A0F /* MacTimelineLayout.swift */; };
+		AE7923470A30DEA4B79AD568 /* AccountPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE5115F92B81617F6FECC405 /* AccountPages.swift */; };
 		AEB202A11B28EBAF089DEF08 /* ParityHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FBC7B8A7F3F52B90B87AC5 /* ParityHarness.swift */; };
 		AF7D28916704CC5133FD8D95 /* GridPrefetchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */; };
 		B1B00CECEF067ED5E8EF8703 /* Media in Frameworks */ = {isa = PBXBuildFile; productRef = 6279A9067853BAACD2E54D99 /* Media */; };
@@ -311,6 +312,7 @@
 		CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorFilter.swift; sourceTree = "<group>"; };
 		CB42CF139FDE95D19202A9F0 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
 		CDFFAB56653C0830EA539F55 /* ParityGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityGridUITests.swift; sourceTree = "<group>"; };
+		CE5115F92B81617F6FECC405 /* AccountPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPages.swift; sourceTree = "<group>"; };
 		CED843D17D53914CE88AD6A8 /* MacConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacConnectView.swift; sourceTree = "<group>"; };
 		CEF6BF761A8E96399365A01B /* BackgroundUploadExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundUploadExtension.swift; sourceTree = "<group>"; };
 		D356BAC6A736A583AB309403 /* MacGridLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGridLoader.swift; sourceTree = "<group>"; };
@@ -692,6 +694,7 @@
 			isa = PBXGroup;
 			children = (
 				E550A94F75F8CDF3CD27321D /* AccountButton.swift */,
+				CE5115F92B81617F6FECC405 /* AccountPages.swift */,
 				4B2D7A646CF868ACBF598C74 /* AccountSheet.swift */,
 			);
 			path = Account;
@@ -1192,6 +1195,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C1D9A22793C61ABAF2CEECD6 /* AccountButton.swift in Sources */,
+				AE7923470A30DEA4B79AD568 /* AccountPages.swift in Sources */,
 				C1F849BA0981B0A80566288D /* AccountSheet.swift in Sources */,
 				FF63AEA2F67C1742EB497D26 /* Albums.swift in Sources */,
 				0148F78B797810189F65B3C7 /* AppSession.swift in Sources */,

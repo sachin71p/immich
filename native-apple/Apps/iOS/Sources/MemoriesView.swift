@@ -12,6 +12,8 @@ struct MemoriesView: View {
   @State private var stories: [MemoryStory] = []
   @State private var onThisDayIds: [String] = []
   @State private var playingStory: MemoryStory?
+  @State private var showTypeToCreate = false
+  @State private var typedStory: MemoryStory?
 
   private static let dateFormatter: DateFormatter = {
     let formatter = DateFormatter()
@@ -22,6 +24,23 @@ struct MemoriesView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: 16) {
+        Button {
+          showTypeToCreate = true
+        } label: {
+          HStack {
+            Image(systemName: "text.bubble")
+            Text("Type to Create…")
+            Spacer()
+            Image(systemName: "chevron.right")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .padding()
+          .background(.gray.opacity(0.2))
+          .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("memories-type-to-create")
         if stories.isEmpty && onThisDayIds.isEmpty {
           ContentUnavailableView(
             "No Memories Yet", systemImage: "clock",
@@ -49,6 +68,14 @@ struct MemoriesView: View {
     .refreshable { await reload() }
     .task { await reload() }
     .fullScreenCover(item: $playingStory) { story in
+      MemoryStoryPlayerView(story: story)
+    }
+    .sheet(isPresented: $showTypeToCreate) {
+      TypeToCreateSheet(session: session) { story in
+        typedStory = story
+      }
+    }
+    .fullScreenCover(item: $typedStory) { story in
       MemoryStoryPlayerView(story: story)
     }
   }
@@ -133,6 +160,92 @@ struct MemoriesView: View {
     } catch {
       // L2: cancellation is never a user-facing error.
       if !error.isCancellation { session.lastError = error.localizedDescription }
+    }
+  }
+}
+
+/// "Type to Create" (P5): Photos' on-demand memory entry. The prompt matches local
+/// dimensions in order — a named person, then a city — and falls back to recent
+/// assets with the prompt as the title, so creation always works offline and in
+/// fixture mode. The built story plays immediately through the standard player.
+struct TypeToCreateSheet: View {
+  @ObservedObject var session: AppSession
+  var onCreate: (MemoryStory) -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var prompt = ""
+  @State private var isBuilding = false
+  @State private var buildError: String?
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField("A person, place, or title…", text: $prompt)
+            .textInputAutocapitalization(.words)
+            .accessibilityIdentifier("type-to-create-field")
+        }
+        if let buildError {
+          Section { Text(buildError).foregroundStyle(.red).font(.caption) }
+        }
+        Section {
+          Button(isBuilding ? "Creating…" : "Create Memory") {
+            Task { await build() }
+          }
+          .disabled(isBuilding)
+          .accessibilityIdentifier("type-to-create-submit")
+        }
+      }
+      .navigationTitle("New Memory")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+      }
+    }
+    .accessibilityIdentifier("type-to-create")
+  }
+
+  private func build() async {
+    guard let store = session.store, !session.userId.isEmpty else { return }
+    isBuilding = true
+    defer { isBuilding = false }
+    do {
+      let scope = try await session.timelineScope()
+      let query = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+      var ids: [String] = []
+      var title = query.isEmpty ? "New Memory" : query
+      if !query.isEmpty {
+        let named = (try? await store.namedPeople(forOwner: session.userId)) ?? []
+        if let person = named.first(where: { $0.name.localizedCaseInsensitiveContains(query) }) {
+          ids = try await store.personAssets(personId: person.id, scope: scope, limit: 20).map(\.id)
+          title = person.name
+        } else {
+          let cities = (try? await store.distinctCities(scope: scope)) ?? []
+          if let city = cities.first(where: {
+            $0.localizedCaseInsensitiveContains(query) || query.localizedCaseInsensitiveContains($0)
+          }) {
+            var filter = LocalAssetFilter()
+            filter.city = city
+            ids = try await store.filterAssets(filter, scope: scope, limit: 20).map(\.id)
+            title = city
+          }
+        }
+      }
+      if ids.isEmpty {
+        ids = try await store.recentAssets(scope: scope, limit: 20).map(\.id)
+      }
+      guard !ids.isEmpty else {
+        buildError = "No photos available yet."
+        return
+      }
+      onCreate(
+        MemoryStory(
+          memoryId: "typed-\(UUID().uuidString)", title: title, memoryAt: Date(), assetIds: ids))
+      dismiss()
+    } catch {
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { buildError = error.localizedDescription }
     }
   }
 }

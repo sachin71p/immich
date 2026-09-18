@@ -74,6 +74,8 @@ struct BackupSettingsSection: View {
         Text(error).foregroundStyle(.red).font(.caption)
       }
     }
+    // WP-P P4: the Heirloom-only Backup row must survive the §3 merge.
+    .accessibilityIdentifier("settings-backup-photos")
     .task {
       albums = PhotoKitBackupScanner.availableAlbums()
       await refreshCount()
