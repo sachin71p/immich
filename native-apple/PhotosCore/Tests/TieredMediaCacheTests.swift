@@ -101,6 +101,17 @@ private func bytes(_ count: Int, seed: UInt8 = 0) -> Data {
     #expect(await reopened.retrieve(assetID: "a", tier: .preview) == bytes(25))
   }
 
+  @Test("[E1] original-tier bytes survive restarts so repeat Edit opens hit disk")
+  func originalTierPersistsAcrossInstances() async throws {
+    // Edit's cache-first original load depends on this: the first open stores,
+    // every later open (including after relaunch) must retrieve identical bytes.
+    let (cache, root) = try await freshCache()
+    try await cache.store(bytes(64, seed: 7), assetID: "a", tier: .original)
+    let reopened = TieredMediaCache(rootDirectory: root, budgets: CacheBudgets(bytes: [:]))
+    #expect(await reopened.retrieve(assetID: "a", tier: .original) == bytes(64, seed: 7))
+    #expect(await reopened.retrieve(assetID: "missing", tier: .original) == nil)
+  }
+
   @Test("[WP1] init never scans: instant with 20k files present, index builds lazily")
   func lazyInitWithManyFiles() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
