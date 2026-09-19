@@ -110,6 +110,36 @@ import Testing
     #expect(leveled != plain)
   }
 
+  @Test("[D3] Levels with inBlack 0 brighten instead of rendering black")
+  func levelsZeroBlackNotBlack() {
+    // Regression: anchoring CIToneCurve stops AT lo/hi duplicated x=0 when
+    // inBlack was 0, and the filter rendered pure black on-device (CPU unit
+    // tests passed). Narrowing the white point must brighten, never blacken.
+    func mean(_ img: CIImage, renderer: EditRenderer, adjust: AdjustRecipe) -> Double? {
+      guard let cg = renderer.cgImage(source: img, recipe: EditRecipe(adjust: adjust)),
+        let data = cg.dataProvider?.data as Data?
+      else { return nil }
+      let bpp = cg.bitsPerPixel / 8
+      guard bpp > 0, !data.isEmpty else { return nil }
+      var sum = 0.0
+      var n = 0
+      for i in stride(from: 0, to: data.count, by: bpp) { sum += Double(data[i]); n += 1 }
+      return sum / Double(n) / 255.0
+    }
+    let renderer = EditRenderer()
+    let src = fixtureImage()
+    guard let plain = mean(src, renderer: renderer, adjust: AdjustRecipe()),
+      let lifted = mean(
+        src, renderer: renderer,
+        adjust: AdjustRecipe(levelsInBlack: 0, levelsInWhite: 68))
+    else {
+      Issue.record("levels renders produced no bytes")
+      return
+    }
+    #expect(lifted > 0.01, "inBlack 0 must not render black")
+    #expect(lifted > plain, "narrowing white must brighten")
+  }
+
   // MARK: - Selective Color (D1)
 
   @Test("[D1] Selective keys default to neutral; clamping holds")

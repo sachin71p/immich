@@ -523,13 +523,17 @@ public final class EditRenderer: @unchecked Sendable {
     let hi = min(1, max(0, max(inBlack, inWhite)))
     var img = image
     if hi - lo > 1e-3 && (lo > 0 || hi < 1) {
+      // Sample the linear [lo, hi] -> [0, 1] remap at the filter's 5 fixed
+      // x-stops (always distinct). Anchoring stops AT lo/hi duplicates a stop
+      // when lo == 0 or hi == 1, and CIToneCurve renders black for duplicate
+      // x values on-device (verified: inBlack 0 meant mean 0.0 on GPU while
+      // CPU unit tests passed). Sampling a linear map is exact at the stops.
       let f = CIFilter(name: "CIToneCurve")
       f?.setValue(img, forKey: kCIInputImageKey)
-      f?.setValue(CIVector(x: 0, y: 0), forKey: "inputPoint0")
-      f?.setValue(CIVector(x: lo, y: 0), forKey: "inputPoint1")
-      f?.setValue(CIVector(x: (lo + hi) / 2, y: (lo + hi) / 2), forKey: "inputPoint2")
-      f?.setValue(CIVector(x: hi, y: 1), forKey: "inputPoint3")
-      f?.setValue(CIVector(x: 1, y: 1), forKey: "inputPoint4")
+      for (i, x) in [0.0, 0.25, 0.5, 0.75, 1.0].enumerated() {
+        let y = min(1, max(0, (x - lo) / (hi - lo)))
+        f?.setValue(CIVector(x: x, y: y), forKey: "inputPoint\(i)")
+      }
       img = f?.outputImage ?? img
     }
     let scale = outWhite - outBlack
