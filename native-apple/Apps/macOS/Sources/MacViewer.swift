@@ -745,6 +745,7 @@ struct MacViewerView: View {
     // here beats a silent blur later (NSImage decodes it to nil and the canvas
     // falls back to the proxy with no alert).
     let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+    print("[heirloom-edit] TEMP-DEBUG original GET \(request.url?.absoluteString ?? "<nil>") -> HTTP \(status), \(data.count) bytes")
     guard (200..<300).contains(status) else {
       throw EditDownloadError.http(status: status, bytes: data.count)
     }
