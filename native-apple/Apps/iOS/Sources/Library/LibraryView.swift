@@ -460,6 +460,8 @@ struct LibraryView: View {
           },
           // TRACK G: scroll-at-top flips drive the bottom-chrome two states.
           onAtTopChange: { isGridAtTop = $0 },
+          timelineAscending: true,
+          openAtBottom: true,
           session: session
         )
         .accessibilityIdentifier("library-grid")

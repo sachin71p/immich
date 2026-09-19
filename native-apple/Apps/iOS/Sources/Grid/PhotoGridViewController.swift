@@ -119,6 +119,10 @@ final class PhotoGridViewController: UIViewController {
     if !firstPaintFired, !snapshot.isEmpty {
       firstPaintFired = true
       onFirstPaint?()
+      if openAtBottom, !didOpenAtBottom {
+        didOpenAtBottom = true
+        scrollToBottom(animated: false)
+      }
     }
     updatePerfSummary(force: true)
   }
@@ -214,6 +218,22 @@ final class PhotoGridViewController: UIViewController {
     }
     collectionView.scrollToItem(
       at: IndexPath(item: 0, section: section), at: .top, animated: animated)
+  }
+
+  /// Photos parity (Library All): open scrolled to the newest (bottom).
+  /// VC-lifetime once-flag — tab returns, filter changes and sync bumps reuse
+  /// the VC and must keep position. Set from the bridge; default false.
+  var openAtBottom = false
+  private var didOpenAtBottom = false
+
+  private func scrollToBottom(animated: Bool = false) {
+    collectionView.layoutIfNeeded()
+    let lastSection = collectionView.numberOfSections - 1
+    guard lastSection >= 0 else { return }
+    let lastItem = collectionView.numberOfItems(inSection: lastSection) - 1
+    guard lastItem >= 0 else { return }
+    collectionView.scrollToItem(
+      at: IndexPath(item: lastItem, section: lastSection), at: .bottom, animated: animated)
   }
 
   func scrollToId(_ id: String, animated: Bool = false) {
@@ -367,6 +387,9 @@ final class PhotoGridViewController: UIViewController {
 
   private func configure(_ cell: PhotoGridCell, id: String) {
     monitor?.currentPhase = "configure"
+    // Stable per-asset identifier for UI tests (order/position pins); the
+    // VoiceOver label is untouched.
+    cell.accessibilityIdentifier = "grid-cell-\(id)"
     let row = rowProvider?(id)
     let flags = flagsProvider?(id) ?? []
     cell.configureBadges(row: row, flags: flags, currentUserId: currentUserId)
