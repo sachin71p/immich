@@ -741,6 +741,7 @@ struct MacViewerView: View {
     if let cached = await state.diskCache.retrieve(assetID: asset.id, tier: .original),
       !cached.isEmpty
     {
+      print("[heirloom-edit] TEMP-DEBUG original HIT \(asset.id) (\(cached.count) bytes, no download)")
       return cached
     }
     var request = URLRequest(
