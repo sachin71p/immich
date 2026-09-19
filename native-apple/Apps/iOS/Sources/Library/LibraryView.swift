@@ -30,6 +30,16 @@ struct LibraryView: View {
   @State private var itemCount = 0
   @State private var visibleFirst: Date?
   @State private var visibleLast: Date?
+  // F2: resolved grid inputs keyed by filterTaskKey (stale-while-revalidate).
+  // A rebuilt LibraryView (tab return) replays the cached source instantly
+  // instead of sitting on the ProgressView through a full resolve; the resolve
+  // below still runs and reassigns (same value = no churn, new value = update).
+  // Only timeline sources and small id lists are cached — a 100k search-result
+  // list must never sit in a static. Counts ride along so the subtitle is
+  // right during the cached window too.
+  static var cachedGrids: [(key: String, source: AssetGridSource?, count: Int)] = []
+  static let cachedGridCap = 6
+  static let cachedIdsCap = 2000
   @State private var viewerRequest: ViewerRequest?
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
@@ -289,6 +299,13 @@ struct LibraryView: View {
   }
 
   private func resolveGrid() async {
+    // F2: replay the cached source first (see cachedGrids): a rebuilt view paints
+    // the grid immediately while the queries below revalidate in the background.
+    let key = filterTaskKey
+    if gridSource == nil, let hit = Self.cachedGrids.first(where: { $0.key == key }) {
+      gridSource = hit.source
+      itemCount = hit.count
+    }
     guard let store = session.store else { return }
     // L2: a stale cancellation banner from a previous launch never survives a fresh load.
     await ErrorFilter.clearStaleCancellation(in: session)
@@ -310,17 +327,33 @@ struct LibraryView: View {
         guard !Task.isCancelled else { return }
         gridSource = resolved.source
         itemCount = resolved.count
+        Self.cacheGrid(key: key, source: resolved.source, count: resolved.count)
       } else {
         // Years/Months views fetch their own buckets; the count still comes from
         // the compact index so the bottom label stays correct on every level.
         let index = try await store.timelineIndex(scope: scope)
         guard !Task.isCancelled else { return }
         itemCount = index.entries.count
+        Self.cacheGrid(key: key, source: nil, count: index.entries.count)
       }
     } catch {
       // L2: `.task(id:)` restarts cancel in-flight loads — cancellation is not an error.
       if !error.isCancellation { session.lastError = error.localizedDescription }
     }
+  }
+
+  /// F2: bounded cache write. Large `.ids` lists are counts-only — the list
+  /// itself is cheap to re-derive next to a bounded cache, never worth pinning.
+  static func cacheGrid(key: String, source: AssetGridSource?, count: Int) {
+    let cacheable: AssetGridSource?
+    if case .ids(let ids) = source, ids.count > cachedIdsCap {
+      cacheable = nil
+    } else {
+      cacheable = source
+    }
+    cachedGrids.removeAll { $0.key == key }
+    cachedGrids.append((key: key, source: cacheable, count: count))
+    while cachedGrids.count > cachedGridCap { cachedGrids.removeFirst() }
   }
 
   func refreshAll() async {

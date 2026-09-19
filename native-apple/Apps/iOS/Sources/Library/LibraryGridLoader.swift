@@ -111,15 +111,19 @@ final class LibraryGridLoader: ObservableObject {
   /// The request behind the currently published snapshot (F4 early-out below).
   private var lastLoadedRequest: GridDataRequest?
 
-  /// Cross-instance retained timeline product (F4): tab switches recreate the
-  /// SwiftUI view and with it this loader, and a cold `timelineIndex` over 102k
-  /// rows plus snapshot build plus first-window page is what blanks the grid for
-  /// ~4 s on return. Retaining the last timeline product lets a fresh loader
-  /// paint synchronously from what was on screen, then refresh in the background
-  /// without blanking. Timelines only — `.ids` (search) results go stale by
-  /// definition and are never retained. Bounded: one snapshot (~10 MB at 102k
-  /// ids) plus the already-paged rows; thumbnails themselves live in the
-  /// pipeline's budgeted memory/disk caches, not here.
+  /// Cross-instance retained timeline products (F4, keyed by request): tab
+  /// switches recreate the SwiftUI view and with it this loader, and a cold
+  /// `timelineIndex` over 102k rows plus snapshot build plus first-window page
+  /// is what blanks the grid for ~4 s on return. Retaining the timeline product
+  /// lets a fresh loader paint synchronously from what was on screen, then
+  /// refresh in the background without blanking. Timelines only — `.ids`
+  /// (search) results go stale by definition and are never retained.
+  /// Keyed (F1), not a single slot: Library, album, and collection-detail grids
+  /// all load timelines, and a single slot meant opening an album evicted the
+  /// Library product — every back-navigation then missed replay and paid a full
+  /// reload. Bounded (oldest evicted past the cap): one snapshot is ~10 MB at
+  /// 102k ids; thumbnails themselves live in the pipeline's budgeted
+  /// memory/disk caches, not here.
   private struct RetainedTimeline: Sendable {
     var request: GridDataRequest
     var snapshot: GridSnapshot
@@ -127,7 +131,23 @@ final class LibraryGridLoader: ObservableObject {
     var flags: [String: PhotosLocalStore.TimelineIndexFlags]
   }
 
-  private static var retainedTimeline: RetainedTimeline?
+  private static let retainedTimelineCap = 4
+  private static var retainedTimelines: [(request: GridDataRequest, kept: RetainedTimeline)] = []
+
+  private static func retained(for request: GridDataRequest) -> RetainedTimeline? {
+    retainedTimelines.first { $0.request == request }?.kept
+  }
+
+  private static func storeRetained(
+    request: GridDataRequest, snapshot: GridSnapshot,
+    rows: [String: TimelineRow], flags: [String: PhotosLocalStore.TimelineIndexFlags]
+  ) {
+    retainedTimelines.removeAll { $0.request == request }
+    retainedTimelines.append(
+      (request: request,
+       kept: RetainedTimeline(request: request, snapshot: snapshot, rows: rows, flags: flags)))
+    while retainedTimelines.count > retainedTimelineCap { retainedTimelines.removeFirst() }
+  }
 
   func row(for id: String) -> TimelineRow? { rowsById[id] }
   func flags(for id: String) -> PhotosLocalStore.TimelineIndexFlags { flagsById[id] ?? [] }
@@ -147,7 +167,7 @@ final class LibraryGridLoader: ObservableObject {
     // synchronously for first paint, then falls through to the background refresh
     // below, which publishes only on change — the grid never blanks.
     if snapshot.isEmpty, case .timeline = request,
-      let kept = Self.retainedTimeline, kept.request == request
+      let kept = Self.retained(for: request)
     {
       rowsById = kept.rows
       flagsById = kept.flags
@@ -249,8 +269,7 @@ final class LibraryGridLoader: ObservableObject {
     // on screen now. Timelines only; later row pages stay instance-local (the
     // pipeline caches serve their thumbnails after a return).
     if case .timeline = req {
-      Self.retainedTimeline = RetainedTimeline(
-        request: req, snapshot: self.snapshot, rows: rowsById, flags: flagsById)
+      Self.storeRetained(request: req, snapshot: self.snapshot, rows: rowsById, flags: flagsById)
     }
   }
 }
