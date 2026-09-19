@@ -10,7 +10,10 @@ import SwiftUI
 /// (`VideoPage` reserves this space so the pill always sits above the chrome).
 enum ViewerLayout {
   static let bottomReserve: CGFloat = 152
-  static let filmstripHeight: CGFloat = 52
+  // LP3 (pair 04): Photos-scale neighbour thumbs — the 52pt strip read oversized
+  // next to Photos. bottomReserve is untouched (the video scrubber contract).
+  static let filmstripHeight: CGFloat = 36
+  static let filmstripThumbWidth: CGFloat = 32
   static let barButtonSize: CGFloat = 52
 }
 
@@ -36,8 +39,9 @@ enum ViewerDateText {
     return formatter
   }()
 
-  /// (line1, line2) for the centre pill: place over weekday · date · time, or
-  /// date over weekday · date · time when no place is known (V1, pair `04`).
+  /// (line1, line2) for the centre pill: place over weekday · time, or
+  /// date over weekday · time when no place is known (LP3, pair `04` — Photos
+  /// shows `Monday 7:43 PM`, never repeating the date line).
   static func pillLines(date: Date?, city: String?) -> (String, String) {
     guard let date else { return (city ?? "", "") }
     let line2 = detailLine(date: date)
@@ -45,9 +49,10 @@ enum ViewerDateText {
     return (day.string(from: date), line2)
   }
 
-  /// V1 detail line: weekday + date + time (`Friday · Aug 21, 2026 · 7:13 PM`).
+  /// LP3 detail line: weekday + time only (`Friday · 7:13 PM`). The date lives
+  /// on line 1 already, so repeating it here doubled the pill toward 2× Photos.
   static func detailLine(date: Date) -> String {
-    "\(weekday.string(from: date)) · \(day.string(from: date)) · \(time.string(from: date))"
+    "\(weekday.string(from: date)) · \(time.string(from: date))"
   }
 }
 
@@ -98,12 +103,13 @@ struct ViewerTopBar: View {
           Text(line2)
             .font(.caption)
             .foregroundStyle(HeirloomAppearance.chromePrimaryText)
-            // V1: weekday + date + time slot.
+            // LP3: weekday + time slot (Photos pair `04` — no date repeat).
             .accessibilityIdentifier("viewer-title-weekday")
         }
       }
-      .padding(.horizontal, 20)
-      .padding(.vertical, 8)
+      // LP3 (pair 04): tighter capsule toward the Photos pill size.
+      .padding(.horizontal, 16)
+      .padding(.vertical, 6)
       .glassEffect(
         .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
       Spacer()
@@ -254,7 +260,7 @@ private struct ViewerThumb: View {
         Rectangle().fill(HeirloomAppearance.chromeSubtleFill)
       }
     }
-    .frame(width: 44, height: ViewerLayout.filmstripHeight)
+    .frame(width: ViewerLayout.filmstripThumbWidth, height: ViewerLayout.filmstripHeight)
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
       if isCurrent {
