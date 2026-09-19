@@ -22,10 +22,14 @@ struct ViewerPager: UIViewControllerRepresentable {
   @Binding var currentIndex: Int
   /// Shared Live Photo play trigger (a reference so already-built pages see each tap).
   var livePlay: LivePlayRequest
+  /// WP-V (V2): shared enhance toggle (reference — pages observe it).
+  var enhance: EnhanceState = EnhanceState()
   /// False while the info panel is open, so closing it can't dismiss the viewer.
   var dismissEnabled: Bool = true
   var onSingleTap: () -> Void
   var onDismiss: () -> Void
+  /// WP-V (V8): pinch-in at min zoom (gated by `dismissEnabled` like the pan).
+  var onPinchDismiss: () -> Void = {}
   var onSwipeUp: () -> Void = {}
 
   func makeUIViewController(context: Context) -> ViewerPageController {
@@ -38,9 +42,11 @@ struct ViewerPager: UIViewControllerRepresentable {
       startIndex: indexBinding.wrappedValue,
       session: session,
       livePlay: livePlay,
+      enhance: enhance,
       onIndexChange: { index in indexBinding.wrappedValue = index },
       onSingleTap: onSingleTap,
       onDismiss: onDismiss,
+      onPinchDismiss: onPinchDismiss,
       onSwipeUp: onSwipeUp)
     controller.dismissEnabled = dismissEnabled
     context.coordinator.controller = controller
@@ -80,27 +86,33 @@ final class ViewerPageController: UIPageViewController {
   private(set) var currentIndex: Int
   private let session: AppSession
   private let livePlay: LivePlayRequest
+  private let enhance: EnhanceState
   private let onIndexChange: (Int) -> Void
   private let onSingleTap: () -> Void
   private let onDismiss: () -> Void
+  private let onPinchDismiss: () -> Void
   private let onSwipeUp: () -> Void
   private var prefetch: Task<Void, Never>?
 
   init(
     ids: [String], startIndex: Int, session: AppSession,
     livePlay: LivePlayRequest,
+    enhance: EnhanceState,
     onIndexChange: @escaping (Int) -> Void,
     onSingleTap: @escaping () -> Void,
     onDismiss: @escaping () -> Void,
+    onPinchDismiss: @escaping () -> Void,
     onSwipeUp: @escaping () -> Void
   ) {
     self.ids = ids
     self.currentIndex = min(max(startIndex, 0), max(ids.count - 1, 0))
     self.session = session
     self.livePlay = livePlay
+    self.enhance = enhance
     self.onIndexChange = onIndexChange
     self.onSingleTap = onSingleTap
     self.onDismiss = onDismiss
+    self.onPinchDismiss = onPinchDismiss
     self.onSwipeUp = onSwipeUp
     super.init(
       transitionStyle: .scroll, navigationOrientation: .horizontal, options: nil)
@@ -113,7 +125,9 @@ final class ViewerPageController: UIPageViewController {
     super.viewDidLoad()
     dataSource = self
     delegate = self
-    view.backgroundColor = .black
+    // WP-L L1: same contract as HeirloomAppearance.viewerBackdrop — black in
+    // dark, system background in light (UIKit cannot read the SwiftUI token).
+    view.backgroundColor = HeirloomAppearance.viewerBackdropUIColor
     view.accessibilityIdentifier = "viewer-pager"
     if let first = page(at: currentIndex) {
       setViewControllers([first], direction: .forward, animated: false)
@@ -141,9 +155,17 @@ final class ViewerPageController: UIPageViewController {
 
   private func page(at index: Int) -> ViewerPageHost? {
     guard ids.indices.contains(index) else { return nil }
-    let page = ViewerPage(assetId: ids[index], onSingleTap: onSingleTap, livePlay: livePlay)
+    // WP-V (V8): pinch dismiss honours the same gate as the dismiss pan, so a
+    // pinch while the info panel is open can't throw away the viewer.
+    let page = ViewerPage(
+      assetId: ids[index], onSingleTap: onSingleTap, livePlay: livePlay,
+      enhance: enhance,
+      onPinchDismiss: { [weak self] in
+        guard let self, self.dismissEnabled else { return }
+        self.onPinchDismiss()
+      })
     let host = ViewerPageHost(pageIndex: index, rootView: AnyView(page.environmentObject(session)))
-    host.view.backgroundColor = .black
+    host.view.backgroundColor = HeirloomAppearance.viewerBackdropUIColor
     return host
   }
 

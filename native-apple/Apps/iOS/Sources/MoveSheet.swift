@@ -80,7 +80,7 @@ struct SelectionActionBar: View {
 
   private func shareSelected() {
     Task {
-      guard let base = session.serverURL,
+      guard let base = session.apiBaseURL,
         let token = await session.bearerToken(),
         let window = UIApplication.shared.connectedScenes
           .compactMap({ $0 as? UIWindowScene }).first?.windows.first

@@ -23,6 +23,12 @@ enum ViewerDateText {
     return formatter
   }()
 
+  private static let weekday: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "EEEE"
+    return formatter
+  }()
+
   private static let time: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateStyle = .none
@@ -30,13 +36,18 @@ enum ViewerDateText {
     return formatter
   }()
 
-  /// (line1, line2) for the centre pill: location over date · time, or date over time.
+  /// (line1, line2) for the centre pill: place over weekday · date · time, or
+  /// date over weekday · date · time when no place is known (V1, pair `04`).
   static func pillLines(date: Date?, city: String?) -> (String, String) {
     guard let date else { return (city ?? "", "") }
-    let dayString = day.string(from: date)
-    let timeString = time.string(from: date)
-    if let city, !city.isEmpty { return (city, "\(dayString)  \(timeString)") }
-    return (dayString, timeString)
+    let line2 = detailLine(date: date)
+    if let city, !city.isEmpty { return (city, line2) }
+    return (day.string(from: date), line2)
+  }
+
+  /// V1 detail line: weekday + date + time (`Friday · Aug 21, 2026 · 7:13 PM`).
+  static func detailLine(date: Date) -> String {
+    "\(weekday.string(from: date)) · \(day.string(from: date)) · \(time.string(from: date))"
   }
 }
 
@@ -46,21 +57,33 @@ final class LivePlayRequest: ObservableObject {
   @Published var token = 0
 }
 
-/// Top overlay: glass back chevron, centre location/date pill, "…" menu.
+/// Shared display-only enhance toggle (V2): a reference so the already-built
+/// page host sees each tap. Preview only — it never writes to the asset.
+final class EnhanceState: ObservableObject {
+  @Published var on = false
+}
+
+/// Top overlay: glass back chevron, centre place/date pill, enhance, "…" menu.
 struct ViewerTopBar: View {
   var line1: String
   var line2: String
   var menu: AnyView
   var onBack: () -> Void
+  /// V2 enhance affordance (stills only — the caller hides it for video/live).
+  var showEnhance = false
+  var enhanceOn = false
+  var onEnhance: () -> Void = {}
 
   var body: some View {
     HStack(alignment: .center) {
       Button(action: onBack) {
         Image(systemName: "chevron.left")
           .font(.title3.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
           .frame(width: ViewerLayout.barButtonSize, height: ViewerLayout.barButtonSize)
-          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .circle)
+          // WP-L L1: white-based pills in light, black-based in dark (pair L02).
+          .glassEffect(
+            .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .circle)
       }
       .accessibilityLabel("Back")
       .accessibilityIdentifier("viewer-back")
@@ -68,34 +91,57 @@ struct ViewerTopBar: View {
       VStack(spacing: 1) {
         Text(line1)
           .font(.subheadline.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
+          // V1: the place slot (place name when known, date fallback).
+          .accessibilityIdentifier("viewer-title-place")
         if !line2.isEmpty {
           Text(line2)
             .font(.caption)
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(HeirloomAppearance.chromePrimaryText)
+            // V1: weekday + date + time slot.
+            .accessibilityIdentifier("viewer-title-weekday")
         }
       }
       .padding(.horizontal, 20)
       .padding(.vertical, 8)
-      .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+      .glassEffect(
+        .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
       Spacer()
+      if showEnhance {
+        Button(action: onEnhance) {
+          Image(systemName: "wand.and.stars")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(HeirloomAppearance.chromePrimaryText)
+            .opacity(enhanceOn ? 1 : 0.75)
+            .frame(width: ViewerLayout.barButtonSize, height: ViewerLayout.barButtonSize)
+            .glassEffect(
+              .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .circle)
+        }
+        .accessibilityLabel("Enhance")
+        .accessibilityValue(enhanceOn ? "On" : "Off")
+        .accessibilityIdentifier("viewer-enhance")
+      }
       Menu { menu }
       label: {
         Image(systemName: "ellipsis")
           .font(.title3.weight(.semibold))
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
           .frame(width: ViewerLayout.barButtonSize, height: ViewerLayout.barButtonSize)
-          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .circle)
+          .glassEffect(
+            .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .circle)
       }
       .accessibilityLabel("More")
     }
   }
 }
 
-/// Badge row under the top bar: LIVE (tap to play) and "From <owner>" for space assets.
+/// Badge row under the top bar: LIVE (tap to play), people (V1), and
+/// "From <owner>" for space assets.
 struct ViewerBadgeRow: View {
   var isLive: Bool
   var ownerName: String?
+  /// V1 people badge: names depicting this asset (empty hides the badge).
+  var peopleNames: [String] = []
   var onPlayLive: () -> Void
 
   var body: some View {
@@ -107,12 +153,29 @@ struct ViewerBadgeRow: View {
             Text("LIVE")
               .font(.caption.weight(.semibold))
           }
-          .foregroundStyle(.white)
+          .foregroundStyle(HeirloomAppearance.chromePrimaryText)
           .padding(.horizontal, 10)
           .padding(.vertical, 6)
-          .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+          .glassEffect(
+            .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
         }
         .accessibilityLabel("Play Live Photo")
+        .accessibilityIdentifier("viewer-live-badge")
+      }
+      if !peopleNames.isEmpty {
+        HStack(spacing: 4) {
+          Image(systemName: "person.2.circle.fill")
+          Text(peopleNames.prefix(2).joined(separator: ", "))
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+        }
+        .foregroundStyle(HeirloomAppearance.chromePrimaryText)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .glassEffect(
+          .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
+        .accessibilityLabel("People in this photo: \(peopleNames.joined(separator: ", "))")
+        .accessibilityIdentifier("viewer-title-people")
       }
       if let ownerName, !ownerName.isEmpty {
         HStack(spacing: 4) {
@@ -122,10 +185,11 @@ struct ViewerBadgeRow: View {
           Image(systemName: "chevron.right")
             .font(.caption2.weight(.semibold))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(HeirloomAppearance.chromePrimaryText)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+        .glassEffect(
+          .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
         .accessibilityLabel("Shared by \(ownerName)")
       }
       Spacer()
@@ -187,7 +251,7 @@ private struct ViewerThumb: View {
           .resizable()
           .aspectRatio(contentMode: .fill)
       } else {
-        Rectangle().fill(.white.opacity(0.15))
+        Rectangle().fill(HeirloomAppearance.chromeSubtleFill)
       }
     }
     .frame(width: 44, height: ViewerLayout.filmstripHeight)
@@ -195,7 +259,7 @@ private struct ViewerThumb: View {
     .overlay {
       if isCurrent {
         RoundedRectangle(cornerRadius: 8)
-          .stroke(.white, lineWidth: 2)
+          .stroke(HeirloomAppearance.chromePrimaryText, lineWidth: 2)
       }
     }
     .task(id: id) { await load() }
@@ -221,7 +285,9 @@ private struct ViewerThumb: View {
   }
 }
 
-/// Bottom glass bar: Share · Favorite · Info · Adjust · Trash, permission-gated.
+/// Bottom toolbar (V3, pair `04`): three glass groups — `[share]` ·
+/// `[favorite info adjust]` · `[trash]` — with the same per-button permission
+/// gates and labels the single pill had.
 struct ViewerGlassBar: View {
   var asset: Asset
   var access: AccessContext
@@ -232,33 +298,56 @@ struct ViewerGlassBar: View {
   var onAdjust: () -> Void
   var onTrash: () -> Void
 
+  private var canShare: Bool { Permissions.hasContainerAccess(asset.container, in: access) }
+  private var canStar: Bool { Permissions.canFavorite(asset, in: access) }
+  private var canAdjust: Bool { Permissions.canEdit(asset, in: access) }
+  private var canTrash: Bool { Permissions.canDelete(asset, in: access) }
+
   var body: some View {
+    HStack(spacing: 10) {
+      if canShare {
+        group {
+          barButton("Share", system: "square.and.arrow.up", action: onShare)
+        }
+        .accessibilityIdentifier("viewer-toolbar-share")
+      }
+      // Info is unconditional, so the middle group always exists.
+      group {
+        if canStar {
+          barButton(
+            "Favorite", system: isFavorite ? "heart.fill" : "heart", action: onFavorite)
+        }
+        barButton("Info", system: "info.circle", action: onInfo)
+        if canAdjust {
+          barButton("Adjust", system: "slider.horizontal.3", action: onAdjust)
+        }
+      }
+      .accessibilityIdentifier("viewer-toolbar-actions")
+      if canTrash {
+        group {
+          barButton("Trash", system: "trash", action: onTrash)
+        }
+        .accessibilityIdentifier("viewer-toolbar-delete")
+      }
+    }
+    .frame(maxWidth: .infinity)
+  }
+
+  private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     HStack(spacing: 18) {
-      if Permissions.hasContainerAccess(asset.container, in: access) {
-        barButton("Share", system: "square.and.arrow.up", action: onShare)
-      }
-      if Permissions.canFavorite(asset, in: access) {
-        barButton(
-          "Favorite", system: isFavorite ? "heart.fill" : "heart", action: onFavorite)
-      }
-      barButton("Info", system: "info.circle", action: onInfo)
-      if Permissions.canEdit(asset, in: access) {
-        barButton("Adjust", system: "slider.horizontal.3", action: onAdjust)
-      }
-      if Permissions.canDelete(asset, in: access) {
-        barButton("Trash", system: "trash", action: onTrash)
-      }
+      content()
     }
     .padding(.horizontal, 22)
     .padding(.vertical, 12)
-    .glassEffect(.regular.tint(.black.opacity(0.35)), in: .capsule)
+    .glassEffect(
+      .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
   }
 
   private func barButton(_ label: String, system: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Image(systemName: system)
         .font(.title3)
-        .foregroundStyle(.white)
+        .foregroundStyle(HeirloomAppearance.chromePrimaryText)
         .frame(width: 30, height: 30)
     }
     .accessibilityLabel(label)

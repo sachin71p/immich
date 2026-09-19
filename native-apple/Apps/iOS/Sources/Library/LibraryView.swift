@@ -30,6 +30,22 @@ struct LibraryView: View {
   @State private var itemCount = 0
   @State private var visibleFirst: Date?
   @State private var visibleLast: Date?
+  // F2: resolved grid inputs keyed by filterTaskKey (stale-while-revalidate).
+  // A rebuilt LibraryView (tab return) replays the cached source instantly
+  // instead of sitting on the ProgressView through a full resolve; the resolve
+  // below still runs and reassigns (same value = no churn, new value = update).
+  // Only timeline sources and small id lists are cached — a 100k search-result
+  // list must never sit in a static. Counts ride along so the subtitle is
+  // right during the cached window too.
+  static var cachedGrids: [(key: String, source: AssetGridSource?, count: Int)] = []
+  static let cachedGridCap = 6
+  static let cachedIdsCap = 2000
+  /// WP-G G6: true while the All grid is being dragged or decelerating — the
+  /// header subtitle swaps between the item count (rest) and date range.
+  @State private var isGridScrolling = false
+  /// Dwell that keeps the range up briefly after the grid settles (cancels on
+  /// new activity).
+  @State private var scrollDwellTask: Task<Void, Never>?
   @State private var viewerRequest: ViewerRequest?
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
@@ -44,6 +60,11 @@ struct LibraryView: View {
     formatter.dateFormat = "MMM d, yyyy"
     return formatter
   }()
+
+  /// WP-L L2: title-scrim height — covers the status area plus the large-title
+  /// region at scroll rest, fading out below it so the grid shows through.
+  /// Exact geometry vs WP-C's header is a WP-X on-device check (see report).
+  private static let libraryTitleScrimHeight: CGFloat = 190
 
   // Getters only (setters would need mutating self — bindings write the raws).
   private var sort: LibrarySort { LibrarySort(rawValue: sortRaw) ?? .captured }
@@ -80,6 +101,13 @@ struct LibraryView: View {
       .navigationTitle("Library")
       .navigationBarTitleDisplayMode(.large)
       .navigationSubtitle(librarySubtitle)
+      // WP-L L2: no bar-content overrides here. `.toolbarColorScheme(.dark)`
+      // (the Photos-exact white-title route) collapses the large title +
+      // toolbar items out of the bar on this SDK — verified by screenshot
+      // (bar shows subtitle only, both appearances) — so legibility comes
+      // from the adaptive scrim in the overlay below instead, behind the
+      // native title (dark in light, white in dark). The count/subtitle ids
+      // owned by WP-C/WP-G are untouched.
       .toolbar {
         if selection.isSelecting {
           ToolbarItem(placement: .topBarLeading) {
@@ -103,6 +131,14 @@ struct LibraryView: View {
             }
           }
         } else {
+          // C4: the item count lives in the header, not as a persistent line
+          // under the bottom pills (the `library-count` element is gone).
+          ToolbarItem(placement: .topBarLeading) {
+            Text(countLabel)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("chrome-header-count")
+          }
           ToolbarItem(placement: .topBarTrailing) {
             HStack(spacing: 10) {
               filterMenu
@@ -126,23 +162,41 @@ struct LibraryView: View {
           )
           .background(.thinMaterial)
         } else {
-          VStack(spacing: 2) {
+          // C1: one floating bar — [library] [Years │ Months │ All] [search] —
+          // instead of a pills row above the tab bar. C3: the search slot is
+          // the separate search circle. The `library-zoom` identifier is kept
+          // for the existing zoom tests; the select-mode branch above is
+          // WP-M's and is untouched.
+          HStack(spacing: 12) {
+            Button {
+              zoomRaw = LibraryZoomLevel.all.rawValue
+            } label: {
+              Image(systemName: "photo")
+            }
+            .accessibilityIdentifier("chrome-library-button")
             Picker("Zoom", selection: zoomBinding) {
               ForEach([LibraryZoomLevel.years, .months, .all]) { level in
                 Text(level.title).tag(level)
               }
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 320)
             .accessibilityIdentifier("library-zoom")
-            Text(countLabel)
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-              .accessibilityIdentifier("library-count")
+            Button {
+              session.requestedTab = "search"
+            } label: {
+              Image(systemName: "magnifyingglass")
+            }
+            .accessibilityIdentifier("chrome-search-circle")
           }
+          .padding(.horizontal, 14)
+          .padding(.vertical, 8)
+          .background(.thinMaterial, in: Capsule())
           .padding(.horizontal)
-          .padding(.vertical, 4)
-          .background(.thinMaterial)
+          // Container semantics: the bar keeps its own identifier AND exposes
+          // the segment control / search circle inside it (a bare identifier
+          // collapses the subtree into one element and hides the children).
+          .accessibilityElement(children: .contain)
+          .accessibilityIdentifier("chrome-floating-bar")
         }
       }
       .tabBarMinimizeBehavior(.onScrollDown)
@@ -202,6 +256,47 @@ struct LibraryView: View {
         Text(actionError ?? "")
       }
     }
+    .overlay(alignment: .top) {
+      ZStack(alignment: .top) {
+        // WP-L L2: adaptive title scrim (pair L01-library) — an adapting
+        // material plus the adaptive `libraryTitleScrim` tint (light blur in
+        // light behind the native dark title, dark blur in dark behind the
+        // native white title), fading out below the large-title region.
+        // Hit-testing stays off so the grid scrolls beneath it.
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .overlay {
+            LinearGradient(
+              colors: [
+                HeirloomAppearance.libraryTitleScrim,
+                HeirloomAppearance.libraryTitleScrim.opacity(0.55),
+                .clear,
+              ], startPoint: .top, endPoint: .bottom)
+          }
+          .frame(height: Self.libraryTitleScrimHeight)
+          .mask(
+            LinearGradient(
+              colors: [.black, .black, .clear],
+              startPoint: .top, endPoint: .bottom)
+          )
+          .ignoresSafeArea(edges: .top)
+          .allowsHitTesting(false)
+          .accessibilityIdentifier("library-title-scrim")
+        // WP-G parity mirrors (G6/G7): near-invisible 1pt texts carrying the
+        // header subtitle + time level for the parity tests. The visible header
+        // is the navigation subtitle (no stable AX handle); visible chrome is
+        // untouched — WP-C owns it.
+        VStack(spacing: 0) {
+          Text(librarySubtitle)
+            .accessibilityIdentifier("grid-header-subtitle")
+          Text(zoom.rawValue)
+            .accessibilityIdentifier("grid-time-level")
+            .accessibilityValue(zoom.rawValue)
+        }
+        .frame(width: 1, height: 1)
+        .opacity(0.01)
+      }
+    }
   }
 
   // MARK: - pieces
@@ -241,7 +336,25 @@ struct LibraryView: View {
             visibleLast = last
           },
           showsSectionHeaders: false,
-          reloadToken: session.timelineVersion
+          reloadToken: session.timelineVersion,
+          currentUserId: session.access.currentUserId,
+          onPinchEdge: handlePinchEdge,
+          onScrollActive: { active in
+            // WP-G G6 dwell: the range stays up through deceleration and for
+            // 2.5 s after settle (Photos-like lingering); cancelled by new
+            // activity. The dwell is what the scroll test observes.
+            scrollDwellTask?.cancel()
+            if active {
+              isGridScrolling = true
+            } else {
+              scrollDwellTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(2_500))
+                guard !Task.isCancelled else { return }
+                isGridScrolling = false
+              }
+            }
+          },
+          session: session
         )
         .accessibilityIdentifier("library-grid")
       } else {
@@ -251,19 +364,48 @@ struct LibraryView: View {
     }
   }
 
+  /// WP-G G6: the header subtitle is the item count at rest and swaps to the
+  /// visible date range while scrolling (Photos behaviour, pair 01). Syncing
+  /// keeps its existing treatment. The range arrives asynchronously from the
+  /// grid, so before it lands the count stands in — never "No Photos" while
+  /// the count says otherwise.
   private var librarySubtitle: String {
     if session.isSyncing, let first = visibleFirst, let last = visibleLast {
-      return
-        "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last)) · Syncing…"
+      return "\(rangeString(first: first, last: last)) · Syncing…"
     }
     if session.isSyncing { return "Syncing…" }
-    guard let first = visibleFirst, let last = visibleLast else {
-      // The range arrives asynchronously from the grid; never claim "No Photos"
-      // while the count says otherwise.
-      return itemCount == 0 ? "No Photos · Pull down to sync" : ""
+    if isGridScrolling, let first = visibleFirst, let last = visibleLast {
+      return rangeString(first: first, last: last)
     }
-    return
-      "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last))"
+    if itemCount == 0 {
+      return "No Photos · Pull down to sync"
+    }
+    return "\(itemCount.formatted()) Items"
+  }
+
+  private func rangeString(first: Date, last: Date) -> String {
+    "\(Self.subtitleFormatter.string(from: first)) – \(Self.subtitleFormatter.string(from: last))"
+  }
+
+  /// WP-G G7: pinch-past-edge from the grid couples column density to the time
+  /// level — zooming out past max density steps All → Months → Years, zooming
+  /// back in reverses it — so the Years/Months/All pills move with the pinch
+  /// instead of staying pinned. Re-entering All lands dense (9 columns) to
+  /// continue the continuum rather than jumping to the persisted width.
+  private func handlePinchEdge(out: Bool) {
+    switch (zoom, out) {
+    case (.all, true):
+      zoomRaw = LibraryZoomLevel.months.rawValue
+    case (.months, true):
+      zoomRaw = LibraryZoomLevel.years.rawValue
+    case (.months, false):
+      columns = 9
+      zoomRaw = LibraryZoomLevel.all.rawValue
+    case (.years, false):
+      zoomRaw = LibraryZoomLevel.months.rawValue
+    default:
+      break
+    }
   }
 
   private var countLabel: String {
@@ -289,6 +431,13 @@ struct LibraryView: View {
   }
 
   private func resolveGrid() async {
+    // F2: replay the cached source first (see cachedGrids): a rebuilt view paints
+    // the grid immediately while the queries below revalidate in the background.
+    let key = filterTaskKey
+    if gridSource == nil, let hit = Self.cachedGrids.first(where: { $0.key == key }) {
+      gridSource = hit.source
+      itemCount = hit.count
+    }
     guard let store = session.store else { return }
     // L2: a stale cancellation banner from a previous launch never survives a fresh load.
     await ErrorFilter.clearStaleCancellation(in: session)
@@ -310,17 +459,33 @@ struct LibraryView: View {
         guard !Task.isCancelled else { return }
         gridSource = resolved.source
         itemCount = resolved.count
+        Self.cacheGrid(key: key, source: resolved.source, count: resolved.count)
       } else {
         // Years/Months views fetch their own buckets; the count still comes from
         // the compact index so the bottom label stays correct on every level.
         let index = try await store.timelineIndex(scope: scope)
         guard !Task.isCancelled else { return }
         itemCount = index.entries.count
+        Self.cacheGrid(key: key, source: nil, count: index.entries.count)
       }
     } catch {
       // L2: `.task(id:)` restarts cancel in-flight loads — cancellation is not an error.
       if !error.isCancellation { session.lastError = error.localizedDescription }
     }
+  }
+
+  /// F2: bounded cache write. Large `.ids` lists are counts-only — the list
+  /// itself is cheap to re-derive next to a bounded cache, never worth pinning.
+  static func cacheGrid(key: String, source: AssetGridSource?, count: Int) {
+    let cacheable: AssetGridSource?
+    if case .ids(let ids) = source, ids.count > cachedIdsCap {
+      cacheable = nil
+    } else {
+      cacheable = source
+    }
+    cachedGrids.removeAll { $0.key == key }
+    cachedGrids.append((key: key, source: cacheable, count: count))
+    while cachedGrids.count > cachedGridCap { cachedGrids.removeFirst() }
   }
 
   func refreshAll() async {

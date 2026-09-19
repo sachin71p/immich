@@ -56,6 +56,16 @@ final class PhotoGridCell: UICollectionViewCell {
     dimView.isHidden = true
     heartView.tintColor = .white
     heartView.contentMode = .scaleAspectFit
+    // WP-G grid surface: stable identifiers for the parity tests (G1–G3 own
+    // these; hidden views drop out of the AX tree, so predicates only match
+    // badges that are actually painted).
+    heartView.isAccessibilityElement = true
+    heartView.accessibilityIdentifier = "grid-favorite-heart"
+    heartView.accessibilityLabel = "Favorite"
+    durationLabel.isAccessibilityElement = true
+    durationLabel.accessibilityIdentifier = "grid-duration-badge"
+    sharedView.isAccessibilityElement = true
+    sharedView.accessibilityIdentifier = "grid-people-badge"
     sharedView.tintColor = .white
     sharedView.contentMode = .scaleAspectFit
     selectBadge.tintColor = .white
@@ -146,7 +156,16 @@ final class PhotoGridCell: UICollectionViewCell {
   /// Native badges from the row + index flags: `heart.fill` bottom-left, duration
   /// bottom-right (`m:ss` / `h:mm:ss` via the shared formatter), `person.2.fill`
   /// top-right for shared containers. No per-call formatter allocation.
-  func configureBadges(row: TimelineRow?, flags: PhotosLocalStore.TimelineIndexFlags) {
+  ///
+  /// G3 selectivity: the people badge marks shared-container assets that are
+  /// NOT the current user's own — the owner's 102k library is mostly their own
+  /// assets, so an unqualified shared-container badge reads as noise on nearly
+  /// every cell. When `currentUserId` is nil (non-Library grids) the badge
+  /// falls back to the flags-only behaviour. Per visible cell only — no scans.
+  func configureBadges(
+    row: TimelineRow?, flags: PhotosLocalStore.TimelineIndexFlags,
+    currentUserId: String? = nil
+  ) {
     if row?.isFavorite == true {
       heartView.isHidden = false
       heartView.image = Self.heartImage
@@ -157,11 +176,14 @@ final class PhotoGridCell: UICollectionViewCell {
     if row?.mediaKind == .video, let seconds = row?.durationSeconds {
       durationLabel.isHidden = false
       durationLabel.text = VideoDurationFormat.string(seconds: seconds)
+      durationLabel.accessibilityLabel = durationLabel.text
     } else {
       durationLabel.isHidden = true
       durationLabel.text = nil
+      durationLabel.accessibilityLabel = nil
     }
-    if flags.contains(.sharedContainer) {
+    let isForeign = currentUserId.map { row?.ownerId != $0 } ?? true
+    if flags.contains(.sharedContainer), isForeign {
       sharedView.isHidden = false
       sharedView.image = Self.sharedImage
     } else {

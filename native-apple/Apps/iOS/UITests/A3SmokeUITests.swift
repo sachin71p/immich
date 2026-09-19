@@ -10,7 +10,7 @@ final class A3SmokeUITests: XCTestCase {
     app.launch()
 
     // Grid renders from the fixture DB (normalize a possibly-persisted zoom first).
-    let allPhotos = app.buttons["All Photos"]
+    let allPhotos = app.buttons["All"]
     if allPhotos.waitForExistence(timeout: 10) { allPhotos.tap() }
     XCTAssertTrue(
       app.descendants(matching: .any)["library-grid"].waitForExistence(timeout: 30),

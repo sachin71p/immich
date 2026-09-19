@@ -45,6 +45,8 @@ enum FixtureSeed {
     // Base containers are identical in both worlds.
     try await store.apply(
       [
+        .user(User(id: "u1", name: "Alice", email: "alice@fixture.local")),
+        .user(User(id: "u2", name: "Bob", email: "bob@fixture.local")),
         .space(Space(id: "s1", name: "Family", description: "", createdAt: now, updatedAt: now)),
         .space(Space(id: "s2", name: "Camera", description: "", createdAt: now, updatedAt: now)),
         .spaceMember(SpaceMember(spaceId: "s1", userId: "u1", role: .contributor, showInTimeline: true)),
@@ -145,9 +147,18 @@ enum FixtureSeed {
     ]
     var changes: [SyncChange] = assets.map { .asset($0) }
     changes += [
-      .assetExif(AssetExif(assetId: "fx000004", latitude: 37.7749, longitude: -122.4194, make: "Apple")),
+      .assetExif(AssetExif(assetId: "fx000004", latitude: 37.7749, longitude: -122.4194, city: "San Francisco", make: "Apple")),
       .albumAsset(albumId: "al1", assetId: "fx000001"),
       .albumAsset(albumId: "al1", assetId: "fx000002"),
+      // WP-P P5/P7 evidence: one saved memory (renders a real card through the
+      // production loader) and a city on the GPS asset (backs Trips).
+      .memory(
+        Memory(
+          id: "fxmem1", createdAt: day(-30), updatedAt: day(-7), ownerId: "u1",
+          type: "on_this_day", dataJSON: "{}", isSaved: true, memoryAt: day(-30))),
+      .memoryAsset(memoryId: "fxmem1", assetId: "fx000001"),
+      .memoryAsset(memoryId: "fxmem1", assetId: "fx000002"),
+      .memoryAsset(memoryId: "fxmem1", assetId: "fx000011"),
     ]
     try await store.apply(changes, currentUserId: userId)
     return SeededWorld(firstAssetId: "fx000001", assetCount: assets.count, prewarm: assets)

@@ -27,7 +27,8 @@ struct GridDetailView: View {
         viewerRequest = ViewerRequest(ids: route.resolveIds(), initialId: route.startId)
       },
       header: header,
-      showsSectionHeaders: false
+      showsSectionHeaders: false,
+      session: session
     )
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.large)
