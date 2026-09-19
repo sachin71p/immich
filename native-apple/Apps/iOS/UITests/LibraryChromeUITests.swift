@@ -325,6 +325,76 @@ final class LibraryChromeUITests: XCTestCase {
       "LP2: search circle should stay reachable while scrolled")
   }
 
+  // MARK: - EF top capsules + loading state
+
+  func test_topCapsules_filterAndSelectVisible() throws {
+    // EF Photos parity (pair 01): glass filter-funnel capsule + glass Select
+    // capsule, visible top-right in dark appearance. RED before the fix: the
+    // pair lived only in the trailing toolbar, which never renders under the
+    // large title on this SDK.
+    let bar = app.descendants(matching: .any)["library-top-capsules"]
+    XCTAssertTrue(bar.waitForExistence(timeout: 10), "EF: top capsules container should exist")
+    let filter = app.descendants(matching: .any)["library-filter-menu"]
+    XCTAssertTrue(filter.waitForExistence(timeout: 10), "EF: filter capsule should exist")
+    XCTAssertTrue(filter.isHittable, "EF: filter capsule should be hittable (not buried under the scrim)")
+    XCTAssertGreaterThan(
+      filter.frame.midX, app.frame.width / 2,
+      "EF: filter capsule should sit right of center (top-right)")
+    let select = app.descendants(matching: .any)["select-toggle"]
+    XCTAssertTrue(select.waitForExistence(timeout: 10), "EF: Select capsule should exist")
+    XCTAssertTrue(select.isHittable, "EF: Select capsule should be hittable")
+    XCTAssertGreaterThan(
+      select.frame.midX, app.frame.width / 2,
+      "EF: Select capsule should sit right of center (top-right)")
+    XCTAssertLessThan(
+      select.frame.minY, app.frame.height / 3,
+      "EF: Select capsule should sit in the top region")
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = "EF-top-capsules"
+    shot.lifetime = .keepAlways
+    add(shot)
+  }
+
+  func test_loadingState_forcedShowsSyncingTreatment() throws {
+    // EF loading state, deterministic via -forceLibraryLoading (UI-layer
+    // preview flag): spinner + "Syncing your library…" copy, no "No Photos"
+    // text, no stranded pills bar. RED before the fix: itemCount==0 rendered
+    // "No Photos · Pull down to sync" with the pills bar mid-screen.
+    app.terminate()
+    app.launchArguments += ["-forceLibraryLoading"]
+    app.launch()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["library-loading"].waitForExistence(timeout: 10),
+      "EF: forced loading should show the loading container")
+    XCTAssertTrue(
+      app.staticTexts["Syncing your library…"].waitForExistence(timeout: 5),
+      "EF: loading copy should read 'Syncing your library…'")
+    XCTAssertFalse(
+      app.descendants(matching: .any)["library-empty"].exists,
+      "EF: loading must not show the genuine-empty state")
+    XCTAssertFalse(
+      app.descendants(matching: .any)["chrome-floating-bar"].exists,
+      "EF: pills bar must not strand mid-screen while loading")
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = "EF-loading-state"
+    shot.lifetime = .keepAlways
+    add(shot)
+  }
+
+  func test_loadedState_showsNoLoadingTreatment() throws {
+    // EF: the flip side — a resolved fixture library shows neither the
+    // loading treatment nor the genuine-empty state, and the pills bar is up.
+    XCTAssertFalse(
+      app.descendants(matching: .any)["library-loading"].exists,
+      "EF: loaded library must not show the syncing treatment")
+    XCTAssertFalse(
+      app.descendants(matching: .any)["library-empty"].exists,
+      "EF: loaded fixture library must not show the genuine-empty state")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["chrome-floating-bar"].waitForExistence(timeout: 10),
+      "EF: pills bar should be up once the library resolves")
+  }
+
   func test_tabBar_searchEntryIsIconOnly() throws {
     // LP2 tab-bar parity: Photos (pair 01 left, assets/photos/
     // 01-library-all-photos) shows Library + Collections with labels in the
