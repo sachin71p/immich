@@ -27,7 +27,18 @@ struct RootView: View {
 
   var body: some View {
     Group {
-      if session.signedIn {
+      // F0: three-state auth gate. Cold start is *unknown* until the first
+      // reload resolves — showing the login form during that window flashed
+      // empty email/password boxes for seconds on every launch.
+      if !session.authResolved {
+        VStack(spacing: 16) {
+          ProgressView()
+          Text("Heirloom")
+            .font(.title2)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityIdentifier("launch-resolving")
+      } else if session.signedIn {
         MainTabs()
       } else {
         // `ConnectView` writes the Keychain token itself; Continue rebuilds the session from it

@@ -16,6 +16,11 @@ import Upload
 @MainActor
 final class AppSession: ObservableObject {
   @Published var signedIn = false
+  /// F0: cold-start auth state is unknown until the first `reload()` resolves
+  /// (Keychain read + store open take seconds). While false the app shows a
+  /// neutral splash — never the login form, which flashed on every cold start
+  /// before this gate existed.
+  @Published var authResolved = false
   @Published var isFixture = false
   @Published var serverURL: URL?
   @Published var userId = ""
@@ -66,6 +71,7 @@ final class AppSession: ObservableObject {
   /// Rebuilds the session from the Keychain token (written by `ConnectView`) whenever the app
   /// becomes active, or boots the deterministic fixture world for `-useFixtureStore` (XCUITest).
   func reload() async {
+    defer { authResolved = true }
     if CommandLine.arguments.contains("-useFixtureStore") {
       // Fixture mode: the in-memory store survives foregrounding — don't reseed it away.
       if signedIn && isFixture && store != nil { return }
@@ -237,6 +243,7 @@ final class AppSession: ObservableObject {
     activeToken = nil
     lastSyncAt = nil
     signedIn = false
+    authResolved = true
   }
 
   /// A9.6: consume the intent pending route written by `OpenSearchIntent` into the
