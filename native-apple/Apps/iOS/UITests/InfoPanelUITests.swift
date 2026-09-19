@@ -28,6 +28,23 @@ final class InfoPanelUITests: XCTestCase {
     Parity.require("viewer-toolbar-share", in: app, gap: "V4", owner: "WP-I")
   }
 
+  /// LP4/Track-B (pair 05): with camera EXIF synced, the strip shows real
+  /// exposure cells in Photos order (ISO · focal · aperture · shutter)
+  /// instead of "No exposure details".
+  func test_infoPanel_exifStripShowsRealExposureData() throws {
+    let app = Parity.launch()
+    Parity.openInfoPanel(app)
+    let strip = Parity.require("info-exif-strip", in: app, gap: "LP4", owner: "Track-B")
+    for cell in ["ISO 80", "24 mm", "ƒ1.78", "1/95 s"] {
+      XCTAssertTrue(
+        strip.staticTexts[cell].waitForExistence(timeout: 10),
+        "LP4: EXIF strip should show real cell \(cell)")
+    }
+    XCTAssertFalse(
+      app.staticTexts["No exposure details"].exists,
+      "LP4: real EXIF must replace the \"No exposure details\" fallback")
+  }
+
   func test_infoPanel_dismissesBySwipeDown() throws {
     let app = Parity.launch()
     Parity.openInfoPanel(app)

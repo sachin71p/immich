@@ -389,11 +389,19 @@ struct ViewerInfoPanel: View {
     (exif?.profileDescription ?? "").localizedCaseInsensitiveContains("hdr")
   }
 
+  /// Photos aperture text (pair 05: `ƒ1.78` — slashless, up to 2 decimals).
+  private static func apertureText(_ f: Double) -> String {
+    var raw = String(format: "%.2f", f)
+    while raw.hasSuffix("0") { raw.removeLast() }
+    if raw.hasSuffix(".") { raw.removeLast() }
+    return "ƒ\(raw)"
+  }
+
   private var captureSubtitle: String {
     var detail: [String] = []
     if let lens = exif?.lensModel, !lens.isEmpty { detail.append(lens) }
     if let focal = exif?.focalLength { detail.append(String(format: "%.0f mm", focal)) }
-    if let f = exif?.fNumber { detail.append(String(format: "ƒ/%.1f", f)) }
+    if let f = exif?.fNumber { detail.append(Self.apertureText(f)) }
     return detail.joined(separator: " — ")
   }
 
@@ -416,7 +424,7 @@ struct ViewerInfoPanel: View {
     var cells: [String] = []
     if let iso = exif?.iso { cells.append("ISO \(iso)") }
     if let focal = exif?.focalLength { cells.append(String(format: "%.0f mm", focal)) }
-    if let f = exif?.fNumber { cells.append(String(format: "ƒ/%.1f", f)) }
+    if let f = exif?.fNumber { cells.append(Self.apertureText(f)) }
     if let exp = exif?.exposureTime, !exp.isEmpty {
       cells.append(exp.hasSuffix("s") ? exp : "\(exp) s")
     }
