@@ -301,6 +301,10 @@ public struct EditView: View {
 
   private func tabTitle(_ t: EditTool) -> String {
     if t == .video { return asset.type == .video ? "Video" : "Live" }
+    // LP5: Photos names the video-mode grade tab "Filters" (photo mode keeps
+    // "Styles", pair 07). The a11y id stays `editor-tab-styles` so automation
+    // and callers are unaffected — only the visible label changes.
+    if t == .styles, asset.type == .video { return "Filters" }
     return t.title
   }
 
@@ -407,6 +411,18 @@ public struct EditView: View {
   /// `FilterThumbCache`) plus CUSTOMIZE, which reveals the intensity dial.
   private var stylesRow: some View {
     VStack(spacing: 6) {
+      // LP5: Photos overlays the current style name as a pill above the
+      // filmstrip (the GOLD badge in pair 07). Shown only while a style is
+      // applied; hidden for None so the row matches the unstyled canvas.
+      if let applied = history.current.style?.style, applied != .none {
+        Text(applied.displayName.uppercased())
+          .font(.caption)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 4)
+          .background(.quaternary)
+          .clipShape(Capsule())
+          .accessibilityIdentifier("editor-styles-current-badge")
+      }
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 12) {
           ForEach(Array(EditStyle.allCases.enumerated()), id: \.element) { index, style in
