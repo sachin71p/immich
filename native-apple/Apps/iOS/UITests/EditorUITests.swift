@@ -150,4 +150,27 @@ final class EditorUITests: XCTestCase {
           + "surface it only when applicable")
     }
   }
+
+  func test_editorSave_completesAndReturnsToViewer() throws {
+    let app = Parity.launch()
+    Parity.openViewer(app)
+    Parity.openEditor(app)
+    // SAVE/WP-E: apply a style (dirties history, enables Done), save, and
+    // land back in the viewer with no error alert. Fixture store only —
+    // never run against a real library.
+    Parity.require("editor-tab-styles", in: app, gap: "SAVE", owner: "WP-E").tap()
+    let styleCell = Parity.require("editor-style-cell-1", in: app, gap: "SAVE", owner: "WP-E")
+    styleCell.tap()
+    let done = app.buttons["Done"]
+    XCTAssertTrue(
+      done.waitForExistence(timeout: 10) && done.isEnabled,
+      "SAVE/WP-E: Done should enable after a style change")
+    done.tap()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 30),
+      "SAVE/WP-E: saving should complete and return to the viewer")
+    XCTAssertFalse(
+      app.alerts.firstMatch.waitForExistence(timeout: 3),
+      "SAVE/WP-E: no save-error alert should appear")
+  }
 }
