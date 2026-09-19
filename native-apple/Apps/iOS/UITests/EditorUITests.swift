@@ -136,6 +136,49 @@ final class EditorUITests: XCTestCase {
     Parity.require("editor-tab-audiomix", in: app, gap: "E6", owner: "WP-E")
   }
 
+  func test_videoEditor_gradeTab_isNamedFilters_photoKeepsStyles() throws {
+    // LP5/Track C: Photos names the video-mode grade tab "Filters" while
+    // photo mode keeps "Styles" (pair 07). The a11y id stays
+    // `editor-tab-styles` in both modes — only the visible label differs.
+    let videoApp = Parity.launch()
+    Parity.openVideoViewer(videoApp)
+    Parity.openEditor(videoApp)
+    let videoTab = Parity.require(
+      "editor-tab-styles", in: videoApp, gap: "LP5", owner: "Track C")
+    XCTAssertEqual(
+      videoTab.label, "Filters",
+      "LP5: video-mode grade tab must read \"Filters\"")
+    let photoApp = Parity.launch()
+    Parity.openViewer(photoApp)
+    Parity.openEditor(photoApp)
+    XCTAssertEqual(
+      Parity.require("editor-tab-styles", in: photoApp, gap: "LP5", owner: "Track C").label,
+      "Styles",
+      "LP5: photo-mode tab must keep \"Styles\"")
+  }
+
+  func test_editorStyles_showsCurrentStyleBadge() throws {
+    // LP5/Track C: Photos overlays the current style name as a pill above
+    // the filmstrip (the GOLD badge in pair 07). Tapping a style must
+    // surface `editor-styles-current-badge` with the style name; Cancel
+    // (never Done) leaves the fixture asset untouched.
+    let app = Parity.launch()
+    Parity.openViewer(app)
+    Parity.openEditor(app)
+    Parity.require("editor-tab-styles", in: app, gap: "LP5", owner: "Track C").tap()
+    XCTAssertFalse(
+      app.descendants(matching: .any)["editor-styles-current-badge"]
+        .waitForExistence(timeout: 3),
+      "LP5: no current-style badge before a style is applied")
+    Parity.require("editor-style-cell-1", in: app, gap: "LP5", owner: "Track C").tap()
+    let badge = Parity.require(
+      "editor-styles-current-badge", in: app, gap: "LP5", owner: "Track C")
+    XCTAssertEqual(
+      badge.label, "Vivid".uppercased(),
+      "LP5: badge must name the applied style (GOLD equivalent)")
+    app.buttons["Cancel"].tap()
+  }
+
   func test_editorPortraitTab_hiddenWhenNoDepthData() throws {
     let app = Parity.launch()
     Parity.openViewer(app)

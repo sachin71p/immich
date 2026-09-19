@@ -89,6 +89,19 @@ enum GridContextMenuModel {
     default: return action.title
     }
   }
+
+  /// Stable header-row identifiers (`grid-context-header-copy` etc.),
+  /// distinct from the list rows' `action.rawValue` ids.
+  static func headerId(for action: GridContextMenuAction) -> String {
+    switch action {
+    case .copy: return "grid-context-header-copy"
+    case .hide: return "grid-context-header-hide"
+    case .share: return "grid-context-header-share"
+    case .favorite: return "grid-context-header-favorite"
+    case .addTo: return "grid-context-header-addto"
+    case .delete: return "grid-context-header-delete"
+    }
+  }
 }
 
 /// Sheet content for a grid long-press: preview over the permission-gated action
@@ -113,6 +126,12 @@ struct GridContextMenuSheet: View {
     VStack(spacing: 12) {
       previewView
       if let asset {
+        // LP8: Photos' icon header row — circular Copy/Hide/Share/Favorite
+        // shortcuts above the list (photos/05-grid-longpress-menu.png).
+        // Duplicate stays OUT (no AssetMutations API, no server endpoint);
+        // the list below keeps the canonical a11y ids, so header buttons
+        // carry distinct `grid-context-header-*` identifiers.
+        iconHeaderRow(asset)
         actionList(asset)
       } else {
         ProgressView()
@@ -165,6 +184,44 @@ struct GridContextMenuSheet: View {
       }
     }
     .padding(.horizontal, 16)
+  }
+
+  /// LP8 icon header row: the permission-gated Copy/Hide/Share/Favorite
+  /// subset as circular icon shortcuts with visible captions (Photos'
+  /// Copy/Duplicate/Hide row in photos/05-grid-longpress-menu.png, adapted:
+  /// Duplicate stays OUT — no AssetMutations API, no server endpoint — so
+  /// Share/Favorite promote into the row). Renders only when at least one
+  /// of the four is available; otherwise the list stands alone.
+  private func iconHeaderRow(_ asset: Asset) -> some View {
+    let header: [GridContextMenuAction] = [.copy, .hide, .share, .favorite]
+    let available = Set(GridContextMenuModel.actions(for: asset, in: session.access))
+    let shown = header.filter { available.contains($0) }
+    return Group {
+      if !shown.isEmpty {
+        HStack(spacing: 20) {
+          ForEach(shown, id: \.rawValue) { action in
+            Button {
+              run(action, asset: asset)
+            } label: {
+              VStack(spacing: 4) {
+                Image(systemName: action.systemImage)
+                  .font(.title3)
+                  .frame(width: 48, height: 48)
+                  .background(.quaternary)
+                  .clipShape(Circle())
+                Text(GridContextMenuModel.title(for: action, asset: asset))
+                  .font(.caption2)
+              }
+            }
+            .accessibilityIdentifier(GridContextMenuModel.headerId(for: action))
+            .accessibilityLabel(GridContextMenuModel.title(for: action, asset: asset))
+          }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("grid-context-header")
+      }
+    }
   }
 
   private func actionList(_ asset: Asset) -> some View {
