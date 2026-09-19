@@ -134,6 +134,31 @@ final class SettingsUITests: XCTestCase {
       "P5/WP-P: Memories should show at least one generated card, not the empty state")
   }
 
+  func test_accountDetail_showsNameUserIdAndEmailTogether() throws {
+    let app = Parity.launch()
+    openSettings(app)
+    // LP9/P2 (standing owner requirement): the tappable Account detail row
+    // must keep showing the user ID together with the name and email — the
+    // UUID is demoted from the header/row primary value, never removed.
+    requireScrolling("settings-account-row", in: app, gap: "P2").tap()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["account-detail"].waitForExistence(timeout: 10),
+      "LP9: tapping the Account row should open the Account detail view")
+    Parity.require("account-detail-user-id", in: app, gap: "P2", owner: "WP-P")
+    Parity.require("account-detail-user-email", in: app, gap: "P2", owner: "WP-P")
+  }
+
+  func test_search_chipRowsHaveTrailingFade() throws {
+    let app = Parity.launch()
+    // LP6: the horizontal suggestion chip rows fade at the trailing edge to
+    // signal overflow (the Recents thumbnail cards themselves already landed
+    // on base). The faded rows carry the marker identifier.
+    app.tabBars.buttons["Search"].tap()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["search-view"].waitForExistence(timeout: 30))
+    Parity.require("search-chip-row-fade", in: app, gap: "P6", owner: "WP-P")
+  }
+
   func test_search_hasNaturalLanguageSuggestionsAndPersistentField() throws {
     let app = Parity.launch()
     // P6/WP-P: NL suggestion chips, Recents thumbnails, persistent bottom

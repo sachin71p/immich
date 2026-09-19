@@ -222,18 +222,26 @@ struct AccountSheet: View {
         HStack {
           Text("Account")
           Spacer()
+          // LP9: email-primary — the email is the row's primary value; the
+          // user ID stays visible (P2 standing rule) but demoted to a
+          // secondary caption beneath it. The header block above never shows
+          // the UUID at all.
           VStack(alignment: .trailing, spacing: 2) {
-            Text(session.userId)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-              .accessibilityIdentifier("settings-user-id")
             if let email = profiles.profile?.email, !email.isEmpty {
               Text(email)
+                .lineLimit(1)
+                .accessibilityIdentifier("settings-user-email")
+              Text(session.userId)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .accessibilityIdentifier("settings-user-email")
+                .accessibilityIdentifier("settings-user-id")
+            } else {
+              Text(session.userId)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .accessibilityIdentifier("settings-user-id")
             }
           }
         }
