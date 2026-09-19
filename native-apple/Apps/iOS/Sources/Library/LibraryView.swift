@@ -43,6 +43,10 @@ struct LibraryView: View {
   /// WP-G G6: true while the All grid is being dragged or decelerating — the
   /// header subtitle swaps between the item count (rest) and date range.
   @State private var isGridScrolling = false
+  /// TRACK G: scroll-at-top drives the bottom-chrome two states — the
+  /// [Library|Collections] switcher at top, the zoom pill once scrolled.
+  /// Non-All levels always show the pill (it is the only way back to All).
+  @State private var isGridAtTop = true
   /// Dwell that keeps the range up briefly after the grid settles (cancels on
   /// new activity).
   @State private var scrollDwellTask: Task<Void, Never>?
@@ -161,12 +165,39 @@ struct LibraryView: View {
             onError: { if !$0.isCancellationMessage { actionError = $0 } }
           )
           .background(.thinMaterial)
+        } else if zoom == .all && isGridAtTop {
+          // TRACK G (a) scroll-at-top: ONE floating glass bar
+          // [Library|Collections] + a separate search circle (Photos bottom
+          // chrome; replaces the zoom pill while at the top). The switcher
+          // drives the WP5 `requestedTab` contract; the circle is icon-only.
+          HStack(spacing: 12) {
+            Picker("Library or Collections", selection: tabBinding) {
+              Text("Library").tag("library")
+              Text("Collections").tag("collections")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("chrome-tab-switcher")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.thinMaterial, in: Capsule())
+            Button {
+              session.requestedTab = "search"
+            } label: {
+              Image(systemName: "magnifyingglass")
+            }
+            .accessibilityIdentifier("chrome-search-circle")
+            .padding(12)
+            .background(.thinMaterial, in: Circle())
+          }
+          .padding(.horizontal)
+          .accessibilityElement(children: .contain)
+          .accessibilityIdentifier("chrome-floating-bar")
         } else {
-          // C1: one floating bar — [library] [Years │ Months │ All] [search] —
-          // instead of a pills row above the tab bar. C3: the search slot is
-          // the separate search circle. The `library-zoom` identifier is kept
-          // for the existing zoom tests; the select-mode branch above is
-          // WP-M's and is untouched.
+          // TRACK G (b) scrolled (or a non-All level, where the pill is the
+          // only way back): the single floating segmented pill
+          // [icon|Years|Months|All|magnifier]. Unchanged from the C1 bar —
+          // identifiers kept for the existing zoom tests; the select-mode
+          // branch above is WP-M's and is untouched.
           HStack(spacing: 12) {
             Button {
               zoomRaw = LibraryZoomLevel.all.rawValue
@@ -227,6 +258,9 @@ struct LibraryView: View {
           .accessibilityIdentifier("sync-error-banner")
         }
       }
+      // TRACK G: a fresh time level starts at the top — re-arm the
+      // scroll-at-top chrome (the rebuilt grid below reports flips itself).
+      .onChange(of: zoomRaw) { _, _ in isGridAtTop = true }
       .task(id: filterTaskKey) {
         await resolveGrid()
       }
@@ -358,6 +392,8 @@ struct LibraryView: View {
               }
             }
           },
+          // TRACK G: scroll-at-top flips drive the bottom-chrome two states.
+          onAtTopChange: { isGridAtTop = $0 },
           session: session
         )
         .accessibilityIdentifier("library-grid")
@@ -531,6 +567,15 @@ struct LibraryView: View {
     Binding(
       get: { zoom },
       set: { zoomRaw = $0.rawValue })
+  }
+
+  /// TRACK G: the [Library|Collections] switcher over the WP5 `requestedTab`
+  /// contract. A deep-linked "search" value has no segment; it reads back as
+  /// Library (the visible tab once returned to).
+  private var tabBinding: Binding<String> {
+    Binding(
+      get: { session.requestedTab == "collections" ? "collections" : "library" },
+      set: { session.requestedTab = $0 })
   }
 
   // MARK: - source persistence

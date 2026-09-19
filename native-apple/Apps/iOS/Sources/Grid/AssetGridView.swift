@@ -44,6 +44,9 @@ struct AssetGridView: View {
   var currentUserId: String? = nil
   var onPinchEdge: ((Bool) -> Void)? = nil
   var onScrollActive: ((Bool) -> Void)? = nil
+  /// TRACK G: scroll-at-top flips for the bottom-chrome two states. Defaulted
+  /// nil like its siblings so existing callers are untouched.
+  var onAtTopChange: ((Bool) -> Void)? = nil
   /// WP-M (G4): menu owner for the grid long-press provider. Optional so
   /// callers without a session keep tap-to-open untouched.
   var session: AppSession? = nil
@@ -67,6 +70,7 @@ struct AssetGridView: View {
     currentUserId: String? = nil,
     onPinchEdge: ((Bool) -> Void)? = nil,
     onScrollActive: ((Bool) -> Void)? = nil,
+    onAtTopChange: ((Bool) -> Void)? = nil,
     session: AppSession? = nil
   ) {
     self.source = source
@@ -86,6 +90,7 @@ struct AssetGridView: View {
     self.currentUserId = currentUserId
     self.onPinchEdge = onPinchEdge
     self.onScrollActive = onScrollActive
+    self.onAtTopChange = onAtTopChange
     self.session = session
   }
 
@@ -106,6 +111,7 @@ struct AssetGridView: View {
         currentUserId: currentUserId,
         onPinchEdge: onPinchEdge,
         onScrollActive: onScrollActive,
+        onAtTopChange: onAtTopChange,
         session: session
       )
       .ignoresSafeArea(edges: .bottom)
@@ -176,6 +182,7 @@ private struct GridBridge: UIViewControllerRepresentable {
   var currentUserId: String?
   var onPinchEdge: ((Bool) -> Void)?
   var onScrollActive: ((Bool) -> Void)?
+  var onAtTopChange: ((Bool) -> Void)?
   var session: AppSession? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator() }
@@ -240,6 +247,7 @@ private struct GridBridge: UIViewControllerRepresentable {
     vc.onRefresh = onRefresh
     vc.onPinchEdge = onPinchEdge
     vc.onScrollActive = onScrollActive
+    vc.onAtTopChange = onAtTopChange
     vc.pipeline = pipeline
     vc.showsHeaders = showsSectionHeaders
     vc.onNeedRows = { [weak loader, weak store] ids in
@@ -260,6 +268,7 @@ private struct GridBridge: UIViewControllerRepresentable {
     vc.currentUserId = currentUserId
     vc.onPinchEdge = onPinchEdge
     vc.onScrollActive = onScrollActive
+    vc.onAtTopChange = onAtTopChange
     vc.onRefresh = onRefresh
     vc.rowProvider = { [weak loader] in loader?.row(for: $0) }
     vc.flagsProvider = { [weak loader] in loader?.flags(for: $0) ?? [] }
