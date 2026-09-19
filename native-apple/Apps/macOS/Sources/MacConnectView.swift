@@ -28,6 +28,7 @@ struct MacConnectView: View {
         .accessibilityIdentifier("connect-button")
       if !status.isEmpty { Text(status).accessibilityIdentifier("connect-status") }
     }
+    .accessibilityIdentifier(AXIDs.connectForm)
     .padding()
     .frame(minWidth: 360)
   }

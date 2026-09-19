@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -8,6 +9,7 @@ import {
   Param,
   ParseFilePipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -16,7 +18,7 @@ import {
 } from '@nestjs/common';
 import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { type NextFunction, type Request, type Response } from 'express';
-import type { UploadFiles } from 'src/types.js';
+import type { UploadFile, UploadFiles } from 'src/types.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetBulkUploadCheckResponseDto,
@@ -29,12 +31,14 @@ import {
   AssetMediaOptionsDto,
   AssetMediaSize,
 } from 'src/dtos/asset-media.dto.js';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetRenditionUploadDto } from 'src/dtos/rendition.dto.js';
 import { ApiTag, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
-import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
+import { FileUploadInterceptor, getFile, getFiles } from 'src/middleware/file-upload.interceptor.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { ImmichFileResponse, sendFile } from 'src/utils/file.js';
@@ -87,6 +91,44 @@ export class AssetMediaController {
     }
 
     return responseDto;
+  }
+
+  @Put(':id/rendition')
+  @Authenticated({ permission: Permission.AssetEditCreate })
+  @UseInterceptors(FileUploadInterceptor)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ description: 'Rendered asset file', type: AssetRenditionUploadDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Rendition uploaded successfully',
+    type: AssetResponseDto,
+  })
+  @Endpoint({
+    summary: 'Upload asset rendition',
+    description:
+      'Uploads a rendered (edited) file for the specified asset. Thumbnails derive from the rendition and server edits apply on top of it. No new asset is created.',
+    history: new HistoryBuilder().added('v2.5.0').beta('v2.5.0'),
+  })
+  async uploadRendition(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @UploadedFiles(new ParseFilePipe({ validators: [new FileNotEmptyValidator(['assetData'])] })) files: UploadFiles,
+  ): Promise<AssetResponseDto> {
+    const file = getFile(files, 'assetData') as UploadFile;
+    return this.service.uploadRendition(auth, id, file);
+  }
+
+  @Delete(':id/rendition')
+  @Authenticated({ permission: Permission.AssetEditDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove asset rendition',
+    description:
+      'Removes the rendered (edited) file for the specified asset. Thumbnails fall back to the original. Idempotent.',
+    history: new HistoryBuilder().added('v2.5.0').beta('v2.5.0'),
+  })
+  removeRendition(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.removeRendition(auth, id);
   }
 
   @Get(':id/original')

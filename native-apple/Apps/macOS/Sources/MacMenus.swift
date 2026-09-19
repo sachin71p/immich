@@ -90,4 +90,7 @@ struct MacCommands: Commands {
 extension Notification.Name {
   static let macImportFiles = Notification.Name("Heirloom.MacImportFiles")
   static let macImportCamera = Notification.Name("Heirloom.MacImportCamera")
+  /// Quit with sheets open: views drop every sheet binding so termination (which
+  /// already ended AppKit-attached sheets) can't re-present them.
+  static let macDismissSheetsForQuit = Notification.Name("Heirloom.MacDismissSheetsForQuit")
 }

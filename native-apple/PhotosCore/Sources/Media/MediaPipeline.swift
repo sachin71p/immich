@@ -125,9 +125,25 @@ public actor MediaPipeline {
   }
 
   /// Default pipeline: a dedicated Nuke pipeline whose memory cache is sized to the device.
-  public static func makeDefault(diskCache: TieredMediaCache, server: MediaServer) -> MediaPipeline {
+  ///
+  /// - parameter protocolClasses: extra `URLProtocol` classes prepended to the private
+  ///   `URLSession` Nuke loads through. A global `URLProtocol.registerClass` does NOT
+  ///   intercept a session Nuke creates itself, so the fixture stub must be injected here —
+  ///   otherwise every fixture media load fails DNS, the stream yields no tier, and the
+  ///   viewer (and grid) stays imageless.
+  public static func makeDefault(
+    diskCache: TieredMediaCache,
+    server: MediaServer,
+    protocolClasses: [AnyClass] = []
+  ) -> MediaPipeline {
     var configuration = ImagePipeline.Configuration()
     configuration.imageCache = ImageCache(costLimit: memoryCacheCostLimit())
+    if !protocolClasses.isEmpty {
+      let sessionConfiguration = DataLoader.defaultConfiguration
+      sessionConfiguration.protocolClasses =
+        protocolClasses + (sessionConfiguration.protocolClasses ?? [])
+      configuration.dataLoader = DataLoader(configuration: sessionConfiguration)
+    }
     let pipeline = ImagePipeline(configuration: configuration)
     return MediaPipeline(
       service: NukeMediaImageService(pipeline: pipeline), diskCache: diskCache, server: server)
@@ -463,6 +479,18 @@ public actor MediaPipeline {
 
   public func cancelPrefetch() {
     cancelPrefetch(keeping: [])
+  }
+
+  /// WP-F F5 velocity-aware micro prefetch for mosaic zoom (consumed by WP-G's grid,
+  /// which owns scroll velocity — the pipeline never reads UI state). Items whose
+  /// cells will pass through the viewport within 100 ms are skipped before any fetch
+  /// starts; the survivors load through the standard dedup/memory/disk `.micro` path
+  /// (thumbnail bytes downsampled to 64 px at decode).
+  public func prefetchMicro(_ items: [(id: String, distance: Double)], velocity: Double) async {
+    let wanted = items.filter {
+      MicroThumbnail.shouldDecode(distanceToViewportPts: $0.distance, velocityPtsPerSec: velocity)
+    }.map(\.id)
+    await prefetch(ids: wanted, tier: .micro, edited: false)
   }
 
   // MARK: - offline keeps (pinning)

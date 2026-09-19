@@ -6,44 +6,61 @@ import Media
 import Rules
 import Search
 import SwiftUI
-import VisionKit
 
-/// Asset viewer (brief task 3): in-window and full-screen, arrow-key and horizontal-scroll
-/// paging (trackpad swipe / wheel-x; chevron buttons removed per owner request), pinch zoom
-/// with tier upgrade (thumbnail → preview → original through `MediaPipeline`), floating Info
-/// inspector (⌘I), favorite (.), rotate (⌘R, persisted through the edit path for photos),
-/// delete (⌘⌫), move to… (⌘⇧M), add to album.
+/// Asset viewer (WP-V): `NSPageController` pager (1:1 swipe, arrows), zoomable
+/// image pages with a Live Text overlay, video/live pages, pinch-to-close and
+/// open/close transitions, Photos-order toolbar/title/badges/chevrons/keys,
+/// context menu and the in-window Info inspector.
 struct MacViewerView: View {
   @Bindable var state: MacAppState
   var assetId: String
   /// Non-nil when hosted inline in `MacLibraryBrowser`: arrow-key paging updates `assetId` in
   /// place instead of opening another window. Nil in the standalone `MacWindow.viewer` scene
-  /// (`File > New Viewer Window`), where paging still opens a new window as before.
+  /// (`File > New Viewer Window`).
   var onNavigate: ((String) -> Void)? = nil
   /// Non-nil when hosted inline: shows a back button/Escape to return to the library instead of
   /// relying on the window's own close button.
   var onClose: (() -> Void)? = nil
-  @State private var asset: Asset?
-  @State private var image: NSImage?
-  @State private var loadedTier: MediaTier?
-  /// Live viewer extent (points) for the window-exceeds-preview fullsize check.
-  @State private var viewSize: CGSize = .zero
-  /// Live magnification from the zoom view for the > 1.5× fullsize check.
-  @State private var magnification: Double = 1
-  /// Display rotation in clockwise quarter turns (WP5 item 4): reset on every page change;
+
+  init(
+    state: MacAppState, assetId: String, onNavigate: ((String) -> Void)? = nil,
+    onClose: (() -> Void)? = nil
+  ) {
+    self.state = state
+    self.assetId = assetId
+    self.onNavigate = onNavigate
+    self.onClose = onClose
+    _selectedID = State(initialValue: assetId)
+  }
+
+  /// Pager selection (V5/V6): pages in place in both inline and standalone
+  /// windows; `onNavigate` additionally mirrors the id to the inline parent.
+  @State private var selectedID: String
+  @State private var chromeAsset: Asset?
+  @State private var pageStore: ViewerPageStore?
+  @State private var pagerHost: ViewerPagerViewController?
+  /// Display rotation in clockwise quarter turns: reset on every page change;
   /// the persisted rotation arrives back through the pipeline, never through this state.
   @State private var quarterTurns = 0
   @State private var rotationError: String?
-  /// "San Jose, California" for the title subtitle (WP5 item 5), from the EXIF row.
+  /// "San Jose, California" for the title subtitle, from the EXIF row.
   @State private var titlePlace: String?
+  /// Toolbar zoom slider ↔ page magnification binding (V8/V9, both directions).
+  @State private var sliderValue = 1.0
+  @State private var hoverEdge: ChevronVisibility.Edge?
+  /// Interactive pinch-close snapshot overlay scale (V7), nil at rest.
+  @State private var pinchScale: CGFloat?
   @State private var showingInspector = false
   @State private var showingMove = false
-  @State private var showingEdit = false
+  /// WP-E E1/E2: full-window edit mode replaces the viewer content (first click
+  /// on Edit, Return, or the `HeirloomViewer.openEdit` notification).
+  @State private var showingEditMode = false
+  /// Pixel preview for the edit shell: the placeholder tier is enough to open
+  /// (mirrors WP-E's progressive `image`); cleared on page change.
+  @State private var editPreviewImage: NSImage?
+  @State private var editPreviewTask: Task<Void, Never>?
   @State private var showingAddToAlbum = false
   @State private var error: String?
-  @State private var liveTextEnabled = true
-  @State private var liveText: ImageAnalysis?
-  @Environment(\.openWindow) private var openWindow
   // Hosted inline, this view replaces an NSCollectionView (the grid) that held first responder —
   // SwiftUI doesn't hand keyboard focus to the new content automatically, so arrow-key paging
   // silently did nothing until something explicitly claims focus.
@@ -58,43 +75,42 @@ struct MacViewerView: View {
       addToAlbum: { showingAddToAlbum = true },
       toggleInspector: { showingInspector.toggle() },
       openViewer: {},
-      // Space while the viewer is focused toggles Quick Look off (WP5 item 8). The
-      // grid's Space opens the panel; the menus own the shortcut in both cases, so
-      // this closure is the viewer's only Space path — no double-fire.
-      preview: { MacPreviewPanel.dismiss() }
+      // Space on an image page closes the viewer (V13); on a video page the
+      // focused player consumes Space itself (play/pause, V3), so this closure
+      // is the image-page and unfocused path — no double-fire.
+      preview: { closeOrDismissPreview() }
     )
   }
 
-  /// Window title (WP5 item 5): capture date ("February 8, 2026"). The filename moved to
-  /// the inspector.
+  /// Window title (V9, SPEC-TOOLBAR-SETTINGS §2a): place name, falling back to
+  /// the capture date.
   private var viewerTitle: String {
-    guard let date = asset?.localDateTime else { return "Viewer" }
-    return date.formatted(date: .long, time: .omitted)
+    guard let date = chromeAsset?.localDateTime else { return "Viewer" }
+    return ViewerHeaderFormatter.title(place: titlePlace, date: date)
   }
 
-  /// Subtitle: time plus place when known ("1:44 AM · San Jose, California").
+  /// Subtitle (V9/V19): "Month d, yyyy at h:mm:ss a · N of M"; the counter is
+  /// hidden for single-item contexts.
   private var viewerSubtitle: String {
-    guard let date = asset?.localDateTime else { return "" }
-    let time = date.formatted(date: .omitted, time: .shortened)
-    guard let place = titlePlace, !place.isEmpty else { return time }
-    return "\(time) · \(place)"
+    guard let date = chromeAsset?.localDateTime else { return "" }
+    guard let context = effectiveContext, !context.rows.isEmpty, let at = index else {
+      return ViewerHeaderFormatter.subtitle(
+        date: date, index: 0, total: 1)
+    }
+    return ViewerHeaderFormatter.subtitle(
+      date: date, index: at, total: context.rows.count)
   }
 
   /// Display rotation in degrees from the quarter-turn count.
   private var rotationDegrees: Double { Double(((quarterTurns % 4) + 4) % 4) * 90 }
 
-  /// Re-fit scale for 90°/270° turns (WP5 item 4): the ratio of the swapped-aspect fit to the
-  /// base fit, so the rotated image stays inside the container instead of overflowing it.
   private func rotationFitScale(container: CGSize) -> CGFloat {
     guard quarterTurns % 2 != 0 else { return 1 }
     let w: CGFloat
     let h: CGFloat
-    if let aw = asset?.width, let ah = asset?.height, aw > 0, ah > 0 {
+    if let aw = chromeAsset?.width, let ah = chromeAsset?.height, aw > 0, ah > 0 {
       w = CGFloat(aw)
       h = CGFloat(ah)
-    } else if let size = image?.size, size.width > 0, size.height > 0 {
-      w = size.width
-      h = size.height
     } else {
       return 1
     }
@@ -104,50 +120,196 @@ struct MacViewerView: View {
     return min(container.width / h, container.height / w) / fit
   }
 
-  /// Display-order paging context (WP2 Step 4: was the unfiltered full id list).
-  /// Falls back to a one-element snapshot when `viewerContext` is nil (a window
-  /// opened from Search, Map or a deep link — WP5 item 1). The fallback stays local
-  /// so a standalone viewer window never clobbers the library's shared context.
+  /// Display-order paging context: falls back to a one-element snapshot when
+  /// `viewerContext` is nil (a window opened from Search, Map or a deep link).
+  /// The fallback stays local so a standalone viewer window never clobbers the
+  /// library's shared context.
   private var effectiveContext: TimelineGridSnapshot? { state.viewerContext ?? fallbackContext }
   @State private var fallbackContext: TimelineGridSnapshot?
 
+  private var contextIDs: [String] {
+    effectiveContext?.rows.map(\.id) ?? [selectedID]
+  }
+
+  private var kindById: [String: TimelineMediaKind] {
+    guard let rows = effectiveContext?.rows else { return [:] }
+    return Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.mediaKind) })
+  }
+
+  private var thumbhashById: [String: String?] {
+    guard let rows = effectiveContext?.rows else { return [:] }
+    return Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.thumbhash) })
+  }
+
   private var index: Int? {
     guard let context = effectiveContext, !context.rows.isEmpty,
-      let raw = context.indexById[assetId]
+      let raw = context.indexById[selectedID]
     else { return nil }
     return min(max(0, raw), context.rows.count - 1)
   }
 
+  private var selectedKind: TimelineMediaKind? { kindById[selectedID] }
+  private var selectedIsVideo: Bool {
+    selectedKind == .video || chromeAsset?.type == .video
+  }
+
+  @State private var exifProfile: String?
+
+  private var isHDR: Bool {
+    guard let asset = chromeAsset else { return false }
+    return MediaFormatInfo.classify(
+      fileName: asset.originalFileName, profileDescription: exifProfile
+    ).dynamicRange == .hdr
+  }
+
+  private var isLive: Bool { chromeAsset?.livePhotoVideoId != nil }
+
   var body: some View {
+    // WP-E E1/E2: full-window edit mode replaces the viewer content once the
+    // chrome asset and a pixel preview are present; otherwise the viewer.
+    if showingEditMode, let asset = chromeAsset, let preview = editPreviewImage {
+      MacEditModeView(
+        asset: asset, access: editAccess, preview: preview,
+        loadOriginalData: { [self] in try await self.downloadOriginal(asset) },
+        loadVideoFile: asset.type == .video
+          ? { [self] in try await self.downloadOriginalFile(asset) } : nil,
+        persistence: editPersistence,
+        isFavorite: asset.isFavorite,
+        onFavorite: { toggleFavorite() },
+        onDone: { _ in Task { await loadChrome() } },
+        onExit: { showingEditMode = false })
+    } else {
+      viewerBody
+    }
+  }
+
+  private var viewerBody: some View {
+    // AnyView boundary: keeps each half of the modifier chain small enough
+    // for the type-checker (the full chain times out as one expression).
+    AnyView(chrome)
+    // Arrow keys page through the strip animated (V4/V6, including video
+    // pages: the player view forwards arrows here, and this focus claim keeps
+    // AppKit from routing the keystroke anywhere else).
+    .onKeyPress(.leftArrow) { stepOrPage(by: -1); return .handled }
+    .onKeyPress(.rightArrow) { stepOrPage(by: 1); return .handled }
+    // Space closes on image pages (V13); on video pages the focused player
+    // consumes Space itself (play/pause, V3).
+    .onKeyPress(.space) {
+      guard !selectedIsVideo else { return .ignored }
+      closeOrDismissPreview()
+      return .handled
+    }
+    // WP-E E1: Return opens edit mode (first-click parity for keyboard).
+    .onKeyPress(.return) {
+      guard !showingEditMode, let asset = chromeAsset, canEdit(asset) else { return .ignored }
+      enterEditMode()
+      return .handled
+    }
+    // Character keys (V8/V13): Z toggles zoom; ⌘+/⌘− step ×1.5; ⌥⌘R rotates
+    // counter-clockwise (⌘R clockwise lives in the menus). Modifiers are
+    // matched inside — `onKeyPress` offers no modifiers filter.
+    .onKeyPress(phases: .down) { press in
+      if press.modifiers.isEmpty, press.key == "z" {
+        toggleZoomKey()
+        return .handled
+      }
+      if press.modifiers == .command,
+        press.key == KeyEquivalent("+") || press.key == KeyEquivalent("=")
+      {
+        stepZoomKey(times: 1)
+        return .handled
+      }
+      if press.modifiers == .command, press.key == KeyEquivalent("-") {
+        stepZoomKey(times: -1)
+        return .handled
+      }
+      if press.modifiers == [.command, .option], press.key == KeyEquivalent("r") {
+        rotate(by: -1)
+        return .handled
+      }
+      return .ignored
+    }
+    // Esc closes the inline viewer; standalone windows keep window-level close.
+    .onKeyPress(.escape) {
+      guard let onClose else { return .ignored }
+      onClose()
+      return .handled
+    }
+    .task {
+      pageStore = ViewerPageStore(state: state)
+    }
+    .task(id: selectedID) {
+      quarterTurns = 0
+      rotationError = nil
+      sliderValue = 1
+      pinchScale = nil
+      editPreviewTask?.cancel()
+      editPreviewTask = nil
+      editPreviewImage = nil
+      await ensureFallbackContext()
+      await loadChrome()
+    }
+    .onChange(of: assetId) { _, new in selectedID = new }
+    .onAppear { isFocused = true }
+    .onReceive(NotificationCenter.default.publisher(for: .heirloomOpenEdit)) { note in
+      // WP-E E1: open on the viewer notification (menus and external hosts;
+      // the toolbar and key map call `enterEditMode()` directly).
+      if let id = note.userInfo?["assetId"] as? String, id != selectedID { return }
+      guard !showingEditMode, let asset = chromeAsset, canEdit(asset) else { return }
+      enterEditMode()
+    }
+  }
+
+  /// Content + chrome (title, toolbar, inspector, sheets, menu, focus). The
+  /// key map and page tasks attach in `body` past the `AnyView` boundary.
+  private var chrome: some View {
+    viewerContent
+      .frame(minWidth: 640, minHeight: 480)
+      .navigationTitle(viewerTitle)
+      .navigationSubtitle(viewerSubtitle)
+      .focusedValue(\.macAssetActions, assetActions)
+      .toolbar {
+        viewerToolbar
+      }
+      .inspector(isPresented: $showingInspector) {
+        if let chromeAsset {
+          MacInspectorView(asset: chromeAsset, state: state)
+        }
+      }
+      .sheet(isPresented: $showingMove) {
+        MacMoveSheet(state: state, assetIds: [selectedID]) { handleMoveResults($0) }
+      }
+      .sheet(isPresented: $showingAddToAlbum) {
+        MacAddToAlbumSheet(state: state, assetIds: [selectedID]) {
+          showingAddToAlbum = false
+          MacAssetChangeCenter.shared.post(.albumsChanged)
+        }
+      }
+      .contextMenu { viewerContextMenu }
+      .focusable()
+      .focused($isFocused)
+  }
+
+  private var viewerContent: some View {
+    GeometryReader { proxy in
+      ZStack {
+        pagerSection(container: proxy.size)
+        chevronOverlay
+        badgesOverlay
+        errorOverlay
+      }
+      // Explicit group: the pager's AppKit-hosted subtree leaves SwiftUI with
+      // no AX element of its own here, which drops a bare identifier.
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier(AXIDs.viewer)
+    }
+  }
+
+  private var errorOverlay: some View {
     ZStack {
-      if let asset, asset.type == .video {
-        MacVideoPageView(asset: asset, state: state) {
-          if canEdit(asset) { showingEdit = true }
-        }
-      } else if let asset, let motionId = asset.livePhotoVideoId {
-        MacLivePhotoPageView(asset: asset, motionAssetId: motionId, state: state)
-      } else if let image {
-        // Rotation re-fit (WP5 item 4): the representable fills the container aspect-fit, so a
-        // 90°/270° turn must shrink the whole rendered view to the swapped-aspect fit size —
-        // otherwise the rotated image overflows the bounds. Animated 0.2 s per the brief.
-        GeometryReader { proxy in
-          Group {
-            if liveTextEnabled {
-              MacLiveTextView(image: image, analysis: liveText, onPage: { page(by: $0) })
-            } else {
-              MacZoomableImageView(
-                image: image, onZoomBeyondPreview: upgradeTier,
-                onMagnification: { magnification = $0 },
-                onPage: { page(by: $0) }
-              )
-            }
-          }
-          .rotationEffect(.degrees(rotationDegrees))
-          .scaleEffect(rotationFitScale(container: proxy.size))
-        }
-        .animation(.easeInOut(duration: 0.2), value: quarterTurns)
-      } else {
-        ProgressView().controlSize(.large)
+      if pinchScale != nil {
+        Color.black.opacity(0.2)
+          .allowsHitTesting(false)
       }
       if let error {
         Text(error).foregroundStyle(.red).font(.caption).padding()
@@ -156,139 +318,232 @@ struct MacViewerView: View {
         Text(rotationError).foregroundStyle(.red).font(.caption).padding()
       }
     }
-    .frame(minWidth: 640, minHeight: 480)
-    .background(
-      GeometryReader { proxy in
-        Color.clear.preference(key: ViewerSizeKey.self, value: proxy.size)
+  }
+
+  // MARK: - toolbar (SPEC-TOOLBAR-SETTINGS §2a, TV-3)
+
+  /// Photos set and order: Back + zoom slider capsules leading; Info · Share ·
+  /// Favorite · Rotate · Auto-Enhance, then a separate Edit capsule. Trash /
+  /// Move / Add-to-Album live in menus and the context menu.
+  @ToolbarContentBuilder
+  private var viewerToolbar: some ToolbarContent {
+    if let onClose {
+      ToolbarItem(placement: .navigation) {
+        Button { onClose() } label: { Label("Back", systemImage: "chevron.left") }
       }
-    )
-    .onPreferenceChange(ViewerSizeKey.self) { viewSize = $0 }
-    .navigationTitle(viewerTitle)
-    .navigationSubtitle(viewerSubtitle)
-    .focusedValue(\.macAssetActions, assetActions)
-    .toolbar {
-      if let onClose {
-        ToolbarItem(placement: .navigation) {
-          Button { onClose() } label: { Label("Back", systemImage: "chevron.left") }
-        }
+    }
+    ToolbarItem(placement: .navigation) { zoomSlider }
+    ToolbarItemGroup {
+      Button { showingInspector.toggle() } label: {
+        Label("Info", systemImage: "info.circle")
       }
-      // No chevron paging buttons (owner request): horizontal scroll pages prev/next
-      // and Esc/Back exits. Arrows arrive via `.onKeyPress` below.
-      ToolbarItemGroup {
-        Button { toggleFavorite() } label: {
-          Label("Favorite", systemImage: (asset?.isFavorite ?? false) ? "heart.fill" : "heart")
-        }
-        Button { trash() } label: { Label("Delete", systemImage: "trash") }
-        Button { showingMove = true } label: { Label("Move to…", systemImage: "folder") }
-        Button { showingAddToAlbum = true } label: { Label("Add to Album", systemImage: "rectangle.stack.badge.plus") }
-        if let asset, canLock(asset) {
-          Button { toggleLocked(asset) } label: {
-            Label(asset.visibility == .locked ? "Unlock" : "Lock", systemImage: asset.visibility == .locked ? "lock.open" : "lock")
+      .accessibilityIdentifier(AXIDs.toolbarInfo)
+      Button { share() } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        .accessibilityIdentifier(AXIDs.toolbarShare)
+      Button { toggleFavorite() } label: { favoriteLabel }
+        .accessibilityIdentifier(AXIDs.toolbarFavorite)
+        .accessibilityValue(isFavorited ? "favorited" : "not favorited")
+      Button { rotateClockwise() } label: {
+        Label("Rotate", systemImage: "rotate.left")
+      }
+      .disabled(selectedIsVideo)
+      .accessibilityIdentifier(AXIDs.toolbarRotate)
+      Button { toggleAutoEnhance() } label: { enhanceLabel }
+        .accessibilityIdentifier("toolbar.autoEnhance")
+    }
+    // WP-E E1: a single click opens edit mode at once (no double-click).
+    // Render-gated on the permission verdict so the button only exists when
+    // actionable: personal assets pass on user id alone; space/library rows
+    // resolve when memberships land and re-render.
+    if let asset = chromeAsset, canEdit(asset) {
+      ToolbarItem {
+        Button { enterEditMode() } label: { Text("Edit") }
+          .accessibilityIdentifier(AXIDs.toolbarEdit)
+      }
+    }
+  }
+
+  private var isFavorited: Bool { chromeAsset?.isFavorite ?? false }
+
+  private var favoriteLabel: some View {
+    Label("Favorite", systemImage: isFavorited ? "heart.fill" : "heart")
+  }
+
+  private var enhanceLabel: some View {
+    Label(
+      "Auto Enhance",
+      systemImage: autoEnhanceApplied ? "wand.and.stars.inverse" : "wand.and.stars")
+  }
+
+  /// Zoom slider capsule (V8/V9): bound live to the page magnification.
+  private var zoomSlider: some View {
+    HStack(spacing: 4) {
+      Image(systemName: "minus.magnifyingglass")
+      Slider(value: $sliderValue, in: 1...SmartZoomMath.maxMagnification) {
+        Text("Zoom")
+      }
+      .frame(width: 100)
+      .accessibilityIdentifier(AXIDs.viewerZoomSlider)
+      .accessibilityValue(zoomPercentText)
+      .onChange(of: sliderValue) { _, new in
+        pagerHost?.setSelectedPageMagnification(new)
+      }
+      Image(systemName: "plus.magnifyingglass")
+    }
+  }
+
+  private var zoomPercentText: String { "\(Int(sliderValue * 100)) percent" }
+
+  /// WP-E E1 entry: full-window edit replaces viewer content as soon as the
+  /// chrome asset and a pixel preview are both present (`body` flips when
+  /// they land; no intent queue — the toolbar only renders when actionable
+  /// and the shell appears the moment its inputs exist).
+  private func enterEditMode() {
+    showingEditMode = true
+    loadEditPreviewIfNeeded()
+  }
+
+  /// Pixel preview for the edit shell: the placeholder tier is enough to open
+  /// (mirrors WP-E's progressive `image`, which also starts life as a
+  /// placeholder in fixture mode); later tiers upgrade it in place.
+  private func loadEditPreviewIfNeeded() {
+    guard editPreviewImage == nil, editPreviewTask == nil else { return }
+    guard let asset = chromeAsset else { return }
+    let id = asset.id
+    editPreviewTask = Task {
+      defer { editPreviewTask = nil }
+      guard
+        let stream = await pageStore?.previewStream(id: id, thumbhash: asset.thumbhash)
+      else { return }
+      do {
+        for try await step in stream {
+          try Task.checkCancellation()
+          switch step.content {
+          case .placeholder(let next): editPreviewImage = next
+          case .tier(_, let next, _): editPreviewImage = next
           }
         }
-        if let asset, canEdit(asset) {
-          Button { showingEdit = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-        }
-        Button { rotateClockwise() } label: { Label("Rotate", systemImage: "rotate.right") }
-          .disabled(asset?.type == .video)
-          .help(
-            asset?.type == .video
-              ? "Rotation is not available for videos" : "Rotate 90° clockwise (⌘R)")
-        Button { showingInspector.toggle() } label: { Label("Info", systemImage: "info.circle") }
-        Toggle("Live Text", isOn: $liveTextEnabled)
-          .disabled(asset?.type == .video)
-      }
-    }
-    .inspector(isPresented: $showingInspector) {
-      if let asset {
-        MacInspectorView(asset: asset, state: state)
-      }
-    }
-    .sheet(isPresented: $showingMove) {
-      MacMoveSheet(state: state, assetIds: [assetId]) { results in
-        showingMove = false
-        // Same posts as the grid's move sheet (MacMainWindow): moved rows leave every
-        // context without a reload; when this asset moved out, advance past it (item 7).
-        let moved = Set(results.filter { $0.status == .moved }.map(\.assetId))
-        guard !moved.isEmpty else { return }
-        MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: moved))
-        if moved.contains(assetId) { advanceAfterRemoval(removedId: assetId) }
-      }
-    }
-    .sheet(isPresented: $showingAddToAlbum) {
-      MacAddToAlbumSheet(state: state, assetIds: [assetId]) {
-        showingAddToAlbum = false
-        MacAssetChangeCenter.shared.post(.albumsChanged)
-      }
-    }
-    .sheet(isPresented: $showingEdit) {
-      if let asset, let preview = editPreview {
-        MacEditView(
-          asset: asset, access: editAccess, preview: preview,
-          loadOriginalData: { try await downloadOriginal(asset) },
-          loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
-          persistence: RESTEditPersistence(
-            serverURL: state.serverURL,
-            token: { [connection = state.connection] in await connection.tokenStore.get() }),
-          onDone: { _ in Task { await loadProgressive() } })
-          .frame(minWidth: 900, minHeight: 640)
-      }
-    }
-    .focusable()
-    .focused($isFocused)
-    // Arrow keys arrive exactly once (WP5 item 1): while this inline viewer is
-    // visible the grid's NSCollectionView is out of the hierarchy (MacMainWindow
-    // shows either the viewer or the grid, never both), and the focus claim above
-    // keeps AppKit from routing the keystroke anywhere else. Verified by focus,
-    // not by suppression — there is no grid handler left to suppress.
-    .onKeyPress(.leftArrow) { page(by: -1); return .handled }
-    .onKeyPress(.rightArrow) { page(by: 1); return .handled }
-    // Esc closes the inline viewer; the existing `onClose` callback returns to the
-    // grid with the prior selection intact (WP5 item 8). Standalone viewer windows
-    // (no `onClose`) keep the window-level close behavior.
-    .onKeyPress(.escape) {
-      guard let onClose else { return .ignored }
-      onClose()
-      return .handled
-    }
-    .task(id: assetId) {
-      // Display-only state never carries across pages (rotation re-fit is per photo; the
-      // persisted rotation arrives back through the pipeline, not through this state).
-      quarterTurns = 0
-      rotationError = nil
-      liveText = nil
-      titlePlace = nil
-      await ensureFallbackContext()
-      await loadProgressive()
-    }
-    .onAppear { isFocused = true }
-    .task(id: liveTextEnabled) {
-      // Toggling Live Text on after load still needs an analysis (item 10); the preview
-      // tier is enough — analysis runs on whatever tier is currently displayed.
-      if liveTextEnabled, liveText == nil, image != nil, asset?.type != .video {
-        await analyzeLiveText()
-      }
+      } catch {}
     }
   }
 
-  /// Clamped paging through `viewerContext` display order (WP5 item 1): no wrap,
-  /// so → then ← returns to the same photo.
+  private var editPersistence: RESTEditPersistence {
+    RESTEditPersistence(
+      serverURL: state.serverURL,
+      token: { [connection = state.connection] in await connection.tokenStore.get() })
+  }
+
+  // MARK: - page chrome sections (split for type-check performance)
+
+  @ViewBuilder
+  private func pagerSection(container: CGSize) -> some View {
+    if let pageStore {
+      MacViewerPager(
+        ids: contextIDs, selectedID: selectedID,
+        onSelect: { select(id: $0) },
+        pageController: { makePage(id: $0, store: pageStore) },
+        onPreload: { preload(ids: $0) },
+        onHost: { pagerHost = $0 },
+        onMagnification: { id, mag in
+          if id == selectedID { sliderValue = mag }
+        },
+        onPinchClose: { id, scale in
+          if id == selectedID { pinchScale = scale }
+        },
+        onPinchCloseEnd: { id, scale in
+          if id == selectedID { resolvePinchClose(scale: scale) }
+        }
+      )
+      .rotationEffect(.degrees(selectedIsVideo ? 0 : rotationDegrees))
+      .scaleEffect(rotationFitScale(container: container))
+      .animation(.easeInOut(duration: 0.2), value: quarterTurns)
+    } else {
+      ProgressView().controlSize(.large)
+    }
+  }
+
+  /// Edge-hover chevrons (V11): hover-gated — absent from the hierarchy at
+  /// rest — fading 0.15 s, hidden at the first/last index.
+  private var chevronOverlay: some View {
+    HStack(spacing: 0) {
+      edgeZone(edge: .prev)
+      Spacer(minLength: 0)
+      edgeZone(edge: .next)
+    }
+  }
+
+  /// Image overlay badges (SPEC-TOOLBAR-SETTINGS §2a): LIVE + HDR at the
+  /// top-left, 8 pt inside, following the fitted image.
+  private var badgesOverlay: some View {
+    VStack {
+      HStack(spacing: 6) {
+        if isLive {
+          Label("LIVE", systemImage: "livephoto")
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.thinMaterial, in: Capsule())
+            .accessibilityIdentifier("viewer.badge.live")
+        }
+        if isHDR {
+          Text("HDR")
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.thinMaterial, in: Capsule())
+            .accessibilityIdentifier("viewer.badge.hdr")
+        }
+        Spacer()
+      }
+      .padding(8)
+      Spacer()
+    }
+    .allowsHitTesting(false)
+  }
+
+  // MARK: - pager wiring (V5/V6)
+
+  private func makePage(id: String, store: ViewerPageStore) -> NSViewController {
+    switch kindById[id] {
+    case .video:
+      return VideoPageController(assetID: id, loader: store.videoLoader())
+    case .livePhoto:
+      return LivePhotoPageController(assetID: id, store: store)
+    default:
+      return ImagePageController(assetID: id, thumbhash: thumbhashById[id] ?? nil, store: store)
+    }
+  }
+
+  private func select(id: String) {
+    selectedID = id
+    onNavigate?(id)
+  }
+
+  private func stepOrPage(by delta: Int) {
+    guard let pagerHost else {
+      page(by: delta)
+      return
+    }
+    pagerHost.step(delta)
+  }
+
+  /// Clamped paging fallback (no wrap, so → then ← returns to the same photo).
   private func page(by delta: Int) {
     guard let context = effectiveContext, let index, !context.rows.isEmpty else { return }
-    let next = min(max(0, index + delta), context.rows.count - 1)
+    let next = ViewerPagerMath.clampedIndex(index + delta, count: context.rows.count)
     guard next != index else { return }
-    let id = context.rows[next].id
-    if let onNavigate {
-      onNavigate(id)
-    } else {
-      openWindow(value: MacWindow.viewer(id))
+    select(id: context.rows[next].id)
+  }
+
+  private func preload(ids: [String]) {
+    let hashes = thumbhashById
+    Task {
+      await pageStore?.prefetch(ids: ids, thumbhashes: hashes)
     }
   }
 
-  /// Builds the one-element context when `viewerContext` is nil (WP5 item 1).
+  /// Builds the one-element context when `viewerContext` is nil.
   private func ensureFallbackContext() async {
-    guard state.viewerContext == nil, fallbackContext?.indexById[assetId] == nil else { return }
-    guard let asset = try? await state.store.asset(id: assetId) else { return }
+    guard state.viewerContext == nil, fallbackContext?.indexById[selectedID] == nil else { return }
+    guard let asset = try? await state.store.asset(id: selectedID) else { return }
     fallbackContext = TimelineGridSnapshot.build(
       sections: [TimelineSourceSection(kind: .none, rows: [TimelineRow(asset: asset)])],
       order: .newestFirst,
@@ -296,86 +551,147 @@ struct MacViewerView: View {
       generation: 0)
   }
 
-  /// Instant open (WP5 item 2): synchronous memory-cache thumbnail scaled up, then
-  /// the `.preview` stream step by step, then `.fullsize` when zoomed past 1.5× or
-  /// the window backing pixels exceed the preview size. Every step replaces the
-  /// image; nothing ever assigns nil, so the old page stays visible until the new
-  /// tier arrives — no blank flash between pages.
-  private func loadProgressive() async {
-    let id = assetId
-    if let cg = state.pipeline.cachedImage(id: id, tier: .thumbnail) {
-      image = NSImage(cgImage: cg, size: NSZeroSize)
-      loadedTier = .thumbnail
+  /// Chrome state for the selected page: the asset, its place subtitle and a
+  /// display-rotation reset. Page pixels load inside the page controllers.
+  private func loadChrome() async {
+    let id = selectedID
+    guard let fresh = try? await state.store.asset(id: id) else { return }
+    guard id == selectedID else { return }
+    chromeAsset = fresh
+    let summary = try? await state.store.exifSummary(assetId: id)
+    titlePlace = summary?.placeString
+    exifProfile = summary?.profileDescription
+  }
+
+  // MARK: - zoom keys (V8)
+
+  private func toggleZoomKey() {
+    sliderValue = SmartZoomMath.toggled(current: sliderValue)
+    pagerHost?.setSelectedPageMagnification(sliderValue)
+  }
+
+  private func stepZoomKey(times: Int) {
+    if times > 0 {
+      sliderValue = SmartZoomMath.stepped(sliderValue, times: times)
     } else {
-      loadedTier = nil
+      sliderValue = max(1, sliderValue / pow(SmartZoomMath.stepFactor, Double(-times)))
     }
-    do {
-      guard let fresh = try await state.store.asset(id: id) else { return }
-      try Task.checkCancellation()
-      asset = fresh
-      if id == assetId {
-        titlePlace = try? await state.store.exifSummary(assetId: id)?.placeString
+    pagerHost?.setSelectedPageMagnification(sliderValue)
+  }
+
+  // MARK: - pinch-close (V7)
+
+  private func resolvePinchClose(scale: CGFloat) {
+    defer { pinchScale = nil }
+    guard PinchCloseDecision.shouldClose(endScale: scale, velocityInward: false) else { return }
+    guard let onClose else { return }
+    // No grid source yet (WP-G implements `ViewerTransitionSource`): the
+    // animator cross-fades on its 0.3 s gate, then dismisses.
+    ViewerTransitionAnimator.animateClose(
+      snapshot: NSImage(), from: .zero, source: nil, assetId: selectedID
+    ) {
+      onClose()
+    }
+  }
+
+  // MARK: - chrome actions (V9/V13)
+
+  private func closeOrDismissPreview() {
+    if let onClose {
+      onClose()
+    } else {
+      MacPreviewPanel.dismiss()
+    }
+  }
+
+  @State private var autoEnhanceApplied = false
+
+  private func toggleAutoEnhance() {
+    autoEnhanceApplied.toggle()
+    // Enhancement rendering lands with WP-E; the toggle state is chrome-owned.
+  }
+
+  /// Share toolbar button (TV-3): `NSSharingServicePicker` with the current
+  /// original, staged through a temp dir via `MacExporter` (same path as the
+  /// grid's `shareSelected`).
+  private func share() {
+    guard let asset = chromeAsset else { return }
+    Task { @MainActor in
+      do {
+        let exporter = MacExporter(
+          serverURL: state.serverURL,
+          tokenProvider: { [connection = state.connection] in await connection.tokenStore.get() })
+        let dir = FileManager.default.temporaryDirectory
+          .appendingPathComponent("HeirloomShare-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = try await exporter.downloadOriginal(asset: asset)
+        let url = dir.appendingPathComponent(asset.originalFileName)
+        try data.write(to: url)
+        guard let view = NSApp.keyWindow?.contentView else { return }
+        NSSharingServicePicker(items: [url]).show(
+          relativeTo: view.bounds, of: view, preferredEdge: .minY)
+      } catch is CancellationError {
+      } catch {
+        self.error = error.localizedDescription
       }
-      for try await step in await state.pipeline.stream(asset: fresh, tier: .preview) {
-        try Task.checkCancellation()
-        switch step.content {
-        case .placeholder(let next): image = next
-        case .tier(let tier, let next, _):
-          image = next
-          loadedTier = tier
+    }
+  }
+
+  // MARK: - context menu (V10)
+
+  @ViewBuilder
+  private var viewerContextMenu: some View {
+    let kind: ViewerContextMenuSpec.AssetKind =
+      selectedIsVideo ? .video : (isLive ? .live : .photo)
+    let wanted = ViewerContextMenuSpec.titles(kind: kind)
+    ForEach(wanted, id: \.self) { title in
+      switch title {
+      case "Get Info": Button("Get Info") { showingInspector.toggle() }
+      case "Rotate Left": Button("Rotate Left") { rotate(by: -1) }
+      case "Rotate Right": Button("Rotate Right") { rotateClockwise() }
+      case "Add to Album": Button("Add to Album") { showingAddToAlbum = true }
+      case "Delete": Button("Delete") { trash() }
+      default: EmptyView()
+      }
+    }
+  }
+
+  // MARK: - edge chevrons (V11)
+
+  @ViewBuilder
+  private func edgeZone(edge: ChevronVisibility.Edge) -> some View {
+    let count = effectiveContext?.rows.count ?? 1
+    let at = index ?? 0
+    let visible =
+      hoverEdge == edge
+      && ChevronVisibility.isVisible(edge: edge, index: at, count: count, hoverNearEdge: true)
+    HStack {
+      if edge == .next { Spacer(minLength: 0) }
+      if visible {
+        Button {
+          stepOrPage(by: edge == .next ? 1 : -1)
+        } label: {
+          Label(
+            edge == .next ? "Next" : "Previous",
+            systemImage: edge == .next ? "chevron.right" : "chevron.left")
         }
+        .accessibilityIdentifier(
+          edge == .next ? AXIDs.viewerChevronNext : AXIDs.viewerChevronPrev)
+        .padding(12)
+        .transition(.opacity)
       }
-      await analyzeLiveText()
-      if id == assetId, shouldUpgradeToFullsize() {
-        await loadFullsize(asset: fresh, id: id)
-      }
-      await settleAndPreload()
-    } catch is CancellationError {
-      // Page changed mid-load; the new page's task owns the view now.
-    } catch {
-      self.error = error.localizedDescription
+      if edge == .prev { Spacer(minLength: 0) }
     }
-  }
-
-  /// Fullsize upgrade: magnification > 1.5 or the window backing pixels exceed the
-  /// preview pixel size (WP5 item 2).
-  private func shouldUpgradeToFullsize() -> Bool {
-    if magnification > 1.5 { return true }
-    let scale = NSScreen.main?.backingScaleFactor ?? 2
-    let pixels = max(viewSize.width, viewSize.height) * scale
-    return pixels > CGFloat(MediaTier.preview.defaultPixelSize ?? 2048)
-  }
-
-  private func loadFullsize(asset: Asset, id: String) async {
-    do {
-      for try await step in await state.pipeline.stream(asset: asset, tier: .fullsize) {
-        try Task.checkCancellation()
-        guard id == assetId, case .tier(let tier, let next, _) = step.content else { continue }
-        image = next
-        loadedTier = tier
+    .frame(width: 96)
+    .contentShape(Rectangle())
+    .onHover { hovering in
+      withAnimation(.easeInOut(duration: 0.15)) {
+        hoverEdge = hovering ? edge : (hoverEdge == edge ? nil : hoverEdge)
       }
-    } catch is CancellationError {
-    } catch {
-      self.error = error.localizedDescription
     }
-  }
-
-  /// Zoom-past-preview upgrade (WP5 item 2): fires once per page at > 1.5×.
-  private func upgradeTier() {
-    guard let asset, loadedTier != .fullsize, loadedTier != .original else { return }
-    loadedTier = .fullsize
-    let id = assetId
-    Task { await loadFullsize(asset: asset, id: id) }
-  }
-
-  private var editPreview: NSImage? {
-    if let image { return image }
-    return nil
   }
 
   private var editAccess: AccessContext {
-    // Built on demand (membership-lazy): personal + owned assets are decided by user id
-    // alone; space/library rows resolve when the sheet opens via `canEdit`.
     AccessContext(
       currentUserId: state.userId ?? "", memberSpaceIds: editSpaceIds,
       accessibleLibraryIds: editLibraryIds)
@@ -388,7 +704,6 @@ struct MacViewerView: View {
   private func canEdit(_ asset: Asset) -> Bool {
     let ctx = AccessContext(currentUserId: state.userId ?? "")
     if Permissions.canEdit(asset, in: ctx) { return true }
-    // Space/library memberships load once per viewer (guarded: no refresh loop).
     if !editMembershipsLoaded {
       editMembershipsLoaded = true
       Task { await refreshEditMemberships() }
@@ -405,31 +720,46 @@ struct MacViewerView: View {
     editLibraryIds = Set(libs.map { $0.id })
   }
 
-  /// A9.2: analyze the loaded still for Live Text. Failures leave `liveText` nil and the
-  /// viewer keeps working — Live Text is an enhancement, never a gate.
-  private func analyzeLiveText() async {
-    guard liveTextEnabled, let image,
-      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-    else {
-      if !liveTextEnabled { liveText = nil }
-      return
-    }
-    do {
-      liveText = try await ImageAnalyzer().analyze(
-        cgImage, orientation: .up,
-        configuration: ImageAnalyzer.Configuration([.text, .machineReadableCode, .visualLookUp]))
-    } catch {
-      liveText = nil
+  /// Original-download failure with the HTTP status and body size attached, so
+  /// edit mode can report *why* the canvas never sharpened instead of falling
+  /// back to the proxy blur in silence.
+  enum EditDownloadError: Error, LocalizedError {
+    case http(status: Int, bytes: Int)
+
+    var errorDescription: String? {
+      switch self {
+      case .http(let status, let bytes):
+        return "original download failed (HTTP \(status), \(bytes) bytes)"
+      }
     }
   }
 
   private func downloadOriginal(_ asset: Asset) async throws -> Data {
+    // Cache-first: originals are immutable in practice (edits land as separate
+    // renditions), so a disk-cache hit skips the multi-MB download on every
+    // Edit open. Miss downloads below and stores verbatim (256 MB LRU tier).
+    if let cached = await state.diskCache.retrieve(assetID: asset.id, tier: .original),
+      !cached.isEmpty
+    {
+      print("[heirloom-edit] TEMP-DEBUG original HIT \(asset.id) (\(cached.count) bytes, no download)")
+      return cached
+    }
     var request = URLRequest(
       url: MediaEndpoint(serverURL: state.serverURL, assetID: asset.id).originalURL())
     if let token = await state.connection.tokenStore.get() {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
-    let (data, _) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await URLSession.shared.data(for: request)
+    // A non-2xx body (JSON error, login page) is not image data: surfacing it
+    // here beats a silent blur later (NSImage decodes it to nil and the canvas
+    // falls back to the proxy with no alert).
+    let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+    print("[heirloom-edit] TEMP-DEBUG original GET \(request.url?.absoluteString ?? "<nil>") -> HTTP \(status), \(data.count) bytes")
+    guard (200..<300).contains(status) else {
+      throw EditDownloadError.http(status: status, bytes: data.count)
+    }
+    // Seed the original tier so the next Edit open is a cache hit.
+    try? await state.diskCache.store(data, assetID: asset.id, tier: .original)
     return data
   }
 
@@ -442,12 +772,12 @@ struct MacViewerView: View {
     return tmp
   }
 
-  /// Rotation persistence (WP5 item 4): the path WP4 decided PERSISTABLE — the same
-  /// EditRecipe/PUT-edits/KV route the grid uses (`MacMainWindow.rotate(ids:)`), minus the
-  /// render/upload, which pure rotation does not need (`requiresClientRender == false`).
-  /// Videos are excluded per that decision (their rotation is a `VideoRecipe` client export).
-  private func persistRotationIfEnabled() {
-    guard let asset, asset.type != .video else { return }
+  /// Rotation persistence: the PERSISTABLE path — the same EditRecipe/PUT-edits/KV
+  /// route the grid uses (`MacMainWindow.rotate(ids:)`), minus the render/upload,
+  /// which pure rotation does not need (`requiresClientRender == false`).
+  /// Videos are excluded (their rotation is a `VideoRecipe` client export).
+  private func persistRotationIfEnabled(quarterTurns delta: Int) {
+    guard let asset = chromeAsset, asset.type != .video else { return }
     let id = asset.id
     let width = asset.width ?? 0
     let height = asset.height ?? 0
@@ -460,14 +790,11 @@ struct MacViewerView: View {
         let persistence = RESTEditPersistence(
           serverURL: state.serverURL,
           token: { [connection = state.connection] in await connection.tokenStore.get() })
-        // 404 → fresh recipe; any other fetch failure aborts rather than clobbers.
         let stored = try await persistence.fetchRecipe(assetId: id)
         var recipe = stored?.recipe ?? EditRecipe()
         var crop = recipe.crop ?? CropRecipe()
-        crop.quarterTurns = (crop.quarterTurns + 1) % 4
+        crop.quarterTurns = (crop.quarterTurns + delta) % 4
         recipe.crop = crop
-        // Full merged split, like the grid: a 4th turn wraps to 0 upstream turns and emits
-        // no items, so clear instead of hitting the empty no-op guard (stale server rotate).
         let split = try EditSplitter.split(
           recipe, imageSize: CGSize(width: width, height: height))
         if split.upstream.isEmpty {
@@ -479,8 +806,6 @@ struct MacViewerView: View {
           sourceAssetId: id, recipe: recipe, renderedAssetId: stored?.renderedAssetId))
         MacAssetChangeCenter.shared.post(.edited(ids: [id]))
         rotationError = nil
-        // Re-stream the preview so the persisted orientation shows up here too.
-        await loadProgressive()
       } catch is CancellationError {
       } catch {
         rotationError = "Could not save rotation: \(error.localizedDescription)"
@@ -489,27 +814,24 @@ struct MacViewerView: View {
     }
   }
 
-  private func rotateClockwise() {
-    quarterTurns = (quarterTurns + 1) % 4
-    persistRotationIfEnabled()
+  private func rotate(by delta: Int) {
+    quarterTurns = (quarterTurns + delta) % 4
+    persistRotationIfEnabled(quarterTurns: delta)
   }
 
-  /// Neighbor preload (WP5 item 3): 100 ms after the page settles, warm ±2 at the
-  /// preview tier and drop prefetch work outside that window.
-  private func settleAndPreload() async {
-    try? await Task.sleep(for: .milliseconds(100))
-    guard !Task.isCancelled else { return }
-    guard let context = effectiveContext, let center = index else { return }
-    let lo = max(0, center - 2)
-    let hi = min(context.rows.count - 1, center + 2)
-    let items = context.rows[lo...hi].map { (id: $0.id, thumbhash: $0.thumbhash) }
-    await state.pipeline.cancelPrefetch(keeping: Set(items.map(\.id)))
-    guard !Task.isCancelled else { return }
-    await state.pipeline.prefetch(items, tier: .preview)
+  private func rotateClockwise() { rotate(by: 1) }
+
+  private func handleMoveResults(_ results: [MoveResult]) {
+    showingMove = false
+    let movedIDs = results.filter { $0.status == .moved }.map(\.assetId)
+    let moved = Set(movedIDs)
+    guard !moved.isEmpty else { return }
+    MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: moved))
+    if moved.contains(selectedID) { advanceAfterRemoval(removedId: selectedID) }
   }
 
   /// After delete or lock, advance to the next item (previous at the end), or close
-  /// the viewer when the context becomes empty (WP5 item 7).
+  /// the viewer when the context becomes empty.
   private func advanceAfterRemoval(removedId: String) {
     guard let context = effectiveContext, let at = context.indexById[removedId] else {
       if let onClose { onClose() }
@@ -524,24 +846,17 @@ struct MacViewerView: View {
       }
       return
     }
-    let next = remaining[min(at, remaining.count - 1)].id
-    if let onNavigate {
-      onNavigate(next)
-    } else {
-      openWindow(value: MacWindow.viewer(next))
-    }
+    select(id: remaining[min(at, remaining.count - 1)].id)
   }
 
   private func toggleFavorite() {
-    guard let asset else { return }
+    guard let asset = chromeAsset else { return }
     Task {
       do {
         let make = !asset.isFavorite
-        try await state.assetMutations().setFavorite(ids: [assetId], isFavorite: make)
-        // Grid patches in place via the change center — no reload (WP5 item 7). The
-        // local refetch below only refreshes this view's own heart state.
-        MacAssetChangeCenter.shared.post(.favorite(ids: [assetId], isFavorite: make))
-        self.asset = try await state.store.asset(id: assetId)
+        try await state.assetMutations().setFavorite(ids: [selectedID], isFavorite: make)
+        MacAssetChangeCenter.shared.post(.favorite(ids: [selectedID], isFavorite: make))
+        chromeAsset = try await state.store.asset(id: selectedID)
       } catch {
         self.error = error.localizedDescription
       }
@@ -551,237 +866,15 @@ struct MacViewerView: View {
   private func trash() {
     Task {
       do {
-        // The server has trash, so no confirmation — same as the grid's delete
-        // (MacMainWindow.trash). Post instead of reloading; the loader applies the
-        // removal and this viewer advances past the deleted row (WP5 item 7).
-        try await state.assetMutations().trash(ids: [assetId])
-        MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: [assetId]))
-        advanceAfterRemoval(removedId: assetId)
+        try await state.assetMutations().trash(ids: [selectedID])
+        MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: [selectedID]))
+        advanceAfterRemoval(removedId: selectedID)
       } catch {
         self.error = error.localizedDescription
       }
     }
   }
 
-  private func canLock(_ asset: Asset) -> Bool {
-    asset.ownerId == state.userId && asset.spaceId == nil && asset.libraryId == nil
-  }
-
-  private func toggleLocked(_ asset: Asset) {
-    Task { @MainActor in
-      guard await LockedMediaAuthentication.authenticate(
-        reason: asset.visibility == .locked ? "Unlock your personal photo" : "Lock this personal photo")
-      else { return }
-      do {
-        let locking = asset.visibility != .locked
-        try await state.assetMutations().setLocked(ids: [asset.id], isLocked: locking)
-        if locking {
-          // A locked row leaves every context: post so the grid drops it without a
-          // reload, and advance past it like a delete (WP5 item 7).
-          MacAssetChangeCenter.shared.post(.removedFromCurrentContexts(ids: [asset.id]))
-          advanceAfterRemoval(removedId: asset.id)
-        } else {
-          self.asset = try await state.store.asset(id: asset.id)
-        }
-      } catch {
-        self.error = error.localizedDescription
-      }
-    }
-  }
-}
-
-/// Carries the viewer extent from the background `GeometryReader` to `viewSize`.
-private struct ViewerSizeKey: PreferenceKey {
-  // SwiftUI reads/writes preferences on the main thread only; the value is a
-  // trivial `CGSize`, so unchecked shared access here is main-thread-confined.
-  nonisolated(unsafe) static var defaultValue: CGSize = .zero
-  static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-}
-
-/// One shared swipe-to-page interpreter for both viewer scroll containers below.
-/// Dominant-x scroll (trackpad swipe or mouse-wheel-x) maps to a page delta with
-/// Photos direction: swipe left (dx < 0) advances, swipe right goes back. Trackpad
-/// gestures accumulate precise points and fire once per swipe; discrete wheels fire
-/// one page per detent. Vertical scroll and momentum coasting return false so the
-/// caller passes them through untouched.
-final class PageSwipeTracker {
-  private var pendingX: CGFloat = 0
-  private var consumed = false
-  /// Precise points of dominant-x travel that trigger a page.
-  private static let travel: CGFloat = 80
-
-  /// Page delta (-1/0/+1) for a horizontal scroll event; 0 means "not a page gesture".
-  func delta(for event: NSEvent) -> Int {
-    let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-    guard dx != 0, abs(dx) > abs(dy), event.momentumPhase.isEmpty else { return 0 }
-    if !event.hasPreciseScrollingDeltas { return dx > 0 ? -1 : 1 }
-    if event.phase.contains(.began) { pendingX = 0; consumed = false }
-    defer {
-      if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
-        pendingX = 0; consumed = false
-      }
-    }
-    guard !consumed else { return 0 }
-    pendingX += dx
-    guard abs(pendingX) >= Self.travel else { return 0 }
-    consumed = true
-    let dir = pendingX > 0 ? -1 : 1
-    pendingX = 0
-    return dir
-  }
-}
-
-/// Plain-view paging catcher for the Live Text photo path (no zoom there, so no
-/// magnification gate): unhandled scrolls bubble up the responder chain to this
-/// container, which pages on dominant-x and forwards everything else.
-final class ViewerPageCatcherView: NSView {
-  var onPage: ((Int) -> Void)?
-  private let tracker = PageSwipeTracker()
-
-  override func scrollWheel(with event: NSEvent) {
-    let dir = tracker.delta(for: event)
-    guard dir != 0 else { super.scrollWheel(with: event); return }
-    onPage?(dir)
-  }
-}
-
-/// NSScrollView magnifier with swipe-to-page: pinch zoom is native
-/// (`allowsMagnification`, clamped to min/max below); a dominant-x scroll at 1.0×
-/// pages through `onPage` instead, reusing the viewer's `page(by:)` path. Past 1.0×
-/// the scroll pans (Photos behavior), so zoom never fights paging.
-final class ViewerPagingScrollView: NSScrollView {
-  var onPage: ((Int) -> Void)?
-  private let tracker = PageSwipeTracker()
-
-  override func scrollWheel(with event: NSEvent) {
-    // Zoomed: pan. Everything else delegates to the tracker; non-page scrolls
-    // (vertical, momentum, zoomed horizontal) keep native behavior.
-    if magnification > 1.001 { super.scrollWheel(with: event); return }
-    let dir = tracker.delta(for: event)
-    guard dir != 0 else { super.scrollWheel(with: event); return }
-    onPage?(dir)
-  }
-}
-
-/// NSScrollView magnifier: pinch/scroll zoom; crossing 1.5× fires `onZoomBeyondPreview`
-/// once so the viewer upgrades to the fullsize tier (WP5 item 2). Every magnification
-/// change is also reported through `onMagnification` so the viewer can decide the
-/// window-exceeds-preview upgrade without polling.
-struct MacZoomableImageView: NSViewRepresentable {
-  var image: NSImage
-  var onZoomBeyondPreview: () -> Void
-  var onMagnification: (Double) -> Void = { _ in }
-  /// Swipe-to-page (owner request): routed into the viewer's `page(by:)`, so the
-  /// neighbor-preload and no-blank-flash invariants hold for gestures exactly as
-  /// for buttons and arrow keys — no second paging implementation.
-  var onPage: ((Int) -> Void)? = nil
-
-  func makeNSView(context: Context) -> NSScrollView {
-    let scrollView = ViewerPagingScrollView()
-    scrollView.allowsMagnification = true
-    scrollView.minMagnification = 1
-    scrollView.maxMagnification = 8
-    scrollView.onPage = onPage
-    let imageView = NSImageView(image: image)
-    imageView.imageScaling = .scaleProportionallyUpOrDown
-    imageView.imageAlignment = .alignCenter
-    scrollView.documentView = imageView
-    context.coordinator.observe(scrollView: scrollView)
-    return scrollView
-  }
-
-  func updateNSView(_ scrollView: NSScrollView, context: Context) {
-    context.coordinator.update(
-      action: onZoomBeyondPreview, magnification: onMagnification, image: image,
-      onPage: onPage)
-    (scrollView as? ViewerPagingScrollView)?.onPage = onPage
-    (scrollView.documentView as? NSImageView)?.image = image
-  }
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(
-      action: onZoomBeyondPreview, magnification: onMagnification, image: image,
-      onPage: onPage)
-  }
-
-  /// Main-thread-confined zoom state carried across the @Sendable notification closure.
-  final class ZoomState: @unchecked Sendable {
-    weak var scrollView: NSScrollView?
-    var onZoom: () -> Void = {}
-    var onMagnification: (Double) -> Void = { _ in }
-    var onPage: ((Int) -> Void)? = nil
-    weak var lastImage: NSImage?
-    var fired = false
-  }
-
-  final class Coordinator: NSObject {
-    private let state = ZoomState()
-    private var observer: NSObjectProtocol?
-    private var boundsObserver: NSObjectProtocol?
-
-    init(
-      action: @escaping () -> Void, magnification: @escaping (Double) -> Void, image: NSImage,
-      onPage: ((Int) -> Void)? = nil
-    ) {
-      state.onZoom = action
-      state.onMagnification = magnification
-      state.onPage = onPage
-      state.lastImage = image
-    }
-
-    func update(
-      action: @escaping () -> Void, magnification: @escaping (Double) -> Void, image: NSImage,
-      onPage: ((Int) -> Void)? = nil
-    ) {
-      state.onZoom = action
-      state.onMagnification = magnification
-      state.onPage = onPage
-      // The scroll view persists across pages (only its image swaps), so re-arm the
-      // once-per-page fullsize trigger when a new page's image arrives.
-      if state.lastImage !== image {
-        state.lastImage = image
-        state.fired = false
-      }
-    }
-
-    /// Reports one magnification step: continuous zoom feedback plus the
-    /// once-per-page > 1.5× fullsize trigger. Runs SwiftUI-side outside the
-    /// rotation re-fit, so pinch zoom composes with rotation instead of fighting it.
-    /// Static so the @Sendable notification closures never send the coordinator.
-    private static func reportMagnification(_ state: ZoomState) {
-      guard let view = state.scrollView else { return }
-      let mag = Double(view.magnification)
-      state.onMagnification(mag)
-      guard !state.fired, mag > 1.5 else { return }
-      state.fired = true
-      state.onZoom()
-    }
-
-    func observe(scrollView: NSScrollView) {
-      state.scrollView = scrollView
-      if let paging = scrollView as? ViewerPagingScrollView { paging.onPage = state.onPage }
-      let state = self.state
-      observer = NotificationCenter.default.addObserver(
-        forName: NSScrollView.didEndLiveMagnifyNotification, object: scrollView, queue: .main
-      ) { _ in
-        MainActor.assumeIsolated { Self.reportMagnification(state) }
-      }
-      // Continuous pinch feedback (the notification above fires only at gesture
-      // end): the clip view's bounds move throughout a live magnify.
-      scrollView.contentView.postsBoundsChangedNotifications = true
-      boundsObserver = NotificationCenter.default.addObserver(
-        forName: NSView.boundsDidChangeNotification, object: scrollView.contentView,
-        queue: .main
-      ) { _ in
-        MainActor.assumeIsolated { Self.reportMagnification(state) }
-      }
-    }
-
-    deinit {
-      if let observer { NotificationCenter.default.removeObserver(observer) }
-      if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
-    }
-  }
 }
 
 #Preview("Viewer") {

@@ -28,6 +28,9 @@ public enum SharedContainer {
   }
   public static let databaseFileName = "heirloom.sqlite"
   public static let serverURLKey = "Heirloom.serverURL"
+  /// WP-F F3: persisted signed-in user id — read synchronously at launch so the
+  /// sign-in decision never waits on the Keychain async path or the network.
+  public static let userIDKey = "Heirloom.userID"
 
   /// `containerURL(forSecurityApplicationGroupIdentifier:)` returns a non-nil URL even when the
   /// process's code signature can't actually use it (e.g. ad-hoc signing with entitlements
@@ -109,6 +112,20 @@ public enum SharedContainer {
 
   public static func clearServerURLString() {
     sharedDefaults.removeObject(forKey: serverURLKey)
+  }
+
+  /// WP-F F3 synchronous sign-in state (see `userIDKey`).
+  public static func savedUserID() -> String? {
+    let id = sharedDefaults.string(forKey: userIDKey)
+    return (id?.isEmpty == false) ? id : nil
+  }
+
+  public static func setSavedUserID(_ value: String) {
+    sharedDefaults.set(value, forKey: userIDKey)
+  }
+
+  public static func clearSavedUserID() {
+    sharedDefaults.removeObject(forKey: userIDKey)
   }
 }
 

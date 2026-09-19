@@ -6,7 +6,47 @@ import Photos
 import PhotosUI
 import SwiftUI
 
-// MARK: - video (A9.1, macOS)
+// MARK: - playback loader (V3, shared by the SwiftUI page and VideoPageController)
+
+/// Builds the video player through the production loader path (playback route
+/// + `Authorization` header) and gates on `isPlayable` before returning, so a
+/// player that never becomes ready surfaces its `AVPlayerItem.status` + error
+/// through `HeirloomLog` instead of spinning silently (V3).
+struct VideoPlaybackLoader: Sendable {
+  var serverURL: URL
+  var token: @Sendable () async -> String?
+
+  enum Outcome {
+    case ready(AVPlayer, AVPlayerItem)
+    case failed(String)
+  }
+
+  func load(assetID: String) async -> Outcome {
+    guard let token = await token() else {
+      HeirloomLog.media.error("video load missing token asset=\(assetID, privacy: .public)")
+      return .failed("Not signed in.")
+    }
+    let url = MediaEndpoint(serverURL: serverURL, assetID: assetID).videoPlaybackURL()
+    let urlAsset = AVURLAsset(
+      url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
+    do {
+      let playable = try await urlAsset.load(.isPlayable)
+      guard playable else {
+        HeirloomLog.media.error(
+          "video not playable asset=\(assetID, privacy: .public) url=\(url.absoluteString, privacy: .public)")
+        return .failed("This video could not be played.")
+      }
+    } catch {
+      HeirloomLog.media.error(
+        "video load failed asset=\(assetID, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+      return .failed(error.localizedDescription)
+    }
+    let item = AVPlayerItem(asset: urlAsset)
+    return .ready(AVPlayer(playerItem: item), item)
+  }
+}
+
+// MARK: - video (A9.1, macOS, V3/V4)
 
 ///
 /// AVPlayerView playback: system scrubber, automatic HDR, streaming from the server
@@ -15,14 +55,28 @@ struct MacVideoPageView: View {
   var asset: Asset
   var state: MacAppState
   var onTrim: () -> Void
+  var onArrowKey: ((Int) -> Void)? = nil
 
   @State private var player: AVPlayer?
+  @State private var loadError: String?
+  /// Current playback time for TEST-PLAN V3 UI (`viewer.video.time` advances).
+  @State private var timeString = "0:00"
+
+  private var loader: VideoPlaybackLoader {
+    VideoPlaybackLoader(
+      serverURL: state.serverURL,
+      token: { [connection = state.connection] in await connection.tokenStore.get() })
+  }
 
   var body: some View {
     ZStack {
       Group {
         if let player {
-          MacPlayerView(player: player)
+          MacPlayerView(player: player, onArrowKey: onArrowKey, timeString: timeString)
+        } else if let loadError {
+          ContentUnavailableView(
+            "Video unavailable", systemImage: "video.slash",
+            description: Text(loadError))
         } else {
           ProgressView().controlSize(.large)
         }
@@ -30,23 +84,24 @@ struct MacVideoPageView: View {
       // Per-asset task (WP5 item 9): paging away cancels this task, which pauses the old
       // player before the new page's player is built — audio never bleeds across pages.
       .task(id: asset.id) {
-        guard let token = await state.connection.tokenStore.get() else { return }
-        let url = MediaEndpoint(serverURL: state.serverURL, assetID: asset.id).videoPlaybackURL()
-        let urlAsset = AVURLAsset(
-          url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
-        let created = AVPlayer(playerItem: AVPlayerItem(asset: urlAsset))
-        player = created
-        created.play()
-        // Release on close (item 9): when this task is cancelled the handler pauses the old
-        // player and drops the reference, so the AVPlayer deallocates with the page.
-        await withTaskCancellationHandler(operation: {
-          while !Task.isCancelled { try? await Task.sleep(for: .seconds(24 * 3600)) }
-        }, onCancel: {
-          Task { @MainActor in
-            created.pause()
-            if player === created { player = nil }
-          }
-        })
+        loadError = nil
+        switch await loader.load(assetID: asset.id) {
+        case .ready(let created, _):
+          player = created
+          created.play()
+          // Release on close (item 9): when this task is cancelled the handler pauses the old
+          // player and drops the reference, so the AVPlayer deallocates with the page.
+          await withTaskCancellationHandler(operation: {
+            while !Task.isCancelled { try? await Task.sleep(for: .seconds(24 * 3600)) }
+          }, onCancel: {
+            Task { @MainActor in
+              created.pause()
+              if player === created { player = nil }
+            }
+          })
+        case .failed(let message):
+          loadError = message
+        }
       }
       .onDisappear {
         player?.pause()
@@ -67,21 +122,43 @@ struct MacVideoPageView: View {
       }
     }
     .accessibilityIdentifier("mac-video-page")
+    .task(id: player) {
+      guard let player else { return }
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(1))
+        let seconds = player.currentTime().seconds
+        guard seconds.isFinite else { continue }
+        timeString = Self.formatTime(seconds)
+      }
+    }
+  }
+
+  private static func formatTime(_ seconds: Double) -> String {
+    let total = max(0, Int(seconds))
+    return "\(total / 60):\(String(format: "%02d", total % 60))"
   }
 }
 
 private struct MacPlayerView: NSViewRepresentable {
   var player: AVPlayer
+  var onArrowKey: ((Int) -> Void)? = nil
+  var timeString: String = "0:00"
 
-  func makeNSView(context: Context) -> AVPlayerView {
-    let view = AVPlayerView()
+  func makeNSView(context: Context) -> PagingAVPlayerView {
+    let view = PagingAVPlayerView()
     view.player = player
     view.controlsStyle = .inline
+    view.onArrowKey = onArrowKey
+    // TEST-PLAN V3 UI: viewer.video.time advances during playback.
+    view.setAccessibilityIdentifier(AXIDs.viewerVideoTime)
+    view.setAccessibilityValue(timeString)
     return view
   }
 
-  func updateNSView(_ view: AVPlayerView, context: Context) {
+  func updateNSView(_ view: PagingAVPlayerView, context: Context) {
     if view.player !== player { view.player = player }
+    view.onArrowKey = onArrowKey
+    view.setAccessibilityValue(timeString)
   }
 }
 

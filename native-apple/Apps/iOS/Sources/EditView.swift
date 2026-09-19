@@ -12,7 +12,7 @@ import SwiftUI
 /// Deliberately decoupled from Viewer/Media/SyncEngine (other phases build on those): the
 /// caller supplies the preview image and async source loaders, and Done persists through
 /// `EditPersistence` — upstream ops to `PUT /assets/:id/edits`, everything else to the
-/// `fork.editRecipe.v1` metadata KV plus a full-res render uploaded as a NEW asset.
+/// `fork.editRecipe.v2` metadata KV plus a full-res render PUT as the asset's rendition.
 /// Compare = press-and-hold the preview.
 public struct EditView: View {
   var asset: Asset
@@ -841,7 +841,6 @@ public struct EditView: View {
     let size = srcCI.extent.size
     let split = try EditSplitter.split(recipe, imageSize: size)
     try await persistence.applyUpstreamEdits(assetId: asset.id, items: split.upstream)
-    var renderedId: String?
     if split.needsClientRender {
       let report = try renderer.export(
         sourceData: srcData, recipe: recipe, format: exportFormat(for: asset.originalFileName),
@@ -853,12 +852,13 @@ public struct EditView: View {
         contentType: ext == "heic" ? "image/heic" : "image/jpeg",
         fileCreatedAt: asset.fileCreatedAt ?? Date(), fileModifiedAt: asset.fileModifiedAt ?? Date(),
         spaceId: asset.spaceId)
-      renderedId = try await persistence.uploadRendered(
-        sourceAssetId: asset.id, upload: upload, recipe: recipe)
+      // E1: the render lands as the asset's rendition (same asset, one timeline item).
+      try await persistence.uploadRendition(assetId: asset.id, upload: upload)
     }
+    // E1: no separate rendered asset exists, so renderedAssetId stays nil.
     try await persistence.saveRecipe(EditPersistencePayload(
-      sourceAssetId: asset.id, recipe: recipe, renderedAssetId: renderedId))
-    return renderedId
+      sourceAssetId: asset.id, recipe: recipe, renderedAssetId: nil))
+    return nil
   }
 
   private func exportFormat(for filename: String) -> EditRenderer.ExportFormat {
@@ -882,10 +882,12 @@ public struct EditView: View {
       contentType: "video/mp4",
       fileCreatedAt: asset.fileCreatedAt ?? Date(), fileModifiedAt: asset.fileModifiedAt ?? Date(),
       spaceId: asset.spaceId, durationMs: Int(result.durationSeconds * 1000))
-    let newId = try await persistence.uploadRendered(sourceAssetId: asset.id, upload: upload, recipe: full)
+    // E1: the export lands as the asset's rendition (same asset, one timeline item).
+    try await persistence.uploadRendition(assetId: asset.id, upload: upload)
+    // E1: no separate rendered asset exists, so renderedAssetId stays nil.
     try await persistence.saveRecipe(EditPersistencePayload(
-      sourceAssetId: asset.id, recipe: full, renderedAssetId: newId))
-    return newId
+      sourceAssetId: asset.id, recipe: full, renderedAssetId: nil))
+    return nil
   }
 }
 
