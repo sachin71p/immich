@@ -13,6 +13,15 @@ final class PhotoGridViewController: UIViewController {
   var onSelectionChange: ((Set<String>) -> Void)?
   var onPrefetch: (([String]) -> Void)?
   var onPinchColumns: ((Int) -> Void)?
+  /// WP-G G7: fires when a pinch runs past the column extremes — `true` zoomed
+  /// out past max density (up a time level), `false` zoomed in past min (down).
+  var onPinchEdge: ((Bool) -> Void)?
+  /// WP-G G6: scroll-activity signal for the Library header subtitle (item count
+  /// at rest, visible date range while scrolling).
+  var onScrollActive: ((Bool) -> Void)?
+  /// WP-G G3: current user for the selective people badge. Nil keeps the
+  /// flags-only fallback.
+  var currentUserId: String?
   /// S1: pull-to-refresh handler (wired to `refreshAll` by the Library screen). Runs in a `Task`;
   /// the control always ends refreshing afterwards, even in fixture mode where sync is nil.
   var onRefresh: (() async -> Void)?
@@ -22,6 +31,10 @@ final class PhotoGridViewController: UIViewController {
   var onVisibleRange: ((Date?, Date?) -> Void)?
   /// Fires once, on the first non-empty snapshot apply (perf gate).
   var onFirstPaint: (() -> Void)?
+  /// WP-M (G4): long-press menu provider. Nil until the menu owner vends a
+  /// controller for an asset id + cell frame; nil keeps today's tap-to-open
+  /// behavior byte-for-byte (no recognizer effect, no visual change).
+  var menuProvider: ((String, CGRect) -> UIViewController?)?
 
   /// Row/flag/date lookups into the loader's cache (O(1), main-thread safe).
   var rowProvider: ((String) -> TimelineRow?)?
@@ -54,6 +67,14 @@ final class PhotoGridViewController: UIViewController {
   private var lastSummaryUpdate = Date.distantPast
   private var scroller: FastScroller!
   private let perfLabel = UILabel()
+  /// WP-G G5: floating date badge ("Aug 2026") overlaid top-center while the
+  /// grid scrolls. A plain label with a translucent fill — not the FastScroller
+  /// bubble (that one only shows while dragging the handle).
+  private let floatingDateBadge = UILabel()
+  private var floatingBadgeHideWork: DispatchWorkItem?
+  /// WP-M (G4): set when a long-press presents the menu, so the follow-up
+  /// touch-up doesn't fall through to `didSelectItemAt` and open the viewer.
+  private var suppressSelectAfterMenu = false
 
   // MARK: - cheap setters (WP1 §5: compare-then-act, never redundant work)
 
@@ -237,6 +258,12 @@ final class PhotoGridViewController: UIViewController {
     pan.delegate = self
     collectionView.addGestureRecognizer(pan)
 
+    // WP-M (G4): long-press presents the context menu. No-op until
+    // `menuProvider` is set, so today's tap/scroll/pinch are untouched.
+    let menuPress = UILongPressGestureRecognizer(target: self, action: #selector(didLongPressMenu(_:)))
+    menuPress.minimumPressDuration = 0.5
+    collectionView.addGestureRecognizer(menuPress)
+
     scroller = FastScroller(frame: scrollerFrame())
     scroller.autoresizingMask = [.flexibleHeight, .flexibleLeftMargin]
     scroller.onScrub = { [weak self] fraction in self?.scrubToFraction(fraction) }
@@ -252,6 +279,20 @@ final class PhotoGridViewController: UIViewController {
     perfLabel.text = "idle"
     perfLabel.accessibilityValue = "idle"
     view.addSubview(perfLabel)
+    // WP-G G5 floating date badge: hidden until the first scroll; centered
+    // horizontally near the top, above cells but below nothing interactive
+    // (userInteractionEnabled off so it never eats grid taps).
+    floatingDateBadge.font = .systemFont(ofSize: 14, weight: .semibold)
+    floatingDateBadge.textColor = .white
+    floatingDateBadge.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+    floatingDateBadge.textAlignment = .center
+    floatingDateBadge.layer.cornerRadius = 13
+    floatingDateBadge.clipsToBounds = true
+    floatingDateBadge.isHidden = true
+    floatingDateBadge.isUserInteractionEnabled = false
+    floatingDateBadge.isAccessibilityElement = true
+    floatingDateBadge.accessibilityIdentifier = "grid-floating-date-badge"
+    view.addSubview(floatingDateBadge)
     if GridStallMonitor.runsInThisProcess {
       monitor = GridStallMonitor()
       monitor?.start()
@@ -265,6 +306,13 @@ final class PhotoGridViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     scroller.frame = scrollerFrame()
+    // Top-center pill; width fits the text with padding (sizeToFit each show is
+    // one label layout per scroll event — negligible next to cell layout).
+    let badgeWidth = max(110, floatingDateBadge.intrinsicContentSize.width + 32)
+    floatingDateBadge.frame = CGRect(
+      x: (view.bounds.width - badgeWidth) / 2,
+      y: view.safeAreaInsets.top + 6,
+      width: badgeWidth, height: 26)
   }
 
   // MARK: - layout (WP1 §4: always fixed square, 1 pt spacing, no estimates)
@@ -308,7 +356,7 @@ final class PhotoGridViewController: UIViewController {
     monitor?.currentPhase = "configure"
     let row = rowProvider?(id)
     let flags = flagsProvider?(id) ?? []
-    cell.configureBadges(row: row, flags: flags)
+    cell.configureBadges(row: row, flags: flags, currentUserId: currentUserId)
     cell.applyMode(editing: currentEditMode, selected: selectedIds.contains(id))
     cell.setThumbnail(id: id, row: row, pipeline: pipeline, aspectFit: currentAspectFit)
   }
@@ -467,12 +515,23 @@ final class PhotoGridViewController: UIViewController {
   @objc private func didPinch(_ gesture: UIPinchGestureRecognizer) {
     guard gesture.state == .ended else { return }
     // WP1 §4 pinch steps, animated with the anchor kept in place by setColumns.
+    // WP-G G7: running past an extreme fires onPinchEdge instead of clamping
+    // silently — the parent couples density to the time level (All ↔ Months ↔
+    // Years) so the zoom pills move with the pinch.
     let steps = [1, 3, 5, 9, 13]
     let current = currentColumns
-    if gesture.scale > 1.3, let next = steps.last(where: { $0 < current }) {
-      onPinchColumns?(next)
-    } else if gesture.scale < 0.77, let next = steps.first(where: { $0 > current }) {
-      onPinchColumns?(next)
+    if gesture.scale > 1.3 {
+      if let next = steps.last(where: { $0 < current }) {
+        onPinchColumns?(next)
+      } else {
+        onPinchEdge?(false)
+      }
+    } else if gesture.scale < 0.77 {
+      if let next = steps.first(where: { $0 > current }) {
+        onPinchColumns?(next)
+      } else {
+        onPinchEdge?(true)
+      }
     }
   }
 
@@ -488,10 +547,37 @@ final class PhotoGridViewController: UIViewController {
     collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
     onSelectionChange?(selectedIds)
   }
+
+  /// WP-M (G4): grid long-press presents the context menu instead of opening
+  /// the viewer. Only `.began` acts (one presentation per press); presses on
+  /// empty areas or with no provider are ignored.
+  @objc private func didLongPressMenu(_ gesture: UILongPressGestureRecognizer) {
+    guard gesture.state == .began, let provider = menuProvider else { return }
+    let point = gesture.location(in: collectionView)
+    guard let indexPath = collectionView.indexPathForItem(at: point),
+      let id = dataSource.itemIdentifier(for: indexPath),
+      let cellRect = collectionView.layoutAttributesForItem(at: indexPath)?.frame,
+      let menu = provider(id, cellRect)
+    else { return }
+    suppressSelectAfterMenu = true
+    menu.modalPresentationStyle = .popover
+    if let popover = menu.popoverPresentationController {
+      popover.sourceView = collectionView
+      popover.sourceRect = cellRect
+      popover.permittedArrowDirections = .any
+    }
+    present(menu, animated: true)
+  }
 }
 
 extension PhotoGridViewController: UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    // WP-M (G4): the touch-up ending a menu long-press must not open the viewer.
+    if suppressSelectAfterMenu {
+      suppressSelectAfterMenu = false
+      collectionView.deselectItem(at: indexPath, animated: false)
+      return
+    }
     guard let id = dataSource.itemIdentifier(for: indexPath) else { return }
     if currentEditMode {
       selectedIds.insert(id)
@@ -508,9 +594,54 @@ extension PhotoGridViewController: UICollectionViewDelegate {
     onSelectionChange?(selectedIds)
   }
 
+  /// WP-G G5: refreshes the floating date badge from the middle visible item —
+  /// the same single-date lookup the scroller bubble uses (O(visible), never a
+  /// library scan) — and keeps it up while scrolling. Hides 2 s after the last
+  /// scroll event so the parity test (swipe then assert) sees it.
+  private func updateFloatingBadge() {
+    guard !currentSnapshot.isEmpty else {
+      floatingDateBadge.isHidden = true
+      return
+    }
+    let visible = collectionView.indexPathsForVisibleItems.sorted()
+    if let middle = visible.dropFirst(visible.count / 2).first,
+      let id = dataSource.itemIdentifier(for: middle),
+      let date = dateProvider?(id)
+    {
+      let text = GridSnapshot.bubbleTitle(for: date)
+      if floatingDateBadge.text != text { floatingDateBadge.text = text }
+      floatingDateBadge.accessibilityLabel = text
+      floatingDateBadge.isHidden = false
+      var frame = floatingDateBadge.frame
+      let width = max(110, floatingDateBadge.intrinsicContentSize.width + 32)
+      frame.origin.x = (view.bounds.width - width) / 2
+      frame.size.width = width
+      floatingDateBadge.frame = frame
+    }
+    scheduleFloatingBadgeHide()
+  }
+
+  private func scheduleFloatingBadgeHide() {
+    floatingBadgeHideWork?.cancel()
+    let work = DispatchWorkItem { [weak self] in self?.floatingDateBadge.isHidden = true }
+    floatingBadgeHideWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+  }
+
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    onScrollActive?(true)
+  }
+
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     monitor?.currentPhase = "scroll"
     updateScroller()
+    updateFloatingBadge()
+    // WP-G G6 belt: keep the header's scroll signal up for the whole gesture,
+    // not just its start — a short bounce's willBegin/didEnd pair can land
+    // inside one runloop turn and never be observed across the bridge.
+    if collectionView.isDragging || collectionView.isDecelerating {
+      onScrollActive?(true)
+    }
     updatePerfSummary()
     // Keep prefetch work to the visible window plus the last forwarded look-ahead
     // as it moves (F5). Cancelling with the visible set alone kills the cells the
@@ -530,11 +661,15 @@ extension PhotoGridViewController: UICollectionViewDelegate {
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    onScrollActive?(false)
     updatePerfSummary(force: true)
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-    if !decelerate { updatePerfSummary(force: true) }
+    if !decelerate {
+      onScrollActive?(false)
+      updatePerfSummary(force: true)
+    }
   }
 }
 

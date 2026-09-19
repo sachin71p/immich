@@ -19,11 +19,16 @@ struct CollectionsView: View {
   @State private var showSpaceCreate = false
   @State private var spaceCovers: [String: String] = [:]
   @State private var libraryCovers: [String: String] = [:]
+  @State private var tripCities: [String] = []
+  @State private var wallpaperIds: [String] = []
 
   var body: some View {
     NavigationStack {
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 20) {
+        // Eager shells (WP-P P7): below-fold sections must exist in the
+        // hierarchy for accessibility/tests without scrolling. Data still
+        // fills lazily via the loader stages; only shell views instantiate.
+        VStack(alignment: .leading, spacing: 20) {
           ForEach(CollectionsPrefs.orderedSections()) { section in
             if !collapsed.contains(section.rawValue) || !isCollapsible(section) {
               sectionView(section)
@@ -88,6 +93,13 @@ struct CollectionsView: View {
         libraryCovers[library.id] = cover
       }
     }
+    // P7: Trips (distinct cities) and Wallpaper Suggestions (portrait-aspect
+    // picks). One cheap query each; tiles navigate to real grids.
+    if let scope = try? await session.timelineScope() {
+      tripCities = (try? await store.distinctCities(scope: scope)) ?? []
+      let recent = (try? await store.recentAssets(scope: scope, limit: 300)) ?? []
+      wallpaperIds = recent.filter { $0.aspectRatio < 1.0 }.map(\.id)
+    }
   }
 
   private func isCollapsible(_ section: CollectionsSection) -> Bool {
@@ -125,6 +137,8 @@ struct CollectionsView: View {
     case .mediaTypes: mediaTypesSection
     case .utilities: utilitiesSection
     case .places: placesSection
+    case .trips: tripsSection
+    case .wallpaper: wallpaperSection
     }
   }
 
@@ -578,6 +592,69 @@ struct CollectionsView: View {
     }
   }
 
+  // MARK: trips (P7 — city pills backed by distinctCities, each a real grid)
+
+  @ViewBuilder
+  private var tripsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      CollectionPlainHeader(
+        title: "Trips", section: .trips,
+        collapsed: collapsed.contains("trips"), onToggleCollapse: { toggle(.trips) })
+      if tripCities.isEmpty {
+        Text("Trips appear when your photos span different places.")
+          .font(.subheadline).foregroundStyle(.secondary)
+          .padding(.horizontal)
+      } else {
+        LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 8) {
+          ForEach(tripCities, id: \.self) { city in
+            NavigationLink {
+              CityDetailView(city: city).environmentObject(session)
+            } label: {
+              CollectionPill(title: city, systemImage: "airplane")
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        .padding(.horizontal)
+      }
+    }
+    .accessibilityIdentifier("collections-trips")
+  }
+
+  // MARK: wallpaper suggestions (P7 — portrait-aspect picks)
+
+  @ViewBuilder
+  private var wallpaperSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      CollectionPlainHeader(
+        title: "Wallpaper Suggestions", section: .wallpaper,
+        collapsed: collapsed.contains("wallpaper"), onToggleCollapse: { toggle(.wallpaper) })
+      if wallpaperIds.isEmpty {
+        Text("Portrait photos suitable for wallpaper appear here.")
+          .font(.subheadline).foregroundStyle(.secondary)
+          .padding(.horizontal)
+      } else {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 12) {
+            ForEach(wallpaperIds.prefix(10), id: \.self) { id in
+              NavigationLink {
+                IdListDetail(title: "Wallpaper Suggestions", ids: wallpaperIds)
+                  .environmentObject(session)
+              } label: {
+                AssetThumbView(assetId: id)
+                  .frame(width: 120, height: 160)
+                  .clipShape(RoundedRectangle(cornerRadius: 16))
+              }
+              .buttonStyle(.plain)
+            }
+          }
+          .padding(.horizontal)
+        }
+      }
+    }
+    .accessibilityIdentifier("collections-wallpaper-suggestions")
+  }
+
   // MARK: reorder footer
 
   @ViewBuilder
@@ -587,6 +664,33 @@ struct CollectionsView: View {
       .foregroundStyle(.blue)
       .padding(.horizontal)
       .accessibilityIdentifier("collections-reorder")
+  }
+}
+
+/// One city's grid for the Trips shelf (P7): the `city` exif predicate over
+/// the current timeline scope, newest first. Shows a spinner until loaded.
+struct CityDetailView: View {
+  @EnvironmentObject var session: AppSession
+  var city: String
+  @State private var ids: [String]?
+
+  var body: some View {
+    IdListDetail(title: city, ids: ids)
+      .environmentObject(session)
+      .task { await load() }
+  }
+
+  private func load() async {
+    guard let store = session.store else { return }
+    do {
+      let scope = try await session.timelineScope()
+      var filter = LocalAssetFilter()
+      filter.city = city
+      ids = try await store.filterAssets(filter, scope: scope, limit: 2000).map(\.id)
+    } catch {
+      // L2: cancellation is never a user-facing error.
+      if !error.isCancellation { session.lastError = error.localizedDescription }
+    }
   }
 }
 

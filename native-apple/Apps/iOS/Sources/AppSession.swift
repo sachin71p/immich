@@ -23,6 +23,12 @@ final class AppSession: ObservableObject {
   @Published var authResolved = false
   @Published var isFixture = false
   @Published var serverURL: URL?
+  /// Normalized API base (origin + `/api`) for building server route URLs.
+  /// `serverURL` stays the user-entered origin (display, identity,
+  /// persistence). Every route/media/fetch construction must use this —
+  /// the raw origin serves the SPA's index.html, which media clients
+  /// cannot parse (F2: AVPlayer reported it as -11850).
+  var apiBaseURL: URL? { connection?.serverURL ?? serverURL }
   @Published var userId = ""
   @Published var access = AccessContext(currentUserId: "")
   @Published var prefs = SharedLibraryPrefs()

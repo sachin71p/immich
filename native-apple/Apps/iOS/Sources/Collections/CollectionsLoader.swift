@@ -178,7 +178,8 @@ struct DayTileData: Identifiable {
 // MARK: - section order / collapse persistence
 
 enum CollectionsSection: String, CaseIterable, Identifiable {
-  case memories, pinned, albums, people, sharedAlbums, spaces, recentDays, mediaTypes, utilities, places
+  case memories, pinned, albums, people, sharedAlbums, spaces, recentDays, mediaTypes, utilities, places,
+    trips, wallpaper
   var id: String { rawValue }
   var title: String {
     switch self {
@@ -192,6 +193,8 @@ enum CollectionsSection: String, CaseIterable, Identifiable {
     case .mediaTypes: return "Media Types"
     case .utilities: return "Utilities"
     case .places: return "Places"
+    case .trips: return "Trips"
+    case .wallpaper: return "Wallpaper Suggestions"
     }
   }
 }

@@ -28,11 +28,22 @@ final class ParityViewerUITests: XCTestCase {
   func test_viewer_showsLiveBadgeAndEnhanceAffordance() throws {
     let app = Parity.launch()
     Parity.openViewer(app)
-    // V2/WP-V: LIVE pill for a Live Photo asset, enhance control in top bar.
-    // The fixture seeds a live photo; paging to it is WP-V's concern only if
-    // the first asset is not one — the badge IDs must exist regardless.
-    Parity.require("viewer-live-badge", in: app, gap: "V2", owner: "WP-V")
+    // V2/WP-V: enhance control in the top bar (first fixture asset is a still).
     Parity.require("viewer-enhance", in: app, gap: "V2", owner: "WP-V")
+    // V2/WP-V: LIVE pill is live-asset-only (Photos parity — a badge on every
+    // still would be noise), so page to the seeded live photo to assert it.
+    var foundLive = false
+    for _ in 0..<15 {
+      if app.descendants(matching: .any)["livephoto-page"].waitForExistence(timeout: 2) {
+        foundLive = true
+        break
+      }
+      app.swipeLeft()
+    }
+    XCTAssertTrue(
+      foundLive,
+      "V2/WP-V: the fixture seeds a live photo — paging should reach it")
+    Parity.require("viewer-live-badge", in: app, gap: "V2", owner: "WP-V")
   }
 
   func test_viewerToolbar_threeGroups() throws {
@@ -63,6 +74,12 @@ final class ParityViewerUITests: XCTestCase {
     let pager = app.descendants(matching: .any)["viewer-pager"]
     XCTAssertTrue(pager.waitForExistence(timeout: 10))
     pager.pinch(withScale: 0.5, velocity: -1)
+    // The grid stays mounted behind the viewer, so its presence alone proves
+    // nothing — the pager itself must be gone (same absence pattern as the
+    // swipe-down regression in ViewerUITests).
+    XCTAssertFalse(
+      app.descendants(matching: .any)["viewer-pager"].waitForExistence(timeout: 3),
+      "V8/WP-V: pinch-in on an open photo should dismiss the viewer, not shrink it")
     XCTAssertTrue(
       app.descendants(matching: .any)["library-grid"].waitForExistence(timeout: 10),
       "V8/WP-V: pinch-in on an open photo should dismiss back to the grid")

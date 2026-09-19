@@ -1,5 +1,7 @@
 import AVFoundation
 import AVKit
+import CoreGraphics
+import CoreImage
 import CoreModel
 import Editing
 import LocalStore
@@ -22,12 +24,26 @@ struct ZoomableImageView: UIViewRepresentable {
   var image: UIImage?
   var analysis: ImageAnalysis?
   var onSingleTap: (() -> Void)? = nil
+  /// WP-M (V6): page-local long-press. A SwiftUI `.onLongPressGesture` on the
+  /// UIKit-hosted pager never sees the touch, so the recognizer sits here, on
+  /// the image view itself, next to the existing tap recognizers.
+  var onLongPress: (() -> Void)? = nil
+  /// WP-V (V8): pinch-in at minimum zoom dismisses back to the grid. Kept as a
+  /// separate recognizer (not the scroll view's zoom) so zooming while zoomed
+  /// in is unaffected — it only fires when the page ends at min zoom.
+  var onPinchDismiss: (() -> Void)? = nil
 
   func makeUIView(context: Context) -> UIScrollView {
     let scroll = UIScrollView()
     scroll.minimumZoomScale = 1
     scroll.maximumZoomScale = 6
     scroll.delegate = context.coordinator
+    let pinch = UIPinchGestureRecognizer(
+      target: context.coordinator, action: #selector(Coordinator.pinched(_:)))
+    // Never steal: the scroll view keeps full ownership of the zoom gesture.
+    pinch.cancelsTouchesInView = false
+    pinch.delegate = context.coordinator
+    scroll.addGestureRecognizer(pinch)
     let imageView = UIImageView()
     imageView.contentMode = .scaleAspectFit
     imageView.isUserInteractionEnabled = true
@@ -41,12 +57,24 @@ struct ZoomableImageView: UIViewRepresentable {
     let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
     singleTap.require(toFail: doubleTap)
     imageView.addGestureRecognizer(singleTap)
+    // 0.35 s, not the usual 0.5 s: this view also hosts VisionKit's
+    // subject-lift long-press (see the interaction above), and two
+    // long-presses on one touch race — the shorter one recognizes first and
+    // fails the other (no simultaneous recognition by default). The menu must
+    // win that race deterministically; when VisionKit has nothing liftable
+    // under the touch its recognizer stays out of the way on its own.
+    let longPress = UILongPressGestureRecognizer(
+      target: context.coordinator, action: #selector(Coordinator.longPressed(_:)))
+    longPress.minimumPressDuration = 0.35
+    imageView.addGestureRecognizer(longPress)
     return scroll
   }
 
   func updateUIView(_ scroll: UIScrollView, context: Context) {
     context.coordinator.imageView?.image = image
     context.coordinator.onSingleTap = onSingleTap
+    context.coordinator.onLongPress = onLongPress
+    context.coordinator.onPinchDismiss = onPinchDismiss
     if context.coordinator.appliedAnalysis !== analysis {
       context.coordinator.appliedAnalysis = analysis
       context.coordinator.interaction.analysis = analysis
@@ -59,13 +87,24 @@ struct ZoomableImageView: UIViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
-  final class Coordinator: NSObject, UIScrollViewDelegate {
+  final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     var imageView: UIImageView?
     var onSingleTap: (() -> Void)?
+    var onLongPress: (() -> Void)?
+    var onPinchDismiss: (() -> Void)?
     let interaction = ImageAnalysisInteraction()
     var appliedAnalysis: ImageAnalysis?
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+
+    /// Alongside the scroll view's own zoom recognizer (which keeps working —
+    /// this never cancels its touches).
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      true
+    }
 
     @objc func zoomToggle(_ gesture: UITapGestureRecognizer) {
       guard let scroll = gesture.view?.superview as? UIScrollView else { return }
@@ -73,6 +112,44 @@ struct ZoomableImageView: UIViewRepresentable {
     }
 
     @objc func tapped() { onSingleTap?() }
+
+    @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
+      guard gesture.state == .began else { return }
+      onLongPress?()
+    }
+
+    /// WP-V (V8): a pinch-in that ends at minimum zoom dismisses to the grid.
+    /// Pinch-outs (scale > 1) and anything ending zoomed in stay zooms — the
+    /// 0.85 gate keeps two-finger taps and jitter from dismissing.
+    @objc func pinched(_ gesture: UIPinchGestureRecognizer) {
+      guard gesture.state == .ended,
+        let scroll = gesture.view as? UIScrollView,
+        scroll.zoomScale <= 1.02,
+        gesture.scale < 0.85
+      else { return }
+      onPinchDismiss?()
+    }
+  }
+}
+
+/// WP-V (V2): display-only auto-enhance preview for the viewer still. Runs
+/// Core Image's auto-adjustment filters over the already-decoded display image
+/// (never the asset, never persisted) — the toggle in the top bar flips back
+/// to the untouched image.
+enum EnhancePreview {
+  /// Renders on a background task; the caller wraps the result in a `UIImage`.
+  /// Takes the `CGImage` (Sendable) so callers never ship a `UIImage` across
+  /// an actor boundary.
+  static func enhancedCG(_ cg: CGImage) -> CGImage? {
+    let input = CIImage(cgImage: cg)
+    var result = input
+    for filter in input.autoAdjustmentFilters() {
+      filter.setValue(result, forKey: kCIInputImageKey)
+      if let output = filter.outputImage { result = output }
+    }
+    // No adjustment applied: keep the original pixels, not a re-render.
+    if result === input { return cg }
+    return CIContext(options: nil).createCGImage(result, from: result.extent)
   }
 }
 
@@ -83,14 +160,30 @@ struct ViewerPage: View {
   var assetId: String
   var onSingleTap: (() -> Void)? = nil
   var livePlay: LivePlayRequest
+  /// WP-V (V2): shared enhance toggle (reference — the chrome flips it after
+  /// this page is built, so it must be observed, not a snapshot).
+  /// Video/live pages ignore it; stills preview it.
+  @ObservedObject var enhance: EnhanceState = EnhanceState()
+  /// WP-V (V8): pinch-in at min zoom dismisses (wired to the pager dismiss).
+  var onPinchDismiss: (() -> Void)? = nil
 
   @State private var asset: Asset?
   @State private var image: UIImage?
   @State private var liveText: ImageAnalysis?
+  /// WP-V (V2): enhanced render of the current `image` (nil while computing or
+  /// off — the body falls back to the untouched image, never a placeholder).
+  @State private var enhancedImage: UIImage?
+  @State private var enhanceGen = 0
+  /// WP-M (V6): page-local long-press menu (stills only — video/live pages
+  /// live in `LiveVideo.swift`, outside WP-M's allowance; see the report).
+  @State private var showLongPressMenu = false
+  @State private var showAlbumPicker = false
+  @State private var actionError: String?
 
   var body: some View {
     ZStack {
-      Color.black.ignoresSafeArea()
+      // WP-L L1: system background in light, black in dark (pair L02-viewer).
+      HeirloomAppearance.viewerBackdrop.ignoresSafeArea()
       if let asset, asset.type == .video {
         VideoPage(asset: asset)
       } else if let asset, let motionId = asset.livePhotoVideoId {
@@ -98,16 +191,77 @@ struct ViewerPage: View {
           asset: asset, motionAssetId: motionId,
           onSingleTap: onSingleTap, playRequest: livePlay)
       } else if let image {
-        ZoomableImageView(image: image, analysis: liveText, onSingleTap: onSingleTap)
+        ZoomableImageView(
+          image: displayImage ?? image, analysis: liveText, onSingleTap: onSingleTap,
+          onLongPress: { showLongPressMenu = true },
+          onPinchDismiss: onPinchDismiss)
       } else {
         ProgressView()
-          .tint(.white)
+          .tint(HeirloomAppearance.viewerLoadingTint)
           .accessibilityIdentifier("viewer-loading")
       }
     }
     .task(id: assetId) {
       await load()
     }
+    // WP-V (V2): the chrome's enhance toggle flips after this page is built —
+    // recompute the preview from whatever tier is current.
+    .onChange(of: enhance.on) {
+      Task { await updateEnhanced() }
+    }
+    // Page-local menu sheet: Delete confirms inside the menu and only then
+    // trashes, so automation asserts presence without tapping through (§0.5).
+    .sheet(isPresented: $showLongPressMenu) {
+      if let asset {
+        ViewerLongPressMenu(
+          asset: asset, access: session.access,
+          preview: image,
+          onShare: { share(asset) },
+          onFavorite: { toggleFavorite(asset) },
+          onCopy: { copyAsset(asset) },
+          onAddToAlbum: { showAlbumPicker = true },
+          onHide: { setHidden(asset) },
+          onTrash: { trash(asset) })
+      }
+    }
+    .sheet(isPresented: $showAlbumPicker) {
+      AlbumPickerSheet(assetIds: [assetId])
+        .environmentObject(session)
+    }
+    .alert("Action failed", isPresented: Binding(
+      get: { actionError != nil }, set: { if !$0 { actionError = nil } })
+    ) {
+      Button("OK") { actionError = nil }
+    } message: {
+      Text(actionError ?? "")
+    }
+  }
+
+  /// WP-V (V2): what the zoom view paints — the enhanced render while the
+  /// toggle is on and ready, else the untouched tier image.
+  private var displayImage: UIImage? {
+    enhance.on ? (enhancedImage ?? image) : image
+  }
+
+  /// WP-V (V2): (re)build the enhanced preview off-main when the toggle is on.
+  /// Generation-guarded: a tier upgrade or toggle-off invalidates in-flight
+  /// work instead of flashing a stale render. Never synthesizes an image —
+  /// failure leaves the untouched pixels up.
+  private func updateEnhanced() async {
+    enhanceGen += 1
+    let gen = enhanceGen
+    guard enhance.on, let base = image else {
+      if !enhance.on { enhancedImage = nil }
+      return
+    }
+    let scale = base.scale
+    let orientation = base.imageOrientation
+    guard let cg = base.cgImage else { return }
+    let rendered = await Task.detached(priority: .userInitiated) {
+      EnhancePreview.enhancedCG(cg)
+    }.value
+    guard gen == enhanceGen else { return }
+    enhancedImage = rendered.map { UIImage(cgImage: $0, scale: scale, orientation: orientation) }
   }
 
   private func load() async {
@@ -125,6 +279,8 @@ struct ViewerPage: View {
         }
         if let next {
           image = next
+          // WP-V (V2): keep the preview in step with tier upgrades while on.
+          await updateEnhanced()
           // Live Text runs once, on the full tier only (P6: per-tier analysis on the
           // main actor stalled the viewer under load).
           if tier == .fullsize { await analyzeLiveText(next) }
@@ -132,6 +288,80 @@ struct ViewerPage: View {
         if tier == .fullsize { break }
       } catch {
         break
+      }
+    }
+  }
+
+  /// WP-M (V6): page-local menu actions. Session-direct (the page owns no
+  /// chrome helpers): same mutation-then-refresh pattern as the grid menu, and
+  /// the same guarded share/copy paths as `ViewerView`. Failures surface in
+  /// the page alert; cancellations never do.
+  private func toggleFavorite(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.setFavorite(ids: [asset.id], isFavorite: !asset.isFavorite)
+    }
+  }
+
+  private func setHidden(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.setHidden(ids: [asset.id], isHidden: asset.visibility != .hidden)
+    }
+  }
+
+  private func trash(_ asset: Asset) {
+    mutate {
+      guard let mutations = session.assetMutations else { return }
+      try await mutations.trash(ids: [asset.id])
+    }
+  }
+
+  private func share(_ asset: Asset) {
+    Task {
+      guard let base = session.apiBaseURL,
+        let token = await session.bearerToken(),
+        let window = UIApplication.shared.connectedScenes
+          .compactMap({ $0 as? UIWindowScene }).first?.windows.first
+      else { return }
+      do {
+        var request = URLRequest(
+          url: MediaEndpoint(serverURL: base, assetID: asset.id).originalURL())
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(asset.originalFileName)
+        try data.write(to: tmp)
+        let activity = UIActivityViewController(activityItems: [tmp], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+          popover.sourceView = window
+        }
+        window.rootViewController?.present(activity, animated: true)
+      } catch {
+        if !error.isCancellation { actionError = error.localizedDescription }
+      }
+    }
+  }
+
+  private func copyAsset(_ asset: Asset) {
+    Task {
+      guard let pipeline = session.pipeline,
+        let result = try? await pipeline.load(asset: asset, tier: .preview)
+      else { return }
+      switch result.content {
+      case .placeholder(let img), .tier(_, let img, _):
+        UIPasteboard.general.images = [img]
+      }
+    }
+  }
+
+  private func mutate(_ work: @escaping () async throws -> Void) {
+    Task {
+      do {
+        try await work()
+        try await session.refresh()
+        await load()
+      } catch {
+        if !error.isCancellation { actionError = error.localizedDescription }
       }
     }
   }
@@ -174,14 +404,17 @@ struct ViewerView: View {
   @State private var showInfo = false
   @State private var showMoveSheet = false
   @State private var showAlbumPicker = false
-  @State private var showEdit = false
-  @State private var editPreview: UIImage?
+  @State private var editRequest: EditSession?
   @State private var actionError: String?
   @State private var openMs: Double?
   @State private var exif: AssetExif?
   @State private var ownerName: String?
+  /// V1 people badge: names depicting the current asset (empty hides it).
+  @State private var titlePeople: [String] = []
   @State private var showTrashConfirm = false
   @StateObject private var livePlay = LivePlayRequest()
+  /// V2 display-only enhance preview (never persisted — see `EnhancePreview`).
+  @StateObject private var enhanceState = EnhanceState()
   @Environment(\.dismiss) private var dismiss
   private let openStart = Date()
 
@@ -205,18 +438,21 @@ struct ViewerView: View {
 
   var body: some View {
     ZStack {
-      Color.black.ignoresSafeArea()
+      // WP-L L1: system background in light, black in dark (pair L02-viewer).
+      HeirloomAppearance.viewerBackdrop.ignoresSafeArea()
       if ids.isEmpty {
         ProgressView()
-          .tint(.white)
+          .tint(HeirloomAppearance.viewerLoadingTint)
           .accessibilityIdentifier("viewer-loading")
       } else {
         ViewerPager(
           ids: ids, session: session, currentIndex: $currentIndex,
           livePlay: livePlay,
+          enhance: enhanceState,
           dismissEnabled: !showInfo,
           onSingleTap: { showChrome.toggle() },
           onDismiss: { dismiss() },
+          onPinchDismiss: { dismiss() },
           onSwipeUp: { showInfo = true })
       }
       if showInfo, let asset {
@@ -249,13 +485,22 @@ struct ViewerView: View {
           ViewerTopBar(
             line1: pillLines.0, line2: pillLines.1,
             menu: AnyView(moreMenu),
-            onBack: { dismiss() })
+            onBack: { dismiss() },
+            // V2 enhance: stills only — video/live pages have no still to preview.
+            showEnhance: asset?.type == .image && asset?.livePhotoVideoId == nil,
+            enhanceOn: enhanceState.on,
+            onEnhance: { enhanceState.on.toggle() })
           ViewerBadgeRow(
             isLive: asset?.livePhotoVideoId != nil,
             ownerName: ownerName,
+            peopleNames: titlePeople,
             onPlayLive: { livePlay.token += 1 })
         }
         .padding(.horizontal, 12)
+        // WP-L L1: light-appearance test surface (AppearanceUITests samples
+        // this, not the photo). Contain keeps the inner buttons addressable.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("viewer-chrome-surface")
       }
     }
     .safeAreaInset(edge: .bottom) {
@@ -306,12 +551,21 @@ struct ViewerView: View {
             .environmentObject(session)
         }
       }
-      .fullScreenCover(isPresented: $showEdit) {
-        if let asset, let editPreview, let base = session.serverURL {
+      // (WP-M V6 lives page-locally in `ViewerPage` below — a SwiftUI
+      // `.onLongPressGesture` on the UIKit-hosted pager never sees the touch,
+      // so the recognizer sits on the page's own image view.)
+      // WP-R (F3b): item-based cover. The previous `isPresented` + captured-
+      // `self` content could present a stale snapshot (empty canvas, chrome
+      // only after a scene-phase re-sync). The item carries fresh values as
+      // parameters, so the content can never go stale.
+      .fullScreenCover(item: $editRequest) { request in
+        if let base = session.apiBaseURL {
           EditView(
-            asset: asset, access: session.access, preview: editPreview,
-            loadOriginalData: { try await downloadOriginal(asset) },
-            loadVideoFile: asset.type == .video ? { try await downloadOriginalFile(asset) } : nil,
+            asset: request.asset, access: session.access, preview: request.preview,
+            loadOriginalData: { [asset = request.asset] in try await downloadOriginal(asset) },
+            loadVideoFile: request.asset.type == .video
+              ? { [asset = request.asset] in try await downloadOriginalFile(asset) } : nil,
+            loadDisplayImage: { [asset = request.asset] in try await fullDisplayImage(for: asset) },
             persistence: RESTEditPersistence(
               serverURL: base, token: { await session.bearerToken() }),
             onDone: { _ in Task { await reloadAsset() } })
@@ -347,6 +601,8 @@ struct ViewerView: View {
       .onChange(of: currentIndex) { _, index in
         if ids.indices.contains(index) {
           currentId = ids[index]
+          // V2: the preview belongs to one photo — never leak it onto the next.
+          enhanceState.on = false
         }
       }
   }
@@ -394,6 +650,15 @@ struct ViewerView: View {
     }
   }
 
+  /// WP-R (F3b): the editor's present payload. Carried by value through
+  /// `.fullScreenCover(item:)` so the presented content is always fresh —
+  /// unlike `isPresented` + captured-`self` content, which can present stale.
+  private struct EditSession: Identifiable {
+    let id = UUID()
+    var asset: Asset
+    var preview: UIImage
+  }
+
   private func containerName(for asset: Asset) -> String {
     switch asset.container {
     case .personal(let ownerId):
@@ -429,7 +694,7 @@ struct ViewerView: View {
 
   private func share(_ asset: Asset) {
     Task {
-      guard let base = session.serverURL,
+      guard let base = session.apiBaseURL,
         let token = await session.bearerToken(),
         let window = UIApplication.shared.connectedScenes
           .compactMap({ $0 as? UIWindowScene }).first?.windows.first
@@ -455,7 +720,7 @@ struct ViewerView: View {
 
   private func copyAsset(_ asset: Asset) {
     Task {
-      guard let base = session.serverURL,
+      guard let base = session.apiBaseURL,
         let token = await session.bearerToken()
       else { return }
       do {
@@ -477,22 +742,28 @@ struct ViewerView: View {
     }
   }
 
+  /// WP-R (F1/F3/F3b): present-first editing. The old path awaited the full-res
+  /// original with no deadline *before* presenting, so a stalled fetch gated the
+  /// editor chrome itself (F3b) and its failure modes ended on an empty canvas
+  /// (F1/F3). Now the cover presents over the viewer's already-decoded image
+  /// (same tiers `ViewerPage` paints); the full-res upgrade arrives in the
+  /// background and can only replace the seed on a successful decode — never
+  /// with an empty image. Save re-fetches the original itself, so the upgrade
+  /// is display-only.
   private func openEdit(_ asset: Asset) {
+    // Synchronous memory-cache probe: the viewer just painted these tiers.
+    if let seed = cachedEditSeed(for: asset) {
+      editRequest = EditSession(asset: asset, preview: seed)
+      return
+    }
     Task {
       do {
-        let data = try await downloadOriginal(asset)
-        if let image = UIImage(data: data) {
-          editPreview = image
-        } else {
-          // Video: use the first frame as the editing preview.
-          let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("mp4")
-          try data.write(to: tmp)
-          editPreview = await firstFrame(of: tmp) ?? UIImage()
-          try? FileManager.default.removeItem(at: tmp)
+        // Nothing cached: bound the preview-tier fetch (the viewer stays visible
+        // underneath, so this never shows black) and only then present.
+        let preview = try await withMainActorTimeout(seconds: EditorLoadBudget.cachedPreviewFetch) {
+          try await previewTierImage(for: asset)
         }
-        showEdit = true
+        editRequest = EditSession(asset: asset, preview: preview)
       } catch {
         // L2: cancellation is never a user-facing error.
         if !error.isCancellation { actionError = error.localizedDescription }
@@ -500,8 +771,58 @@ struct ViewerView: View {
     }
   }
 
+  /// Best already-decoded image for `asset.id`: fullsize → preview → thumbnail →
+  /// thumbhash placeholder. `nil` means "fetch"; never synthesizes an empty image.
+  private func cachedEditSeed(for asset: Asset) -> UIImage? {
+    if let pipeline = session.pipeline {
+      for tier: MediaTier in [.fullsize, .preview, .thumbnail] {
+        if let cg = pipeline.cachedImage(id: asset.id, tier: tier) {
+          return UIImage(cgImage: cg)
+        }
+      }
+    }
+    if let hash = asset.thumbhash,
+      let decoded = try? ThumbHash.decode(base64: hash),
+      let cg = decoded.makeCGImage()
+    {
+      return UIImage(cgImage: cg)
+    }
+    return nil
+  }
+
+  /// First image yielded by the working viewer pipeline at preview tier.
+  private func previewTierImage(for asset: Asset) async throws -> UIImage {
+    guard let pipeline = session.pipeline else { throw EditAccessError.notPermitted }
+    for try await loaded in await pipeline.stream(asset: asset, tier: .preview) {
+      switch loaded.content {
+      case .placeholder(let img), .tier(_, let img, _):
+        return img
+      }
+    }
+    throw EditAccessError.notPermitted
+  }
+
+  /// WP-R (F1/F3): full-res canvas upgrade. Returns a *decoded* image — throws
+  /// on undecodable data so the caller keeps the preview seed. Never returns an
+  /// empty `UIImage()` (the old video path did, painting a permanent black
+  /// canvas behind interactive chrome).
+  private func fullDisplayImage(for asset: Asset) async throws -> UIImage {
+    let data = try await downloadOriginal(asset)
+    if let image = UIImage(data: data) { return image }
+    guard asset.type == .video else { throw EditRenderError.undecodableSource }
+    let tmp = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension("mp4")
+    try data.write(to: tmp)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    guard let frame = await firstFrame(of: tmp) else {
+      throw EditRenderError.undecodableSource
+    }
+    return frame
+  }
+
   private func downloadOriginal(_ asset: Asset) async throws -> Data {
-    guard let base = session.serverURL, let token = await session.bearerToken() else {
+    guard let base = session.apiBaseURL, let token = await session.bearerToken() else {
       throw EditAccessError.notPermitted
     }
     var request = URLRequest(
@@ -541,6 +862,7 @@ struct ViewerView: View {
     guard let asset else {
       exif = nil
       ownerName = nil
+      titlePeople = []
       return
     }
     exif = try? await store.exif(for: asset.id)
@@ -550,6 +872,27 @@ struct ViewerView: View {
     {
       ownerName = user.name
     }
+    // V1 people badge: same matched-people pattern as the info panel (indexed
+    // per-person membership checks); runs per page change, off-main, and an
+    // empty result simply hides the badge.
+    titlePeople = await matchedPeople(for: asset, store: store)
+  }
+
+  /// Names depicting `asset`, deduplicated. Shared nothing with the panel's own
+  /// copy — the title badge must follow paging while the panel loads on open.
+  private func matchedPeople(for asset: Asset, store: PhotosLocalStore) async -> [String] {
+    let mine = (try? await store.peopleForOwner(session.userId)) ?? []
+    let others =
+      asset.ownerId == session.userId
+      ? [] : ((try? await store.peopleForOwner(asset.ownerId)) ?? [])
+    var names: [String] = []
+    for person in mine + others where !names.contains(person.name) {
+      let ids = try? await store.assetIds(forPerson: person.id, limit: 500)
+      if ids?.contains(asset.id) == true, !person.name.isEmpty {
+        names.append(person.name)
+      }
+    }
+    return names
   }
 }
 

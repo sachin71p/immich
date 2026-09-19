@@ -38,6 +38,15 @@ struct AssetGridView: View {
   var showsSectionHeaders: Bool = true
   /// Bumped to reload (sync landed, scope changed, new search ran).
   var reloadToken: Int = 0
+  /// WP-G: current user for the selective people badge (G3); scroll-activity
+  /// signal for the header subtitle (G6); pinch-past-edge for the density ↔
+  /// time-level continuum (G7). All defaulted so existing callers are untouched.
+  var currentUserId: String? = nil
+  var onPinchEdge: ((Bool) -> Void)? = nil
+  var onScrollActive: ((Bool) -> Void)? = nil
+  /// WP-M (G4): menu owner for the grid long-press provider. Optional so
+  /// callers without a session keep tap-to-open untouched.
+  var session: AppSession? = nil
 
   @StateObject private var loader = LibraryGridLoader()
   @ObservedObject private var selectionModel: GridSelectionModel
@@ -54,7 +63,11 @@ struct AssetGridView: View {
     onRefresh: (() async -> Void)? = nil,
     onVisibleRange: ((Date?, Date?) -> Void)? = nil,
     showsSectionHeaders: Bool = true,
-    reloadToken: Int = 0
+    reloadToken: Int = 0,
+    currentUserId: String? = nil,
+    onPinchEdge: ((Bool) -> Void)? = nil,
+    onScrollActive: ((Bool) -> Void)? = nil,
+    session: AppSession? = nil
   ) {
     self.source = source
     self.store = store
@@ -70,6 +83,10 @@ struct AssetGridView: View {
     self.onVisibleRange = onVisibleRange
     self.showsSectionHeaders = showsSectionHeaders
     self.reloadToken = reloadToken
+    self.currentUserId = currentUserId
+    self.onPinchEdge = onPinchEdge
+    self.onScrollActive = onScrollActive
+    self.session = session
   }
 
   var body: some View {
@@ -85,7 +102,11 @@ struct AssetGridView: View {
         onOpen: onOpen,
         onRefresh: onRefresh,
         onVisibleRange: onVisibleRange,
-        showsSectionHeaders: showsSectionHeaders
+        showsSectionHeaders: showsSectionHeaders,
+        currentUserId: currentUserId,
+        onPinchEdge: onPinchEdge,
+        onScrollActive: onScrollActive,
+        session: session
       )
       .ignoresSafeArea(edges: .bottom)
     }
@@ -152,6 +173,10 @@ private struct GridBridge: UIViewControllerRepresentable {
   var onRefresh: (() async -> Void)?
   var onVisibleRange: ((Date?, Date?) -> Void)?
   var showsSectionHeaders: Bool
+  var currentUserId: String?
+  var onPinchEdge: ((Bool) -> Void)?
+  var onScrollActive: ((Bool) -> Void)?
+  var session: AppSession? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -184,6 +209,13 @@ private struct GridBridge: UIViewControllerRepresentable {
       guard let snapshot = vc?.currentSnapshot else { return }
       onOpen(ViewerRoute(startId: id) { snapshot.allIds })
     }
+    // WP-M (G4): grid long-press menu. Without a session the provider stays
+    // nil and tap-to-open is untouched.
+    vc.menuProvider = { [session] id, _ in
+      guard let session else { return nil }
+      return UIHostingController(
+        rootView: GridContextMenuSheet(assetId: id).environmentObject(session))
+    }
     vc.onSelectionChange = { [weak selection] ids in
       selection?.ids = ids
     }
@@ -206,6 +238,8 @@ private struct GridBridge: UIViewControllerRepresentable {
     let columnsBinding = _columns
     vc.onPinchColumns = { next in columnsBinding.wrappedValue = next }
     vc.onRefresh = onRefresh
+    vc.onPinchEdge = onPinchEdge
+    vc.onScrollActive = onScrollActive
     vc.pipeline = pipeline
     vc.showsHeaders = showsSectionHeaders
     vc.onNeedRows = { [weak loader, weak store] ids in
@@ -223,6 +257,9 @@ private struct GridBridge: UIViewControllerRepresentable {
 
   func updateUIViewController(_ vc: PhotoGridViewController, context: Context) {
     vc.pipeline = pipeline
+    vc.currentUserId = currentUserId
+    vc.onPinchEdge = onPinchEdge
+    vc.onScrollActive = onScrollActive
     vc.onRefresh = onRefresh
     vc.rowProvider = { [weak loader] in loader?.row(for: $0) }
     vc.flagsProvider = { [weak loader] in loader?.flags(for: $0) ?? [] }
