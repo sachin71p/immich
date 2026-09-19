@@ -5,8 +5,8 @@ services:
     container_name: server
     image: heirloom-server:local
     build:
-      context: .
-      dockerfile: src/server/Dockerfile
+      context: src/
+      dockerfile: server/Dockerfile
     extends:
       file: src/docker/hwaccel.transcoding.yml
       service: nvenc
