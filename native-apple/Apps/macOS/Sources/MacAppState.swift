@@ -112,7 +112,12 @@ final class MacAppState {
       serverURL: serverURL, token: token, store: store, diskCache: diskCache,
       protocolClasses: protocolClasses)
 
-    self.serverURL = built.serverURL
+    // Store the normalized base (includes `/api`): every raw-REST consumer
+    // (MediaEndpoint originals, recipe/version KV, exporter, search) builds
+    // request paths against this, and the bare host serves the web fallback
+    // page (HTTP 200, undecodable) for those paths. Idempotent: re-entry with
+    // an already-normalized URL is a no-op (normalizedAPIBaseURL).
+    self.serverURL = built.connection.serverURL
     self.store = store
     self.connection = built.connection
     sync = built.sync
@@ -176,7 +181,10 @@ final class MacAppState {
     // or `currentUserId()` below still hits the stale host.
     let built = try Self.makeConnectionState(
       serverURL: serverURL, token: token, store: store, diskCache: diskCache)
-    self.serverURL = built.serverURL
+    // Normalized (see above): login with a bare host must not strand raw-REST
+    // paths on the web fallback. The persisted string below stays as typed;
+    // re-entry is idempotent.
+    self.serverURL = built.connection.serverURL
     connection = built.connection
     sync = built.sync
     uploadQueue = built.uploadQueue
