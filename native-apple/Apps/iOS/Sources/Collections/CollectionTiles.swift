@@ -1,5 +1,6 @@
 import CoreModel
 import LocalStore
+import MapKit
 import Media
 import SwiftUI
 
@@ -263,5 +264,107 @@ struct HeroCoverHeader: View {
       }
       .padding()
     }
+  }
+}
+
+
+// MARK: - map snapshot tile (LP7)
+
+// Replaces the gray `map.fill` placeholder behind both Places entry points
+// (the pinned-grid Map tile and the wide Places section tile) with a native
+// map snapshot centred on the library's geotagged assets. The snapshot is
+// rendered once per session identity off the main thread via
+// `MKMapSnapshotter`; while it loads — or when the library has no located
+// assets or the snapshot fails (offline simulator) — the previous gray tile
+// renders as the explicit fallback so the tile never paints empty.
+struct MapSnapshotTile: View {
+  @EnvironmentObject var session: AppSession
+
+  /// Caption overlay: the located-places count when known, else "Map".
+  var subtitle: String?
+  /// Label shown under the caption on the wide tile; nil on the square tile.
+  var footnote: String?
+
+  @State private var snapshot: UIImage?
+  @State private var didAttemptLoad = false
+
+  var body: some View {
+    ZStack(alignment: .bottomLeading) {
+      if let snapshot {
+        Image(uiImage: snapshot)
+          .resizable()
+          .aspectRatio(contentMode: .fill)
+          .accessibilityIdentifier("places-tile-snapshot")
+      } else {
+        RoundedRectangle(cornerRadius: 16).fill(.gray.opacity(0.25))
+        Image(systemName: "map.fill")
+          .font(.largeTitle).foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityIdentifier("places-tile-map-fallback")
+      }
+      VStack(alignment: .leading, spacing: 2) {
+        Text(subtitle ?? "Map")
+          .font(.subheadline).fontWeight(.medium).foregroundStyle(.white)
+          .shadow(color: .black.opacity(0.6), radius: 4)
+        if let footnote {
+          Text(footnote)
+            .font(.caption).foregroundStyle(.white.opacity(0.9))
+            .shadow(color: .black.opacity(0.6), radius: 4)
+        }
+      }
+      .padding(10)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: 16))
+    .task { await load() }
+  }
+
+  private func load() async {
+    guard !didAttemptLoad, let store = session.store else { return }
+    didAttemptLoad = true
+    let key = session.userId
+    if let cached = SnapshotCache.shared.get(key) {
+      snapshot = cached
+      return
+    }
+    guard let scope = try? await session.timelineScope() else { return }
+    // Bounded (200) pin sample: the tile only needs a region, never the
+    // full located set, so this stays cheap regardless of library size.
+    let pins = (try? await store.locatedAssets(scope: scope, limit: 200)) ?? []
+    guard !pins.isEmpty else { return }
+    let lats = pins.map(\.latitude)
+    let lons = pins.map(\.longitude)
+    let center = CLLocationCoordinate2D(
+      latitude: (lats.min()! + lats.max()!) / 2,
+      longitude: (lons.min()! + lons.max()!) / 2)
+    let latSpan = max((lats.max()! - lats.min()!) * 1.4, 0.05)
+    let lonSpan = max((lons.max()! - lons.min()!) * 1.4, 0.05)
+    let options = MKMapSnapshotter.Options()
+    options.region = MKCoordinateRegion(
+      center: center,
+      span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan))
+    options.size = CGSize(width: 512, height: 512)
+    options.scale = 2
+    options.showsPointsOfInterest = false
+    guard let image = try? await MKMapSnapshotter(options: options).start().image
+    else { return }
+    SnapshotCache.shared.set(image, key: key)
+    snapshot = image
+  }
+}
+
+/// One snapshot per session identity, shared by the square and wide tiles.
+/// Lock-guarded (same pattern as `ArtCache`): `NSCache` is not `Sendable`
+/// under Swift 6 strict concurrency.
+private final class SnapshotCache: @unchecked Sendable {
+  static let shared = SnapshotCache()
+  private let lock = NSLock()
+  private var images: [String: UIImage] = [:]
+
+  func get(_ key: String) -> UIImage? {
+    lock.withLock { images[key] }
+  }
+
+  func set(_ image: UIImage, key: String) {
+    lock.withLock { images[key] = image }
   }
 }
