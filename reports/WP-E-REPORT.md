@@ -113,6 +113,34 @@ raw `EditRecipe` JSON (`<case>.recipe.json`) beside the input
 Deferred to full E3: the 50-photo reference set, SSIM alongside ΔE, the
 slider-gain tuning loop toward median ΔE < 3, and iPhone↔Mac drift goldens.
 
+## Owner work remaining (owner's Mac; nothing here blocks the branch)
+
+- [ ] **Gate 1 verdict — 4-point app confirmation** (`make install-macos`, then launch
+  the binary from Terminal with `2>&1 | grep -a heirloom-edit`): (1) Edit opens a
+  sharp canvas in ~2 s; (2) Levels at input-black 0 brightens, never black;
+  (3) same photo reopened prints `HIT … (no download)`; (4) grid repopulates after
+  closing. Reply "Gate 1 passes" or per-section findings. Staff recommendation:
+  conditional pass (see report head).
+- [ ] **Server rebuild for Done.** `heirloom-server:local` predates the E1 rendition
+  endpoint, so Done errors until the server is rebuilt with E1. Skip Done until then;
+  the error is expected, not a new bug.
+- [ ] **E3 reference captures** (blocks ΔE numbers, nothing else). Per case, a triplet
+  in a refs dir (e.g. `~/heirloom-refs/e3-bronze/`): `<case>.source.png` (synthetic
+  input) + `<case>.ref.png` (Apple Photos edit, exported at source size) +
+  `<case>.recipe.json` (raw `EditRecipe` JSON with identical values). Inputs: gray
+  step wedge, hue wheel/patches, photo-like gradient (≤2048 px, throwaway Photos
+  album, never Done on a real asset — delete the album after). Cases: levels
+  `{inBlack:20, inWhite:85, outBlack:10, outWhite:90}` + 2–3 in/out combos; curves
+  identity + master `[(0.25,0.3),(0.75,0.8)]` + one per-channel set; selective
+  single-hue sweeps (e.g. `{selRedSat:+60 range:80}`). Then run
+  `native-apple/scripts/heirloom-parity/deltae.sh <refs-dir>` and paste the
+  per-case medians (bar: median < 3; known 1-LSB mid-gray wobble excluded).
+- [ ] **PR hygiene — done.** PR title fixed to conventional commit; `changelog:feature`
+  created (mirrors upstream taxonomy) and applied; both gates pass. Remaining red
+  checks are pre-existing fork infra (GHCR images, plugin-sdk, base spec).
+- [ ] **TEMP-DEBUG cleanup (main session, after the 4-point confirmation).** Remove the
+  two `TEMP-DEBUG` prints in `MacViewer.downloadOriginal`, then push.
+
 ## Unresolved (owed to the main session)
 
 1. `verify.sh mac-ui` (device foreground is exclusive): run
