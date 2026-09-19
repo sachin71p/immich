@@ -53,6 +53,10 @@ final class MacAppState {
   /// clears) it on appear. A plain String is safe on `@Observable` (PLAN rule 5 covers
   /// large Equatable collections only).
   var pendingSearchQuery: String?
+  /// Launch-gate bound for server session validation (`revalidateSession`,
+  /// `adoptKeychainSession`): generous for one small GET on a slow link, tight
+  /// enough that a dead network degrades to the offline session in seconds.
+  static let sessionValidationTimeoutSeconds = 8.0
   /// Bumped by `syncNow` only when the session warrants a grid reload (see
   /// `SyncCoordinator.SyncResult.shouldReloadTimeline`). The applied-changes signal is
   /// `SyncResult.appliedChanges` — true when the session called `PhotosLocalStore.apply`
@@ -75,7 +79,8 @@ final class MacAppState {
   }
 
   private static func makeConnectionState(
-    serverURL: URL, token: String?, store: PhotosLocalStore, diskCache: TieredMediaCache
+    serverURL: URL, token: String?, store: PhotosLocalStore, diskCache: TieredMediaCache,
+    protocolClasses: [AnyClass] = []
   ) throws -> ConnectionState {
     let connection = try ImmichConnection(serverURL: serverURL, accessToken: token)
     let tokenStore = connection.tokenStore
@@ -91,19 +96,28 @@ final class MacAppState {
       connection: connection,
       sync: SyncCoordinator(connection: connection, localStore: store),
       uploadQueue: UploadQueue(store: store, transport: ImmichUploadTransport(connection: connection)),
-      pipeline: MediaPipeline.makeDefault(diskCache: diskCache, server: server)
+      pipeline: MediaPipeline.makeDefault(
+        diskCache: diskCache, server: server, protocolClasses: protocolClasses)
     )
   }
 
-  private init(serverURL: URL, token: String?, store: PhotosLocalStore) throws {
+  private init(
+    serverURL: URL, token: String?, store: PhotosLocalStore, protocolClasses: [AnyClass] = []
+  ) throws {
     let diskCache = TieredMediaCache(
       rootDirectory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Heirloom/Media", isDirectory: true)
     )
     let built = try Self.makeConnectionState(
-      serverURL: serverURL, token: token, store: store, diskCache: diskCache)
+      serverURL: serverURL, token: token, store: store, diskCache: diskCache,
+      protocolClasses: protocolClasses)
 
-    self.serverURL = built.serverURL
+    // Store the normalized base (includes `/api`): every raw-REST consumer
+    // (MediaEndpoint originals, recipe/version KV, exporter, search) builds
+    // request paths against this, and the bare host serves the web fallback
+    // page (HTTP 200, undecodable) for those paths. Idempotent: re-entry with
+    // an already-normalized URL is a no-op (normalizedAPIBaseURL).
+    self.serverURL = built.connection.serverURL
     self.store = store
     self.connection = built.connection
     sync = built.sync
@@ -124,18 +138,40 @@ final class MacAppState {
   static func seeded() throws -> MacAppState {
     let store = try PhotosLocalStore(inMemory: true)
     let state = try MacAppState(
-      serverURL: URL(string: "https://fixture.invalid")!, token: nil as String?, store: store
+      serverURL: URL(string: "https://fixture.invalid")!, token: nil as String?, store: store,
+      // The stub must ride Nuke's private session: global `URLProtocol.registerClass`
+      // (done in `seedForSmoke`) never intercepts it, so without this the fixture
+      // viewer/grid loads no bytes at all.
+      protocolClasses: [FixtureStubURLProtocol.self]
     )
     state.userId = FixtureSeed.userId
     return state
   }
 
   func seedForSmoke() async throws {
-    try await store.apply(FixtureSeed.changes(), currentUserId: FixtureSeed.userId)
+    // Chunked (one SQLite transaction per batch): bounds peak memory on the large
+    // fixture and avoids a single all-or-nothing apply of 100k+ rows whose throw
+    // the app-shell call site would swallow (`try?`), leaving an empty grid.
+    let batches = FixtureSeed.batchedChanges()
+    for (index, batch) in batches.enumerated() {
+      try await store.apply(batch, currentUserId: FixtureSeed.userId)
+      // First paint doesn't wait for the full 102k seed: the base batch carries
+      // every curated row, so publish the moment it lands — the grid appears in
+      // seconds while the bulk backfills underneath, and the closing bump below
+      // converges on the full set. Single-batch seeds (small fixture) skip this;
+      // their closing bump already paints everything at once.
+      if index == 0 && batches.count > 1 {
+        timelineVersion += 1
+      }
+    }
     // Mirror the hydrated `getLibrary` state (A1): the Archive library accepts uploads,
     // so DECISIONS §6 rule 4 offers it as a move target in the seeded world.
     try await store.setLibraryUploadPath(libraryId: FixtureSeed.libraryId, uploadPath: "/import/archive")
     await refresh()
+    // The grid's `.task(id: reloadKey)` fires on appear — against the still-empty store
+    // while this seed is in flight — and nothing else changes reloadKey once the rows
+    // land, so without this the grid keeps its first empty snapshot forever.
+    timelineVersion += 1
   }
 
   func completeLogin(serverURL: URL, token: String) async throws {
@@ -145,7 +181,10 @@ final class MacAppState {
     // or `currentUserId()` below still hits the stale host.
     let built = try Self.makeConnectionState(
       serverURL: serverURL, token: token, store: store, diskCache: diskCache)
-    self.serverURL = built.serverURL
+    // Normalized (see above): login with a bare host must not strand raw-REST
+    // paths on the web fallback. The persisted string below stays as typed;
+    // re-entry is idempotent.
+    self.serverURL = built.connection.serverURL
     connection = built.connection
     sync = built.sync
     uploadQueue = built.uploadQueue
@@ -153,16 +192,59 @@ final class MacAppState {
     SharedTokenStore.saveBestEffort(token)
     SharedContainer.sharedDefaults.set(serverURL.absoluteString, forKey: SharedContainer.serverURLKey)
     userId = try await connection.currentUserId()
+    if let userId { SharedContainer.setSavedUserID(userId) }
     await refresh()
+  }
+
+  /// WP-F F3: synchronous relaunch — restores the persisted session (server URL +
+  /// user id + Keychain token presence) with no async work, so the launch gate can
+  /// decide before the first scene renders. Returns whether a session was restored.
+  @discardableResult
+  func restorePersistedSession(tokenPresent: Bool) -> Bool {
+    guard userId == nil else { return true }
+    guard
+      LaunchGate.isSignedIn(
+        serverURLString: SharedContainer.serverURLString(), tokenPresent: tokenPresent,
+        userID: SharedContainer.savedUserID())
+    else { return false }
+    userId = SharedContainer.savedUserID()
+    return true
+  }
+
+  /// Revalidates a synchronously restored session against the server without ever
+  /// flashing the connect screen: on network failure the restored (offline) session
+  /// stays — the local DB is the UI's data source — and only a confirmed identity
+  /// change replaces the user id. Bounded: a blackholed network must not stall
+  /// launch past the gate timeout (URLSession's own timeouts run to 60 s+).
+  func revalidateSession() async {
+    guard userId != nil else {
+      await adoptKeychainSession()
+      return
+    }
+    let connection = connection
+    if let id = try? await LaunchGate.withLaunchTimeout(
+      seconds: Self.sessionValidationTimeoutSeconds,
+      operation: { try await connection.currentUserId() })
+    {
+      userId = id
+      SharedContainer.setSavedUserID(id)
+      await refresh()
+    }
   }
 
   /// Relaunch: a Keychain token from a previous session restores the user without
   /// showing the connect screen (network failure just leaves the connect screen up).
+  /// Bounded like `revalidateSession` above.
   func adoptKeychainSession() async {
     guard userId == nil else { return }
     if await connection.tokenStore.get() == nil { return }
-    if let id = try? await connection.currentUserId() {
+    let connection = connection
+    if let id = try? await LaunchGate.withLaunchTimeout(
+      seconds: Self.sessionValidationTimeoutSeconds,
+      operation: { try await connection.currentUserId() })
+    {
       userId = id
+      SharedContainer.setSavedUserID(id)
       await refresh()
     }
   }
@@ -170,6 +252,7 @@ final class MacAppState {
   func logout() async {
     await connection.tokenStore.set(nil)
     SharedContainer.sharedDefaults.removeObject(forKey: SharedContainer.serverURLKey)
+    SharedContainer.clearSavedUserID()
     userId = nil
     spaces = []
     libraries = []

@@ -56,6 +56,9 @@ interface UpsertFileOptions {
 
 type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
 
+const getRenditionFile = <T extends Pick<AssetFile, 'type' | 'isEdited'>>(files: T[]) =>
+  files.find((file) => file.type === AssetFileType.FullSize && file.isEdited);
+
 @Injectable()
 export class MediaService extends BaseService {
   videoInterfaces: VideoInterfaces = { dri: [], mali: false };
@@ -161,9 +164,11 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    const rendition = getRenditionFile(asset.files);
     const generated = await this.generateEditedThumbnails(asset, config);
     await this.syncFiles(
-      asset.files.filter((file) => file.isEdited),
+      // the rendition is source-of-truth managed by the rendition endpoints, never regenerated here
+      asset.files.filter((file) => file.isEdited && file !== rendition),
       generated?.files ?? [],
     );
 
@@ -222,7 +227,12 @@ export class MediaService extends BaseService {
       generated.files.push(...editedGenerated.files);
     }
 
-    await this.syncFiles(asset.files, generated.files);
+    const rendition = getRenditionFile(asset.files);
+    await this.syncFiles(
+      // the rendition is source-of-truth managed by the rendition endpoints, never regenerated here
+      asset.files.filter((file) => file !== rendition),
+      generated.files,
+    );
     const thumbhash = editedGenerated?.thumbhash || generated.thumbhash;
 
     if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
@@ -255,17 +265,25 @@ export class MediaService extends BaseService {
     return { info, data, colorspace };
   }
 
-  private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
-    const isExtractEmbedded = image.extractEmbedded && mimeTypes.isRaw(asset.originalFileName);
-    const extracted = isExtractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
+  private async extractOriginalImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    useEdits = false,
+    renditionPath?: string,
+  ) {
+    const source = renditionPath ?? asset.originalPath;
+    const sourceName = renditionPath ?? asset.originalFileName;
+    const isExtractEmbedded = !renditionPath && image.extractEmbedded && mimeTypes.isRaw(sourceName);
+    const extracted = isExtractEmbedded ? await this.extractImage(source, image.preview.size) : null;
     const isGenerateFullsize =
       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
-        !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
-      useEdits;
+        !mimeTypes.isWebSupportedImage(source)) ||
+      (useEdits && !renditionPath);
+    // the edited fullsize is the rendition itself: never regenerate it from the rendition
     const isConvertFullsize =
-      isGenerateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
+      !renditionPath && isGenerateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
 
-    const thumbSource = extracted ? extracted.buffer : asset.originalPath;
+    const thumbSource = extracted ? extracted.buffer : source;
     const { data, info, colorspace } = await this.decodeImage(
       thumbSource,
       // only specify orientation to extracted images which don't have EXIF orientation data
@@ -275,8 +293,8 @@ export class MediaService extends BaseService {
     );
 
     let isTransparent = false;
-    if (!extracted && mimeTypes.canBeTransparent(asset.originalPath)) {
-      ({ isTransparent } = await this.mediaRepository.getImageMetadata(asset.originalPath));
+    if (!extracted && mimeTypes.canBeTransparent(source)) {
+      ({ isTransparent } = await this.mediaRepository.getImageMetadata(source));
     }
 
     return {
@@ -290,9 +308,14 @@ export class MediaService extends BaseService {
     };
   }
 
-  private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
+  private async generateImageThumbnails(
+    asset: ThumbnailAsset,
+    { image }: SystemConfig,
+    useEdits: boolean = false,
+    renditionPath?: string,
+  ) {
     // Handle embedded preview extraction for RAW files
-    const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
+    const extractedImage = await this.extractOriginalImage(asset, image, useEdits, renditionPath);
     const { info, data, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } = extractedImage;
 
     const previewFormat = image.preview.format;
@@ -370,11 +393,10 @@ export class MediaService extends BaseService {
     const outputs = await Promise.all(promises);
 
     if (asset.exifInfo.projectionType === 'EQUIRECTANGULAR') {
+      const tagSource = renditionPath ?? asset.originalPath;
       const promises = [
-        this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, previewFile.path),
-        fullsizeFile
-          ? this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, fullsizeFile.path)
-          : Promise.resolve(),
+        this.mediaRepository.copyTagGroup('XMP-GPano', tagSource, previewFile.path),
+        fullsizeFile ? this.mediaRepository.copyTagGroup('XMP-GPano', tagSource, fullsizeFile.path) : Promise.resolve(),
       ];
       await Promise.all(promises);
     }
@@ -489,18 +511,23 @@ export class MediaService extends BaseService {
     };
   }
 
-  private async generateVideoThumbnails(asset: ThumbnailAsset, { ffmpeg, image }: SystemConfig) {
+  private async generateVideoThumbnails(
+    asset: ThumbnailAsset,
+    { ffmpeg, image }: SystemConfig,
+    renditionPath?: string,
+  ) {
+    const isEdited = renditionPath !== undefined;
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
       format: image.preview.format,
-      isEdited: false,
+      isEdited,
       isProgressive: false,
       isTransparent: false,
     });
     const thumbnailFile = this.getImageFile(asset, {
       fileType: AssetFileType.Thumbnail,
       format: image.thumbnail.format,
-      isEdited: false,
+      isEdited,
       isProgressive: false,
       isTransparent: false,
     });
@@ -516,8 +543,9 @@ export class MediaService extends BaseService {
     const previewOptions = previewConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
     const thumbnailOptions = thumbConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
 
-    await this.mediaRepository.transcode(asset.originalPath, previewFile.path, previewOptions);
-    await this.mediaRepository.transcode(asset.originalPath, thumbnailFile.path, thumbnailOptions);
+    const source = renditionPath ?? asset.originalPath;
+    await this.mediaRepository.transcode(source, previewFile.path, previewOptions);
+    await this.mediaRepository.transcode(source, thumbnailFile.path, thumbnailOptions);
 
     const thumbhash = await this.mediaRepository.generateThumbhash(previewFile.path, {
       colorspace: image.colorspace,
@@ -817,11 +845,22 @@ export class MediaService extends BaseService {
   }
 
   private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {
-    if (asset.type !== AssetType.Image || (asset.files.length === 0 && asset.edits.length === 0)) {
+    const rendition = getRenditionFile(asset.files);
+
+    if (rendition && asset.type === AssetType.Video) {
+      // video renditions carry no server edits: thumbnails derive straight from the rendition
+      return this.generateVideoThumbnails(asset, config, rendition.path);
+    }
+
+    if (asset.type !== AssetType.Image || (!rendition && asset.files.length === 0 && asset.edits.length === 0)) {
       return;
     }
 
-    const generated = asset.edits.length > 0 ? await this.generateImageThumbnails(asset, config, true) : undefined;
+    // thumbnails derive from the rendition when present; server edits apply on top of it
+    const generated =
+      asset.edits.length > 0 || rendition
+        ? await this.generateImageThumbnails(asset, config, true, rendition?.path)
+        : undefined;
 
     const crop = asset.edits.find((e) => e.action === AssetEditAction.Crop);
     const cropBox = crop

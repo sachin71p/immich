@@ -131,7 +131,10 @@ final class AppSession: ObservableObject {
     self.sync = SyncCoordinator(connection: connection, localStore: store)
     self.uploadQueue = UploadQueue(
       store: store, transport: ImmichUploadTransport(connection: connection))
-    self.serverURL = serverURL
+    // Normalized API base (includes `/api`): raw-REST consumers build request
+    // paths against this; the bare host serves the web fallback (HTTP 200,
+    // undecodable) for those paths. Re-entry is idempotent.
+    self.serverURL = connection.serverURL
     self.userId = userId
     self.isFixture = false
     self.activeToken = token

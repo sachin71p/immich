@@ -156,6 +156,23 @@ public final class EditRenderer: @unchecked Sendable {
     if a.blackPoint != 0 {
       img = toneCurve(img, black: a.unit(a.blackPoint) * 0.25, white: 0)
     }
+    if a.levelsInBlack != 0 || a.levelsInWhite != 100 || a.levelsOutBlack != 0
+      || a.levelsOutWhite != 100
+    {
+      img = levels(
+        img, inBlack: Double(a.levelsInBlack) / 100, inWhite: Double(a.levelsInWhite) / 100,
+        outBlack: Double(a.levelsOutBlack) / 100, outWhite: Double(a.levelsOutWhite) / 100)
+    }
+    if !a.redEyeRegions.isEmpty && a.redEyeStrength != 0 {
+      img = redEyeCorrected(img, regions: a.redEyeRegions, strength: a.redEyeStrength)
+    }
+    if !a.curvesMaster.isEmpty || !a.curvesRed.isEmpty || !a.curvesGreen.isEmpty
+      || !a.curvesBlue.isEmpty
+    {
+      img = curves(
+        img, master: a.curvesMaster, red: a.curvesRed, green: a.curvesGreen,
+        blue: a.curvesBlue)
+    }
     if a.vibrance != 0 {
       img = filtered("CIVibrance", img, ["inputAmount": a.unit(a.vibrance)])
     }
@@ -187,6 +204,85 @@ public final class EditRenderer: @unchecked Sendable {
       img = filtered(
         "CIVignette", img,
         ["inputIntensity": v > 0 ? v * 1.5 : v, "inputRadius": v > 0 ? 1.6 : 2.2])
+    }
+    // MARK: WP-E section keys
+    if a.cast != 0 {
+      // Color > Cast: extra color shift after the legacy warmth/tint pair.
+      img = filtered(
+        "CITemperatureAndTint", img,
+        [
+          "inputNeutral": CIVector(x: 6500 + Double(a.cast) * 12, y: 0),
+          "inputTargetNeutral": CIVector(x: 6500, y: CGFloat(a.cast) * 2),
+        ])
+    }
+    if a.isSelectiveActive {
+      img = selectiveColor(img, a: a)
+    }
+    if a.wbTemperature != 0 || a.wbTint != 0 {
+      // White Balance section: finer Temperature-Tint control.
+      img = filtered(
+        "CITemperatureAndTint", img,
+        [
+          "inputNeutral": CIVector(x: 6500 + Double(a.wbTemperature) * 25, y: 0),
+          "inputTargetNeutral": CIVector(x: 6500, y: CGFloat(a.wbTint) * 4),
+        ])
+    }
+    if a.bwIntensity != 0 {
+      // B&W Intensity: dissolve toward monochrome with a touch of contrast.
+      let t = min(1, max(0, abs(a.unit(a.bwIntensity))))
+      let mono = filtered("CIColorControls", img, ["inputSaturation": 0.0])
+      img = dissolve(foreground: mono, background: img, amount: a.bwIntensity > 0 ? t : 0)
+      if a.bwIntensity < 0 {
+        img = filtered("CIColorControls", img, ["inputSaturation": 1.0 + t * 0.5])
+      } else {
+        img = filtered("CIColorControls", img, ["inputContrast": 1.0 + t * 0.12])
+      }
+    }
+    if a.bwNeutrals != 0 {
+      // B&W Neutrals: midtone lift/cut on the (possibly desaturated) image.
+      img = toneCurve(img, black: -a.unit(a.bwNeutrals) * 0.05, white: a.unit(a.bwNeutrals) * 0.05)
+    }
+    if a.bwTone != 0 {
+      // B&W Tone: warm/cool split-tone push.
+      img = filtered(
+        "CITemperatureAndTint", img,
+        [
+          "inputNeutral": CIVector(x: 6500 + Double(a.bwTone) * 15, y: 0),
+          "inputTargetNeutral": CIVector(x: 6500, y: 0),
+        ])
+    }
+    if a.grain != 0 {
+      // Grain: deterministic high-frequency luminance texture (a fixed checkerboard
+      // dissolved over the image — same input always renders the same output,
+      // unlike CIRandomGenerator). Positive grain adds texture; negative smooths
+      // via the existing noise-reduction path.
+      let t = a.unit(a.grain)
+      if t > 0 {
+        img = grained(img, amount: t)
+      } else {
+        img = filtered(
+          "CINoiseReduction", img,
+          ["inputNoiseLevel": 0.02, "inputSharpness": max(0, 1.0 + t)])
+      }
+    }
+    if a.sharpenEdges != 0 || a.sharpenFalloff != 0 {
+      // Sharpen section: edge intensity + falloff (radius) around the legacy sharpness.
+      let edge = max(0, a.unit(a.sharpenEdges))
+      let falloff = a.unit(a.sharpenFalloff)
+      img = filtered("CISharpenLuminance", img, ["inputSharpness": edge * 2.0])
+      img = filtered(
+        "CIUnsharpMask", img,
+        ["inputIntensity": edge * 0.6, "inputRadius": max(0.5, 2.5 + falloff * 4.0)])
+    }
+    if a.vignetteStrength != 0 || a.vignetteRadius != 0 || a.vignetteSoftness != 0 {
+      // Vignette section detail: strength/radius/softness (softness widens the
+      // transition by lowering the effective intensity at a larger radius).
+      let s = a.unit(a.vignetteStrength)
+      let r = 1.0 + a.unit(a.vignetteRadius) * 1.5
+      let soft = a.unit(a.vignetteSoftness)
+      img = filtered(
+        "CIVignette", img,
+        ["inputIntensity": s * (1.0 - abs(soft) * 0.4), "inputRadius": max(0.3, r + soft)])
     }
     return img
   }
@@ -294,6 +390,50 @@ public final class EditRenderer: @unchecked Sendable {
     return -horizon.angle * 180.0 / .pi
   }
 
+  // MARK: - Red-eye eye detection (Vision face landmarks)
+
+  /// Suggests red-eye regions from on-device face landmarks (D4, on-device-AI
+  /// §13 Tier A / E2: Vision + Core Image only — no Neural Engine, no Core ML
+  /// models). Each detected eye's landmark centroid becomes one `RedEyeRegion`
+  /// (capped at 10, matching the tap canvas). Throws `noFacesFound` when no
+  /// face — or no eye landmarks — are detected.
+  public func suggestedRedEyeRegions(for cgImage: CGImage) async throws -> [RedEyeRegion] {
+    let request = VNDetectFaceLandmarksRequest()
+    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    try handler.perform([request])
+    guard let faces = request.results, !faces.isEmpty else { throw EditRenderError.noFacesFound }
+    var out: [RedEyeRegion] = []
+    for face in faces {
+      guard let landmarks = face.landmarks else { continue }
+      if let left = landmarks.leftEye { out += Self.eyeRegions(left, in: face.boundingBox) }
+      if let right = landmarks.rightEye { out += Self.eyeRegions(right, in: face.boundingBox) }
+    }
+    guard !out.isEmpty else { throw EditRenderError.noFacesFound }
+    return Array(out.prefix(10))
+  }
+
+  /// Centroid of one eye's landmark points, mapped from face-relative
+  /// coordinates (origin lower-left) to recipe space (origin upper-left).
+  static func eyeRegions(_ eye: VNFaceLandmarkRegion2D, in faceBox: CGRect) -> [RedEyeRegion] {
+    let pts = eye.normalizedPoints
+    guard !pts.isEmpty else { return [] }
+    let cx = Double(pts.map(\.x).reduce(0, +)) / Double(pts.count)
+    let cy = Double(pts.map(\.y).reduce(0, +)) / Double(pts.count)
+    return [eyeRegion(centroidFaceX: cx, centroidFaceY: cy, faceBox: faceBox)]
+  }
+
+  /// Maps one eye centroid from face-relative landmark space (origin
+  /// lower-left — the `VNFaceLandmarkRegion2D.normalizedPoints` convention)
+  /// to recipe space (origin upper-left). Pure so unit tests can pin the
+  /// vertical flip without a face image.
+  public static func eyeRegion(centroidFaceX x: Double, centroidFaceY y: Double, faceBox: CGRect)
+    -> RedEyeRegion
+  {
+    RedEyeRegion(
+      x: Double(faceBox.origin.x) + x * Double(faceBox.width),
+      y: 1 - (Double(faceBox.origin.y) + y * Double(faceBox.height)))
+  }
+
   // MARK: - Helpers
 
   private static func downscale(_ image: CIImage, maxPixel: Int) -> CIImage {
@@ -308,6 +448,256 @@ public final class EditRenderer: @unchecked Sendable {
     let f = CIFilter(name: name)
     f?.setValue(image, forKey: kCIInputImageKey)
     for (k, v) in values { f?.setValue(v, forKey: k) }
+    return f?.outputImage ?? image
+  }
+
+  /// Cross-dissolve of `foreground` over `background` (exact blend for B&W intensity).
+  private func dissolve(foreground: CIImage, background: CIImage, amount: Double) -> CIImage {
+    guard amount > 0 else { return background }
+    guard amount < 1 else { return foreground }
+    let alpha = CIFilter(name: "CIColorMatrix")
+    alpha?.setValue(foreground, forKey: kCIInputImageKey)
+    alpha?.setValue(CIVector(x: 0, y: 0, z: 0, w: CGFloat(amount)), forKey: "inputAVector")
+    guard let faded = alpha?.outputImage else { return foreground }
+    let over = CIFilter(name: "CISourceOverCompositing")
+    over?.setValue(faded, forKey: kCIInputImageKey)
+    over?.setValue(background, forKey: kCIInputBackgroundImageKey)
+    return over?.outputImage ?? foreground
+  }
+
+  /// Deterministic grain: a fixed high-frequency checkerboard dissolved over the
+  /// image at low alpha. A fixed pattern (not `CIRandomGenerator`) keeps renders
+  /// deterministic for tests and export stability.
+  private func grained(_ image: CIImage, amount: Double) -> CIImage {
+    let checker = CIFilter(name: "CICheckerboardGenerator")
+    checker?.setValue(CIVector(x: 0, y: 0, z: 1.5, w: 0), forKey: "inputCenter")
+    checker?.setValue(CIColor(red: 0.5, green: 0.5, blue: 0.5), forKey: "inputColor0")
+    checker?.setValue(CIColor(red: 0.62, green: 0.62, blue: 0.62), forKey: "inputColor1")
+    checker?.setValue(1.5, forKey: "inputWidth")
+    checker?.setValue(0.0, forKey: "inputSharpness")
+    guard var pattern = checker?.outputImage else { return image }
+    let e = image.extent
+    pattern = pattern.cropped(to: CGRect(x: e.minX, y: e.minY, width: max(e.width, 2), height: max(e.height, 2)))
+    return dissolve(foreground: pattern, background: image, amount: min(0.35, amount * 0.25))
+      .cropped(to: e)
+  }
+
+  /// Red-Eye correction (D4, on-device-AI §13 Tier A): each tap/Vision region is
+  /// cropped square, run through `CIRedEyeCorrection`, and dissolved back over
+  /// the frame at `strength`. The filter is identity on non-eye content, so
+  /// this is a safe no-op unless a real red pupil sits under a region; an
+  /// empty region list never reaches here (gated at the call site).
+  private func redEyeCorrected(_ image: CIImage, regions: [RedEyeRegion], strength: Int) -> CIImage {
+    let amount = min(1, max(0, Double(strength) / 100.0))
+    guard amount > 0 else { return image }
+    let extent = image.extent
+    var img = image
+    for region in regions {
+      let crop = Self.redEyeCropRect(extent, region)
+      guard !crop.isNull && !crop.isEmpty else { continue }
+      let corrected = filtered("CIRedEyeCorrection", img.cropped(to: crop), [:])
+      img = dissolve(foreground: corrected, background: img, amount: amount).cropped(to: extent)
+    }
+    return img
+  }
+
+  /// Square correction crop for one region, always contained in `extent`.
+  /// Public so unit tests can pin the tap→pixel mapping without rendering.
+  public static func redEyeCropRect(_ extent: CGRect, _ region: RedEyeRegion) -> CGRect {
+    let c = region.clamped()
+    let half = max(4, CGFloat(c.radius) * extent.width * 2)
+    let cx = extent.minX + CGFloat(c.x) * extent.width
+    // Regions are origin-upper-left; CI extents are origin-lower-left.
+    let cy = extent.minY + (1 - CGFloat(c.y)) * extent.height
+    return CGRect(x: cx - half, y: cy - half, width: half * 2, height: half * 2)
+      .intersection(extent)
+  }
+
+  /// True levels transform (D3): input remap [inBlack, inWhite] -> [0, 1] via
+  /// CIToneCurve, then output range scale to [outBlack, outWhite] via
+  /// CIColorMatrix. Degenerate input ranges fall back to identity.
+  private func levels(
+    _ image: CIImage, inBlack: Double, inWhite: Double, outBlack: Double, outWhite: Double
+  ) -> CIImage {
+    let lo = min(1, max(0, min(inBlack, inWhite)))
+    let hi = min(1, max(0, max(inBlack, inWhite)))
+    var img = image
+    if hi - lo > 1e-3 && (lo > 0 || hi < 1) {
+      // Sample the linear [lo, hi] -> [0, 1] remap at the filter's 5 fixed
+      // x-stops (always distinct). Anchoring stops AT lo/hi duplicates a stop
+      // when lo == 0 or hi == 1, and CIToneCurve renders black for duplicate
+      // x values on-device (verified: inBlack 0 meant mean 0.0 on GPU while
+      // CPU unit tests passed). Sampling a linear map is exact at the stops.
+      let f = CIFilter(name: "CIToneCurve")
+      f?.setValue(img, forKey: kCIInputImageKey)
+      for (i, x) in [0.0, 0.25, 0.5, 0.75, 1.0].enumerated() {
+        let y = min(1, max(0, (x - lo) / (hi - lo)))
+        f?.setValue(CIVector(x: x, y: y), forKey: "inputPoint\(i)")
+      }
+      img = f?.outputImage ?? img
+    }
+    let scale = outWhite - outBlack
+    if scale != 1 || outBlack != 0 {
+      let m = CIFilter(name: "CIColorMatrix")
+      m?.setValue(img, forKey: kCIInputImageKey)
+      m?.setValue(CIVector(x: scale, y: 0, z: 0, w: 0), forKey: "inputRVector")
+      m?.setValue(CIVector(x: 0, y: scale, z: 0, w: 0), forKey: "inputGVector")
+      m?.setValue(CIVector(x: 0, y: 0, z: scale, w: 0), forKey: "inputBVector")
+      m?.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputAVector")
+      m?.setValue(
+        CIVector(x: outBlack, y: outBlack, z: outBlack, w: 0), forKey: "inputBiasVector")
+      img = m?.outputImage ?? img
+    }
+    return img
+  }
+
+  /// Selective Color (D1): per-hue Hue/Saturation/Luminance shifts with a
+  /// Range-shaped falloff, via one custom `CIColorKernel` (on-device-AI §13
+  /// Tier B — Core Image only, no custom CPU pixel code). Each pixel's hue
+  /// weights the six swatches by circular hue distance against the swatch's
+  /// Range half-width; achromatic pixels (near-zero saturation) pass through.
+  /// A nil kernel (uncompilable source) falls back to the input image.
+  private func selectiveColor(_ image: CIImage, a: AdjustRecipe) -> CIImage {
+    guard let kernel = Self.selectiveKernel else { return image }
+    let args: [Any] = [
+      image,
+      CIVector(x: CGFloat(a.unit(a.selRedHue)), y: CGFloat(a.unit(a.selOrangeHue)),
+        z: CGFloat(a.unit(a.selYellowHue)), w: CGFloat(a.unit(a.selGreenHue))),
+      CIVector(x: CGFloat(a.unit(a.selBlueHue)), y: CGFloat(a.unit(a.selMagentaHue)), z: 0, w: 0),
+      CIVector(x: CGFloat(a.unit(a.selRedSat)), y: CGFloat(a.unit(a.selOrangeSat)),
+        z: CGFloat(a.unit(a.selYellowSat)), w: CGFloat(a.unit(a.selGreenSat))),
+      CIVector(x: CGFloat(a.unit(a.selBlueSat)), y: CGFloat(a.unit(a.selMagentaSat)), z: 0, w: 0),
+      CIVector(x: CGFloat(a.unit(a.selRedLum)), y: CGFloat(a.unit(a.selOrangeLum)),
+        z: CGFloat(a.unit(a.selYellowLum)), w: CGFloat(a.unit(a.selGreenLum))),
+      CIVector(x: CGFloat(a.unit(a.selBlueLum)), y: CGFloat(a.unit(a.selMagentaLum)), z: 0, w: 0),
+      CIVector(x: CGFloat(a.selRedRange), y: CGFloat(a.selOrangeRange),
+        z: CGFloat(a.selYellowRange), w: CGFloat(a.selGreenRange)),
+      CIVector(x: CGFloat(a.selBlueRange), y: CGFloat(a.selMagentaRange), z: 0, w: 0),
+    ]
+    return kernel.apply(extent: image.extent, arguments: args) ?? image
+  }
+
+  private static let selectiveKernel: CIColorKernel? = CIColorKernel(source:
+    """
+    vec3 sel_hsl2rgb(float h, float s, float l) {
+      float c = (1.0 - abs(2.0 * l - 1.0)) * s;
+      float hp = h * 6.0;
+      float x = c * (1.0 - abs(mod(hp, 2.0) - 1.0));
+      vec3 rgb = vec3(0.0);
+      if (hp < 1.0) { rgb = vec3(c, x, 0.0); }
+      else if (hp < 2.0) { rgb = vec3(x, c, 0.0); }
+      else if (hp < 3.0) { rgb = vec3(0.0, c, x); }
+      else if (hp < 4.0) { rgb = vec3(0.0, x, c); }
+      else if (hp < 5.0) { rgb = vec3(x, 0.0, c); }
+      else { rgb = vec3(c, 0.0, x); }
+      return rgb + vec3(l - c * 0.5);
+    }
+    float sel_weight(float h, float center, float range) {
+      float dd = abs(h - center);
+      dd = min(dd, 1.0 - dd);
+      float halfWidth = 0.02 + (clamp(range, 0.0, 100.0) / 100.0) * 0.12;
+      return 1.0 - smoothstep(0.0, halfWidth, dd);
+    }
+    kernel vec4 selectiveColor(__sample s, vec4 hueA, vec4 hueB, vec4 satA, vec4 satB,
+        vec4 lumA, vec4 lumB, vec4 rangeA, vec4 rangeB) {
+      vec3 rgb = s.rgb;
+      float mx = max(rgb.r, max(rgb.g, rgb.b));
+      float mn = min(rgb.r, min(rgb.g, rgb.b));
+      float l = (mx + mn) * 0.5;
+      float d = mx - mn;
+      if (d < 1e-4) { return s; }
+      float sat = l > 0.5 ? d / max(1e-4, 2.0 - mx - mn) : d / max(1e-4, mx + mn);
+      float h = 0.0;
+      if (mx == rgb.r) { h = (rgb.g - rgb.b) / d + (rgb.g < rgb.b ? 6.0 : 0.0); }
+      else if (mx == rgb.g) { h = (rgb.b - rgb.r) / d + 2.0; }
+      else { h = (rgb.r - rgb.g) / d + 4.0; }
+      h = h / 6.0;
+      float w0 = sel_weight(h, 0.0, rangeA.x);
+      float w1 = sel_weight(h, 0.0833, rangeA.y);
+      float w2 = sel_weight(h, 0.1667, rangeA.z);
+      float w3 = sel_weight(h, 0.3333, rangeA.w);
+      float w4 = sel_weight(h, 0.6667, rangeB.x);
+      float w5 = sel_weight(h, 0.8333, rangeB.y);
+      float hueShift = w0 * hueA.x + w1 * hueA.y + w2 * hueA.z + w3 * hueA.w
+        + w4 * hueB.x + w5 * hueB.y;
+      float satShift = w0 * satA.x + w1 * satA.y + w2 * satA.z + w3 * satA.w
+        + w4 * satB.x + w5 * satB.y;
+      float lumShift = w0 * lumA.x + w1 * lumA.y + w2 * lumA.z + w3 * lumA.w
+        + w4 * lumB.x + w5 * lumB.y;
+      if (abs(hueShift) < 1e-6 && abs(satShift) < 1e-6 && abs(lumShift) < 1e-6) { return s; }
+      h = fract(h + hueShift * 0.5);
+      sat = clamp(sat * (1.0 + satShift), 0.0, 1.0);
+      l = clamp(l + lumShift * 0.5, 0.0, 1.0);
+      return vec4(sel_hsl2rgb(h, sat, l), s.a);
+    }
+    """)
+  /// Full RGB + per-channel curves (D2): per-channel `CIToneCurve` stages
+  /// masked to one channel each and recombined additively, then the master
+  /// curve over the composite. Core Image only (on-device-AI §13 Tier B —
+  /// no Neural Engine, no Core ML, no custom CPU pixel code).
+  private func curves(
+    _ image: CIImage, master: [CurvePoint], red: [CurvePoint], green: [CurvePoint],
+    blue: [CurvePoint]
+  ) -> CIImage {
+    var img = image
+    if !red.isEmpty || !green.isEmpty || !blue.isEmpty {
+      img = perChannelCurves(img, red: red, green: green, blue: blue)
+    }
+    if !master.isEmpty {
+      img = toneCurve(img, points: master)
+    }
+    return img
+  }
+
+  /// One channel isolated via `CIColorMatrix`. Only the red stage keeps alpha,
+  /// so the additive recombine restores the original alpha exactly.
+  private func channelMasked(_ image: CIImage, channel: Int, keepAlpha: Bool) -> CIImage {
+    let m = CIFilter(name: "CIColorMatrix")
+    m?.setValue(image, forKey: kCIInputImageKey)
+    m?.setValue(CIVector(x: channel == 0 ? 1 : 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
+    m?.setValue(CIVector(x: 0, y: channel == 1 ? 1 : 0, z: 0, w: 0), forKey: "inputGVector")
+    m?.setValue(CIVector(x: 0, y: 0, z: channel == 2 ? 1 : 0, w: 0), forKey: "inputBVector")
+    m?.setValue(CIVector(x: 0, y: 0, z: 0, w: keepAlpha ? 1 : 0), forKey: "inputAVector")
+    return m?.outputImage ?? image
+  }
+
+  private func added(_ foreground: CIImage, _ background: CIImage) -> CIImage {
+    let f = CIFilter(name: "CIAdditionCompositing")
+    f?.setValue(foreground, forKey: kCIInputImageKey)
+    f?.setValue(background, forKey: kCIInputBackgroundImageKey)
+    return f?.outputImage ?? foreground
+  }
+
+  private func perChannelCurves(
+    _ image: CIImage, red: [CurvePoint], green: [CurvePoint], blue: [CurvePoint]
+  ) -> CIImage {
+    // Empty channel = identity: mask without a curve stage so the untouched
+    // channel passes through. Re-mask after each curve because `CIToneCurve`
+    // maps 0 -> curve(0), which would leak into the zeroed sibling channels.
+    var r = channelMasked(image, channel: 0, keepAlpha: true)
+    if !red.isEmpty { r = channelMasked(toneCurve(r, points: red), channel: 0, keepAlpha: true) }
+    var g = channelMasked(image, channel: 1, keepAlpha: false)
+    if !green.isEmpty {
+      g = channelMasked(toneCurve(g, points: green), channel: 1, keepAlpha: false)
+    }
+    var b = channelMasked(image, channel: 2, keepAlpha: false)
+    if !blue.isEmpty {
+      b = channelMasked(toneCurve(b, points: blue), channel: 2, keepAlpha: false)
+    }
+    return added(added(r, g), b).cropped(to: image.extent)
+  }
+
+  /// `toneCurve` resampled from an arbitrary point array (extends the
+  /// black/white helper below): the filter's 5 fixed points take
+  /// `x = 0 / .25 / .5 / .75 / 1` with `y` from the piecewise-linear
+  /// `CurvePoint` evaluation. Callers skip empty (identity) arrays.
+  private func toneCurve(_ image: CIImage, points: [CurvePoint]) -> CIImage {
+    let f = CIFilter(name: "CIToneCurve")
+    f?.setValue(image, forKey: kCIInputImageKey)
+    for (i, x) in [0.0, 0.25, 0.5, 0.75, 1.0].enumerated() {
+      f?.setValue(
+        CIVector(x: x, y: CurvePoint.evaluate(points, at: x)), forKey: "inputPoint\(i)")
+    }
     return f?.outputImage ?? image
   }
 
@@ -341,6 +731,7 @@ public enum EditRenderError: Error, Sendable, Equatable {
   case renderFailed
   case encoderUnavailable
   case noHorizonFound
+  case noFacesFound
   case depthUnavailable
 }
 

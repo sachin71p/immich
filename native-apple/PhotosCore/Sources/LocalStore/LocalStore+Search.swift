@@ -81,8 +81,22 @@ extension PhotosLocalStore {
         """, personIds)
     }
 
+    // WP-F F2: the grid projection no longer joins `assetExif` (hot-path removal),
+    // so search adds its own explicit join — but only when an exif predicate is
+    // present; pure asset-column searches stay on the join-free fast path.
+    let needsExifJoin =
+      filter.make != nil || filter.model != nil || filter.lensModel != nil || filter.city != nil
+      || filter.state != nil || filter.country != nil || filter.isoMin != nil || filter.isoMax != nil
+      || filter.fNumberMin != nil || filter.fNumberMax != nil || filter.focalLengthMin != nil
+      || filter.focalLengthMax != nil || filter.exposureTimeMin != nil || filter.exposureTimeMax != nil
+      || filter.fileSizeMin != nil || filter.fileSizeMax != nil || filter.projectionType != nil
+      || filter.hasLocation != nil || filter.orientation != nil || filter.fpsMin != nil
+      || filter.fpsMax != nil || filter.rating != nil
+    let exifJoin =
+      needsExifJoin ? "LEFT JOIN assetExif ON assetExif.assetId = asset.id" : ""
     let sql = """
       \(Self.rowSelectSQL)
+      \(exifJoin)
       WHERE \(clauses.joined(separator: " AND "))
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?

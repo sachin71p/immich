@@ -1401,7 +1401,7 @@ describe(MediaService.name, () => {
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
     });
 
-    it('should upsert 3 edited files for edit jobs', async () => {
+    it('should derive edited files from the rendition and preserve it', async () => {
       const asset = AssetFactory.from()
         .exif()
         .edit({ action: AssetEditAction.Crop })
@@ -1420,13 +1420,18 @@ describe(MediaService.name, () => {
 
       await sut.handleAssetEditThumbnailGeneration({ id: asset.id });
 
+      // the fullsize edited file is the rendition: derivation source, never rewritten
+      const rendition = asset.files.find((file) => file.type === AssetFileType.FullSize && file.isEdited);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(rendition!.path, expect.anything());
       expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ type: AssetFileType.FullSize, isEdited: true }),
           expect.objectContaining({ type: AssetFileType.Preview, isEdited: true }),
           expect.objectContaining({ type: AssetFileType.Thumbnail, isEdited: true }),
         ]),
       );
+      const upserted = mocks.asset.upsertFiles.mock.calls.flatMap(([files]) => files);
+      expect(upserted).not.toContainEqual(expect.objectContaining({ type: AssetFileType.FullSize }));
+      expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
     });
 
     it('should apply edits when generating thumbnails', async () => {
@@ -1453,7 +1458,7 @@ describe(MediaService.name, () => {
       );
     });
 
-    it('should clean up edited files if an asset has no edits', async () => {
+    it('should preserve the rendition when cleaning up edited files if an asset has no edits', async () => {
       const asset = AssetFactory.from({ thumbhash: factory.buffer() })
         .exif()
         .files([
@@ -1466,16 +1471,21 @@ describe(MediaService.name, () => {
 
       const status = await sut.handleAssetEditThumbnailGeneration({ id: asset.id });
 
+      // stale derivations are replaced from the rendition; the rendition itself is preserved
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
         data: {
-          files: expect.arrayContaining(['edited1.jpg', 'edited2.jpg', 'edited3.jpg']),
+          files: expect.arrayContaining(['edited1.jpg', 'edited2.jpg']),
         },
       });
+      const deletedFiles = mocks.job.queue.mock.calls.flatMap(([job]) =>
+        job.name === JobName.FileDelete ? job.data.files : [],
+      );
+      expect(deletedFiles).not.toContain('edited3.jpg');
 
       expect(status).toBe(JobStatus.Success);
-      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
-      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(2);
+      expect(mocks.asset.upsertFiles).toHaveBeenCalled();
     });
 
     it('should generate all 3 edited files if an asset has edits', async () => {

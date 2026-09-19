@@ -8,29 +8,38 @@
 
 /* Begin PBXBuildFile section */
 		004DF01FEA4DFE0DDEC16ABD /* MacGridLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D356BAC6A736A583AB309403 /* MacGridLoader.swift */; };
+		00E4F3C7C8BDACC7870EDD5D /* MacViewerPagerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B22E3E2F8EF1C74C16EDA12 /* MacViewerPagerModel.swift */; };
 		0148F78B797810189F65B3C7 /* AppSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAB4890D52B9C3FAF67BC30 /* AppSession.swift */; };
 		028076DEA2280F07AEDCE7D6 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = BC486B6BFF09FF221C419EDC /* CoreModel */; };
 		03CEE1FEFC66C9E30470F12D /* WidgetsExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A54903BAEFFF522B2BF7AB /* WidgetsExtension.swift */; };
 		059C56F540604315F066D1E5 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71607B706C614A1C8A0A6D54 /* ConnectView.swift */; };
 		075F5E2EF70DA8B36F1BEE27 /* LockedMediaAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC15EE8293446CD203DE97CC /* LockedMediaAuthentication.swift */; };
+		08E23EC91F84062E4EFB40FB /* MacViewerPagerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B22E3E2F8EF1C74C16EDA12 /* MacViewerPagerModel.swift */; };
 		0AE9582F7581541809B965A0 /* MacAssetChangeCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF112E6B8F6ED46F7ED33BA /* MacAssetChangeCenter.swift */; };
+		0AF901CE3DBF874EADCE6F1C /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 023B45EAFF88CF907B67F553 /* LocalStore */; };
+		0BB4CAE289FCDFAD8898EBDE /* MacViewerTransition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643081FCAE5DD1EFBB9A6382 /* MacViewerTransition.swift */; };
 		0D1AAA3C3B29869B077E8506 /* AppearanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB3423F7182EE3D21FE5149 /* AppearanceUITests.swift */; };
 		0D84C822D912CE57500AE304 /* EditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848364178733C3D1D80789CF /* EditView.swift */; };
 		0E10C711C8F681B0C76713FC /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = D1C30EE4872AF2F23206FB13 /* CoreModel */; };
 		0E840940204F07961030BF35 /* GridContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715FFA80CBD735CCE3B46FFB /* GridContextMenu.swift */; };
 		0F2EBA171CCB583E46541F66 /* MacPeopleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8350F00918404C2A0D5D3E /* MacPeopleView.swift */; };
 		105FEC7964FFA5BCF58C7677 /* ParityCanvasSelfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05DC4A4509FEA7127C178009 /* ParityCanvasSelfTests.swift */; };
+		12AF7E15015BE8A9DFEAA02D /* FixtureStubTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CA119048529A71E42CB383D /* FixtureStubTests.swift */; };
 		13608FE5CC19FD06F78233DE /* MacMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D65FC4B1B649D178D8A4490 /* MacMenus.swift */; };
 		14CDB706D27794F0208C0FD4 /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = ACEAEBD2D2F23F355BD5277F /* SyncEngine */; };
 		151779599FCCABAC1EA2282C /* Collections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52ADF313E45A57DF68AB044B /* Collections.swift */; };
 		16F0E0F883170E8E91E22C3B /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 86E16C72C57ACEC871DF72AC /* Upload */; };
+		1728134BDAC57250D594772C /* SeedSmokePathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */; };
 		1A928DD22CF697C8B5937F13 /* MacSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5418423DA37D1695A127DE89 /* MacSmokeTests.swift */; };
+		1C9836F65D14AA874521CB5C /* testFixtureThumbnailView.dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 37C1AA5AFABE263B09FC2BF3 /* testFixtureThumbnailView.dark.png */; };
 		1DEF534C241A37CDAD61CF01 /* SyncEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 6708CA2AEC0807474C198792 /* SyncEngine */; };
 		1FBEDBC92C2A1E64917F2FC5 /* MacSidebarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5059E39F92B118B91DB141F6 /* MacSidebarModel.swift */; };
 		2043120048B38CFB6245002A /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 168420A922E85CB950B4AE95 /* ImmichAPI */; };
 		20D55EAF420401A19B9AECB1 /* GridPrefetchPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A1F880F7852BD5F7F429FC /* GridPrefetchPolicyTests.swift */; };
 		22328826F00AB80090B9DBE6 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 952D308CC84C144B2BC179A7 /* LocalStore */; };
 		23D25F7E4E774F4695B170E1 /* ErrorFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */; };
+		24550AB8E5710572ADF4B323 /* LaunchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */; };
+		255CFEE364CE5BDABF5C70B7 /* AXIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */; };
 		26D2C31B3ABC77106FBF1674 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AA815EE14B97B0CBB0477F0 /* SearchView.swift */; };
 		28ED0B2C6917CFD299D4DE65 /* EditRulerDial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A4F1AE757258931B7EB815E /* EditRulerDial.swift */; };
 		29ABBE27D7DCD7F5BFF9DC17 /* MacConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED843D17D53914CE88AD6A8 /* MacConnectView.swift */; };
@@ -38,16 +47,17 @@
 		2CFC71F750FE62CC4BFC6F03 /* MacAgentLoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */; };
 		2DD17A66FDED537AEB8EB606 /* MacDuplicatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDE1EF756578312D6F93758 /* MacDuplicatesView.swift */; };
 		32555707CF83483A87E4C774 /* HeirloomColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4300F57541E619B40FBDAA /* HeirloomColors.swift */; };
+		34DDFA8781AD4E3B04D7D580 /* FixtureSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D11D9052E6205D135807468 /* FixtureSeed.swift */; };
 		3567ED64A126E668E21A08BC /* ParityCollectionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58EDC43D9AE8A1595B8AFA4 /* ParityCollectionsUITests.swift */; };
 		3579EFBDCFB379B849E429A4 /* PhotoForkIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220BD30E984341379A611211 /* PhotoForkIntents.swift */; };
 		370AE557563121FFF80BE746 /* MacMoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B95AF9F4C147A63DA1C1CE0 /* MacMoveSheet.swift */; };
 		443F6D37EF67F2CA6A503863 /* CollectionsLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8720A97586711DC540D0929B /* CollectionsLoader.swift */; };
 		4841ADB369541C4802C754D5 /* MacSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2968E433A0A5C31FDFAD3BB /* MacSidebar.swift */; };
 		48BB950DFCDB66078A1FF786 /* BackupSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644C38FC2FC62B250E305F5A /* BackupSettings.swift */; };
+		49785A0D9B8F7EB859A6DADE /* GestureInputs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A5B35B2CB970AB4F4990AD /* GestureInputs.swift */; };
 		4A20761C54C4E3D1E618CC58 /* SearchSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3830EA54566B228691C8B90 /* SearchSuggestions.swift */; };
 		4B342E05068BB4A933AD9B55 /* SyncUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A41D3EFB44BFB0AAEA22DEC /* SyncUITests.swift */; };
 		4E8A77F2491828E30DF42126 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 9AB46386FE5B2A5308366F35 /* CoreModel */; };
-		4E9B4B0407B784944C1E5F3A /* MacLiveText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */; };
 		520CFEFB5E92457F7FCB43EC /* MacGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 634006C4823CC8F38A3B0D85 /* MacGridCell.swift */; };
 		53CC6118ADBC7C6C36AAEBE4 /* ContextMenuUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4055DBB1FA5FBDB97972C9 /* ContextMenuUITests.swift */; };
 		53E7942979EBC875FE7FC595 /* BackgroundUploadExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF6BF761A8E96399365A01B /* BackgroundUploadExtension.swift */; };
@@ -64,6 +74,7 @@
 		5A9070AF65B0D801A0589A4F /* MacDragDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */; };
 		5B913F49488BCF88490E327B /* EditorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BDAB6FF9FD9FE202BF68BEB /* EditorUITests.swift */; };
 		5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */; };
+		5BFFD48CFCA9D5C53968CDAF /* PairCaptureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BCBD9EAEEF280CCF4D8D902 /* PairCaptureUITests.swift */; };
 		5D62B6B3F920991B560ED1BE /* ViewerInfoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A79F5EE788A54FD0A7363A85 /* ViewerInfoPanel.swift */; };
 		60B4AF936251E3716C5E102A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E3E22E15AF847EB8E62EE01 /* README.md */; };
 		61343E2590E7623A978A85E2 /* InfoPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B796775C088DF86CE5035271 /* InfoPanelUITests.swift */; };
@@ -72,11 +83,16 @@
 		6A46C8A4B3FAA6E9F8F9599E /* LibraryChromeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */; };
 		6B5016E8CF28C4A9CBA15068 /* MacUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */; };
 		6F36BCFA6CD47B187D3D4BB1 /* LibraryFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33177EE3B7C28F1376AB609A /* LibraryFilter.swift */; };
+		6FF2BDB2A4E5F0541011EB25 /* HeirloomPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */; };
 		719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */; };
 		73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */; };
 		73C675B369F31BCD375AAAF8 /* LibrarySelectMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE98821B494A9BE5D727EEAB /* LibrarySelectMenu.swift */; };
+		74E1521AB4E36AEC675EF355 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 6C16597F47DFD5A8BF513C1F /* CoreModel */; };
 		791899147EB78061C6EFD75B /* ParityViewerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71AE2ECC214496244BF961D9 /* ParityViewerUITests.swift */; };
+		79D89EF062DDFD2CE8B71701 /* LaunchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */; };
 		7AE9781FE902087E5559F25F /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 37D0016B12D659C36170F7CE /* Upload */; };
+		7AF8FD6C21A05AC1931A6977 /* EditUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B274EE4961F488B9C7A243 /* EditUITests.swift */; };
+		7B20DEECFEAD303A8949BC9D /* SyntheticEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C83BE3CB664D9797E41FF48 /* SyntheticEvents.swift */; };
 		7DEFCFF9AD62C74F4A7AC875 /* LibraryFilterMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22148554E0DF227F6078A07C /* LibraryFilterMenu.swift */; };
 		7E22ACEF69BE6E6DFDD0E56F /* MacMainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6086603C26DEA57A022404B /* MacMainWindow.swift */; };
 		800A8E8B6F7D5E6335A95FCC /* YearsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8C25D063828EA8571BC260 /* YearsView.swift */; };
@@ -86,11 +102,14 @@
 		85E08114DF4CC80AB9CF4F38 /* CollectionTiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 750C8B9A3ACE145BE464F6C0 /* CollectionTiles.swift */; };
 		86EF52D1B77BFA740DE5369C /* MacSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D854212B2715B96C5BB42DC1 /* MacSelection.swift */; };
 		870B910962C127A684DFCAA4 /* UtilityDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3A30F5F88B55A67CD398E3 /* UtilityDetails.swift */; };
+		885815C713AF400DAF97A06D /* FixtureStubPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A6EA950E83F1B64AF41DF9F /* FixtureStubPipelineTests.swift */; };
 		8B12F14B5A70457DAEC6FF7E /* MacCollectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BF8940E9DEBCC98AEE5BC9 /* MacCollectionsView.swift */; };
 		8B42ECF6B1AF7C434B602742 /* FixtureSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */; };
 		8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */; };
 		8B6CCC43E03D96B3C89CB8A5 /* FastScroller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173F9A53CF69350E161F685F /* FastScroller.swift */; };
 		8BE193705534A8D74F73A0D4 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82F3CE88F3FB5C9612E7DA6 /* Settings.swift */; };
+		8C6C50D67AB3541D47564244 /* testFixtureThumbnailView.light.png in Resources */ = {isa = PBXBuildFile; fileRef = CC3C5DBDA96BB5C31EEA7E15 /* testFixtureThumbnailView.light.png */; };
+		8D371D998273E8F8D81F5981 /* LaunchGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5B8B059C88FF518693735C /* LaunchGateTests.swift */; };
 		8E5A79ECCBC2B3A9BFB68177 /* ParityChromeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD940D36923946B23596B70 /* ParityChromeUITests.swift */; };
 		8E9F084D689556BF9E2E912F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE3A2E934C82B427235CAAC4 /* Assets.xcassets */; };
 		9072FA0D2B3536D5DD098ECD /* HeirloomWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B423EDAD3D1C1AC259A1BE /* HeirloomWidgets.swift */; };
@@ -101,18 +120,22 @@
 		9830135D974E63A6479AC3CC /* ViewerRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8CE80512802A7567AED9D05 /* ViewerRoute.swift */; };
 		9B90D1C0789748CAAFE100D1 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = DF7E3198A66EED82D935E675 /* LocalStore */; };
 		9CBAB20D449F637D5932D77E /* MacMapPlacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992CA42FB885FED500B3D213 /* MacMapPlacesView.swift */; };
+		9CE67CD025AE2E787FA58CCE /* AXIDsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BCF33A791F7ADF1FD7A3271 /* AXIDsTests.swift */; };
 		9E04C5BAD3FDFDDEDF943561 /* Editing in Frameworks */ = {isa = PBXBuildFile; productRef = 9100665C873D0870A87A1326 /* Editing */; };
 		9E305C0C633422FC9FCF331D /* Editing in Frameworks */ = {isa = PBXBuildFile; productRef = 717CA62560EF348291F0CF65 /* Editing */; };
+		9EA64C89B75E0DAD8936A9AC /* AXIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */; };
 		9F7AC18787019882D13028A2 /* MacLiveVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8F7461D95B1F590610423C /* MacLiveVideo.swift */; };
 		A02F35BD3C0A4638D10BFFBA /* ScreenshotTour.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */; };
 		A06BB3B03917EA87DF4E52DB /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = DEA50F3624BB1859CEE7621D /* ImmichAPI */; };
 		A21E44AE8980E8646CFCC995 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = CE5B9476767F8F8B729A241A /* LocalStore */; };
 		A2AB5BC56AA8FB528F73B9ED /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71607B706C614A1C8A0A6D54 /* ConnectView.swift */; };
 		A52AB145FC28B24F89200534 /* MonthsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092BF2BAD6CCE9099D356D /* MonthsView.swift */; };
+		A5B2723B4D36829024D1EE91 /* MacViewerPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2BD8A99C98B7C6FA689A31 /* MacViewerPages.swift */; };
 		A69BDA174B3139C1419A4932 /* BackupScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3A24A3184D6A5D800A2BE6 /* BackupScheduler.swift */; };
 		AA6BA29CD7FC0168056D59AA /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = C861899D990206AFFFC3FEFD /* Upload */; };
 		AB034DACF8D205272A697724 /* HeirloomAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AEC1F2E0350651E6C9C7E7F /* HeirloomAgent.swift */; };
 		AD13E92873E276DFAF7170A7 /* MacTimelineLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488287F582CF2DB28F7C2A0F /* MacTimelineLayout.swift */; };
+		AD9793791D275FCDB98F59EF /* ViewerPagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5DD2ED266D63C403DB32A94 /* ViewerPagerTests.swift */; };
 		AE7923470A30DEA4B79AD568 /* AccountPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE5115F92B81617F6FECC405 /* AccountPages.swift */; };
 		AEB202A11B28EBAF089DEF08 /* ParityHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FBC7B8A7F3F52B90B87AC5 /* ParityHarness.swift */; };
 		AF7D28916704CC5133FD8D95 /* GridPrefetchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */; };
@@ -121,9 +144,11 @@
 		B2E232FB0CFF801B0281E2B6 /* BackupScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A200B4479469DD4C3817B69 /* BackupScanner.swift */; };
 		B3E6BCE5053B6C3F9D53F5B8 /* EditorLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1D42E271261F49679D0B20 /* EditorLoad.swift */; };
 		B63C1150C2B471CE7C7BA00F /* Search in Frameworks */ = {isa = PBXBuildFile; productRef = 3A6164A7A7F48AE42AE1D9C5 /* Search */; };
+		B92D98B71ABB69479C45D15B /* MacAssetActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 572EA499AB2F21B1FFD0792A /* MacAssetActions.swift */; };
 		BB8AFB92998483F7105D6AE1 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500F5A4905443D3A3CF04B9A /* SharedContainer.swift */; };
 		BC2215C8BF65688DA4298B47 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = 85CFCE58FBB95FEC2EF1800C /* LocalStore */; };
 		BDE3988953DD862B5FA0BAA4 /* ViewerPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0364F98EC3A3B2999C136AE8 /* ViewerPager.swift */; };
+		BE74A5358746355253B2B6B5 /* MacViewerPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3CE027C6A03DEDA267C34B /* MacViewerPager.swift */; };
 		C01CDF31C9D4498BC443A056 /* MacAllAlbumsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 087CC5923156A206E813BA60 /* MacAllAlbumsView.swift */; };
 		C183FED2724261FCAD785610 /* KeyAssetPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E647D70429540C5A8F9AF4 /* KeyAssetPhoto.swift */; };
 		C1D9A22793C61ABAF2CEECD6 /* AccountButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E550A94F75F8CDF3CD27321D /* AccountButton.swift */; };
@@ -138,6 +163,7 @@
 		C85E293F9688512B7D0D9064 /* MacGridHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */; };
 		C959FE40D592B0F2D6380C2D /* GridPerfUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */; };
 		CA0727D769971F8DA20E364B /* FreeUpSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F8C9D9FECBF534C26B94DC2 /* FreeUpSpaceView.swift */; };
+		CA4415A089EC56AD0198DC63 /* SnapshotTesting in Frameworks */ = {isa = PBXBuildFile; productRef = AF33881A04E3437CD1E24522 /* SnapshotTesting */; };
 		CB8D8A8C1B250E5C7240C58B /* HeirloomIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC84EEBDF5622F30FB15AD60 /* HeirloomIOSApp.swift */; };
 		CC4BFFF8B418543542B8A16D /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65A7D706A05D55D17A8429E0 /* ShareViewController.swift */; };
 		CDAFB670B121C9578D09A09C /* GridPrefetchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */; };
@@ -146,8 +172,11 @@
 		CFEE33158BF0E7C74F7C24EF /* HeirloomMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14131A6D7F58E899A3F0DF12 /* HeirloomMacOSApp.swift */; };
 		D13CEF731F5AB2220794AD97 /* MacAppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCB8DBDC4ACB6E8F052C452 /* MacAppState.swift */; };
 		D176C78E288FD89BD0EE2633 /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 1FCBA78F89C043C8C197D909 /* Upload */; };
+		D201E688DF00302A733FDC25 /* GestureInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938939017F03BF2906B018DD /* GestureInputTests.swift */; };
 		D29BA70A63C6730522E72175 /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = D7219945C0106FE2E5D5C8EA /* ImmichAPI */; };
 		D40D0AC7E13E0CF25F297543 /* ImmichAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EE5AC26D5029A8610E8F4EEF /* ImmichAPI */; };
+		D4DE43231D232DE374D62929 /* FixtureSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A723E1EC0CE8F83F81CA597F /* FixtureSnapshotTests.swift */; };
+		D63F46604F97EDF38565AD21 /* FixtureSeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12017FE4B692BF84FA761176 /* FixtureSeedTests.swift */; };
 		D69FC882B6A4CF0F7D3F5673 /* Rules in Frameworks */ = {isa = PBXBuildFile; productRef = 05C0846ED22321DA94E3FA7F /* Rules */; };
 		D88BBF9527653F7952010D94 /* LocalStore in Frameworks */ = {isa = PBXBuildFile; productRef = C4A5E82A48F6AF0BA0893C36 /* LocalStore */; };
 		D9E106F6A1FE405E90442752 /* EditToolsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285A76E88196DB5E471FCE90 /* EditToolsPanel.swift */; };
@@ -163,6 +192,7 @@
 		E5C207FD809E7FE0DE1DA351 /* ViewerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E545120214DDEE8F1EC87862 /* ViewerUITests.swift */; };
 		E65B8E035572F5055972954B /* LiveVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C56C16B1936C90D10B70F230 /* LiveVideo.swift */; };
 		E6DED1853529ACA4D2511877 /* GridSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B7A0F588ED12A3BF26CC38 /* GridSelectionModel.swift */; };
+		E7452E55E2E7B0F05481AAB6 /* MacEditModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C54FDC36CAF23BEC495F00 /* MacEditModeView.swift */; };
 		E7C97BA4991536BA5DC6F138 /* ShareExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D7BE0C75683FFC943E0E0C /* ShareExtension.swift */; };
 		E8B20AE23A893FEB6DFFF694 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = 1CB58337F2833C7B5DEC5CEC /* CoreModel */; };
 		E90F414B18520F0A62CBDA9A /* ExtensionSnapshotWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654F5B7B73E4E8F342B80457 /* ExtensionSnapshotWriter.swift */; };
@@ -172,7 +202,9 @@
 		F30454A630980E7DC6A0A473 /* LibraryGridLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6932111B77827985EE3A89E /* LibraryGridLoader.swift */; };
 		F36A7046C419DE6ADFCF804B /* ParityGridUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFFAB56653C0830EA539F55 /* ParityGridUITests.swift */; };
 		F383DF5E160D7FFF3C0D423D /* FixtureSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D11D9052E6205D135807468 /* FixtureSeed.swift */; };
+		F6EF9F9449CD665C8AF3EBE5 /* Media in Frameworks */ = {isa = PBXBuildFile; productRef = FB44705C9EC4DD84B8297E50 /* Media */; };
 		F717E97B3E448416D89CD2E0 /* SettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3869E36912FCC6C041D051E6 /* SettingsUITests.swift */; };
+		F7B1EBB04F2816C02BA5DE41 /* GestureInputs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A5B35B2CB970AB4F4990AD /* GestureInputs.swift */; };
 		FA558A030BADAA2AD8D6D1A8 /* MacImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F1850C4ACF8338AEB20BFB /* MacImport.swift */; };
 		FAB08ADD3AFDDA3F471BB2BF /* ClusteredMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD06FF34A315C4624E74B70 /* ClusteredMap.swift */; };
 		FF13CEBCB26126F0452A997C /* Media in Frameworks */ = {isa = PBXBuildFile; productRef = C1BA03627F854A3C18B122E5 /* Media */; };
@@ -205,14 +237,20 @@
 		0B95AF9F4C147A63DA1C1CE0 /* MacMoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMoveSheet.swift; sourceTree = "<group>"; };
 		0DCB8DBDC4ACB6E8F052C452 /* MacAppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppState.swift; sourceTree = "<group>"; };
 		0FF650963FA8FDFD1AB4485A /* Albums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Albums.swift; sourceTree = "<group>"; };
+		12017FE4B692BF84FA761176 /* FixtureSeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSeedTests.swift; sourceTree = "<group>"; };
 		1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFunctionalTests.swift; sourceTree = "<group>"; };
 		13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibrarySheets.swift; sourceTree = "<group>"; };
 		14131A6D7F58E899A3F0DF12 /* HeirloomMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomMacOSApp.swift; sourceTree = "<group>"; };
 		15B1F0D46D5FB8B587DF4848 /* PhotoGridViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridViewController.swift; sourceTree = "<group>"; };
+		15D4A19C943EBA642A067465 /* Heirloom-macOS-Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Heirloom-macOS-Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1621E72990EA01E79B8DD583 /* MacPreviewFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewFixtures.swift; sourceTree = "<group>"; };
 		173F9A53CF69350E161F685F /* FastScroller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastScroller.swift; sourceTree = "<group>"; };
+		1A5B8B059C88FF518693735C /* LaunchGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateTests.swift; sourceTree = "<group>"; };
+		1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGate.swift; sourceTree = "<group>"; };
+		1CA119048529A71E42CB383D /* FixtureStubTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureStubTests.swift; sourceTree = "<group>"; };
 		1D6BCD809E4188A65FDD8655 /* FixtureSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSeed.swift; sourceTree = "<group>"; };
 		1EF43BFAF2D49E2C9C09028C /* EditTrimFilmstrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTrimFilmstrip.swift; sourceTree = "<group>"; };
+		1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomPerfTests.swift; sourceTree = "<group>"; };
 		220BD30E984341379A611211 /* PhotoForkIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoForkIntents.swift; sourceTree = "<group>"; };
 		22148554E0DF227F6078A07C /* LibraryFilterMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilterMenu.swift; sourceTree = "<group>"; };
 		22467E2D72965EE2650E6009 /* Heirloom-Intents.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-Intents.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -220,6 +258,7 @@
 		285A76E88196DB5E471FCE90 /* EditToolsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditToolsPanel.swift; sourceTree = "<group>"; };
 		2926BA269E6027FC436CF9C2 /* AssetGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetGridView.swift; sourceTree = "<group>"; };
 		2AAB4890D52B9C3FAF67BC30 /* AppSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
+		2B22E3E2F8EF1C74C16EDA12 /* MacViewerPagerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViewerPagerModel.swift; sourceTree = "<group>"; };
 		2B46BD5E10FDEFE9A7D967C7 /* PhotoGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridCell.swift; sourceTree = "<group>"; };
 		2BC2B330D0AB7D07343EBF7B /* BucketHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketHeaderView.swift; sourceTree = "<group>"; };
 		2DF22B76A8D8B4DEDC7D192E /* Heirloom-PhotoEditing.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-PhotoEditing.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -228,8 +267,11 @@
 		317A308C324F67538E064057 /* A9ExtrasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A9ExtrasUITests.swift; sourceTree = "<group>"; };
 		33177EE3B7C28F1376AB609A /* LibraryFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilter.swift; sourceTree = "<group>"; };
 		36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPerfUITests.swift; sourceTree = "<group>"; };
+		37C1AA5AFABE263B09FC2BF3 /* testFixtureThumbnailView.dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testFixtureThumbnailView.dark.png; sourceTree = "<group>"; };
 		3869E36912FCC6C041D051E6 /* SettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUITests.swift; sourceTree = "<group>"; };
+		3A6EA950E83F1B64AF41DF9F /* FixtureStubPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureStubPipelineTests.swift; sourceTree = "<group>"; };
 		3A7A06636822786D5165150E /* Heirloom-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Heirloom-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3C2BD8A99C98B7C6FA689A31 /* MacViewerPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViewerPages.swift; sourceTree = "<group>"; };
 		3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A3SmokeUITests.swift; sourceTree = "<group>"; };
 		43D7BE0C75683FFC943E0E0C /* ShareExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtension.swift; sourceTree = "<group>"; };
 		46E69169F9C526F6242FC0CD /* GridSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridSnapshot.swift; sourceTree = "<group>"; };
@@ -245,6 +287,8 @@
 		5418423DA37D1695A127DE89 /* MacSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSmokeTests.swift; sourceTree = "<group>"; };
 		55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridStallMonitor.swift; sourceTree = "<group>"; };
 		567FC7079366CAC7EAD4BE27 /* Heirloom-macOS-UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Heirloom-macOS-UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		572EA499AB2F21B1FFD0792A /* MacAssetActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAssetActions.swift; sourceTree = "<group>"; };
+		58B274EE4961F488B9C7A243 /* EditUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditUITests.swift; sourceTree = "<group>"; };
 		58B423EDAD3D1C1AC259A1BE /* HeirloomWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomWidgets.swift; sourceTree = "<group>"; };
 		58B7A0F588ED12A3BF26CC38 /* GridSelectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridSelectionModel.swift; sourceTree = "<group>"; };
 		5A4F1AE757258931B7EB815E /* EditRulerDial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditRulerDial.swift; sourceTree = "<group>"; };
@@ -252,6 +296,7 @@
 		5EF112E6B8F6ED46F7ED33BA /* MacAssetChangeCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAssetChangeCenter.swift; sourceTree = "<group>"; };
 		634006C4823CC8F38A3B0D85 /* MacGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGridCell.swift; sourceTree = "<group>"; };
 		638FDDBA042A300BFF971B53 /* FixtureArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureArtwork.swift; sourceTree = "<group>"; };
+		643081FCAE5DD1EFBB9A6382 /* MacViewerTransition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViewerTransition.swift; sourceTree = "<group>"; };
 		644C38FC2FC62B250E305F5A /* BackupSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSettings.swift; sourceTree = "<group>"; };
 		654F5B7B73E4E8F342B80457 /* ExtensionSnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSnapshotWriter.swift; sourceTree = "<group>"; };
 		65A7D706A05D55D17A8429E0 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
@@ -260,6 +305,7 @@
 		6B8F7461D95B1F590610423C /* MacLiveVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLiveVideo.swift; sourceTree = "<group>"; };
 		6BDAB6FF9FD9FE202BF68BEB /* EditorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorUITests.swift; sourceTree = "<group>"; };
 		6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDragDrop.swift; sourceTree = "<group>"; };
+		6C83BE3CB664D9797E41FF48 /* SyntheticEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticEvents.swift; sourceTree = "<group>"; };
 		6E3E22E15AF847EB8E62EE01 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		6FD940D36923946B23596B70 /* ParityChromeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityChromeUITests.swift; sourceTree = "<group>"; };
 		715FFA80CBD735CCE3B46FFB /* GridContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridContextMenu.swift; sourceTree = "<group>"; };
@@ -270,16 +316,20 @@
 		750C8B9A3ACE145BE464F6C0 /* CollectionTiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionTiles.swift; sourceTree = "<group>"; };
 		7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMemoriesView.swift; sourceTree = "<group>"; };
 		794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGridHeaderView.swift; sourceTree = "<group>"; };
+		7BCBD9EAEEF280CCF4D8D902 /* PairCaptureUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairCaptureUITests.swift; sourceTree = "<group>"; };
 		7C4B1F519514BB8DC4D63FB6 /* Heirloom-Agent.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Heirloom-Agent.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DA2A5BE54E39B6CB40564E4 /* Heirloom.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Heirloom.entitlements; sourceTree = "<group>"; };
 		848364178733C3D1D80789CF /* EditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditView.swift; sourceTree = "<group>"; };
 		8720A97586711DC540D0929B /* CollectionsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionsLoader.swift; sourceTree = "<group>"; };
 		8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryChromeUITests.swift; sourceTree = "<group>"; };
 		8AEC1F2E0350651E6C9C7E7F /* HeirloomAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeirloomAgent.swift; sourceTree = "<group>"; };
+		8BCF33A791F7ADF1FD7A3271 /* AXIDsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXIDsTests.swift; sourceTree = "<group>"; };
 		8D2F60BB9D91D70D4CD487A0 /* MacViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViewer.swift; sourceTree = "<group>"; };
 		8D65FC4B1B649D178D8A4490 /* MacMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenus.swift; sourceTree = "<group>"; };
 		8EB3423F7182EE3D21FE5149 /* AppearanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceUITests.swift; sourceTree = "<group>"; };
 		8ED7CA215B79373233B77B96 /* Heirloom-iOS-UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Heirloom-iOS-UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		90C54FDC36CAF23BEC495F00 /* MacEditModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditModeView.swift; sourceTree = "<group>"; };
+		938939017F03BF2906B018DD /* GestureInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureInputTests.swift; sourceTree = "<group>"; };
 		95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUITestSupport.swift; sourceTree = "<group>"; };
 		958BD68C3B16A152746D63A5 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		992CA42FB885FED500B3D213 /* MacMapPlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMapPlacesView.swift; sourceTree = "<group>"; };
@@ -289,18 +339,23 @@
 		9F8C9D9FECBF534C26B94DC2 /* FreeUpSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeUpSpaceView.swift; sourceTree = "<group>"; };
 		A2968E433A0A5C31FDFAD3BB /* MacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebar.swift; sourceTree = "<group>"; };
 		A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentLoginItem.swift; sourceTree = "<group>"; };
+		A723E1EC0CE8F83F81CA597F /* FixtureSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSnapshotTests.swift; sourceTree = "<group>"; };
 		A72C4EFD2F32EBA0F21E57B0 /* ScreenshotTour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTour.swift; sourceTree = "<group>"; };
 		A79F5EE788A54FD0A7363A85 /* ViewerInfoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerInfoPanel.swift; sourceTree = "<group>"; };
 		A90D2FEC4245D35A0F05D1F2 /* ViewerLongPressMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerLongPressMenu.swift; sourceTree = "<group>"; };
 		AA092BF2BAD6CCE9099D356D /* MonthsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthsView.swift; sourceTree = "<group>"; };
 		B0E647D70429540C5A8F9AF4 /* KeyAssetPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyAssetPhoto.swift; sourceTree = "<group>"; };
-		B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLiveText.swift; sourceTree = "<group>"; };
+		B5DD2ED266D63C403DB32A94 /* ViewerPagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerPagerTests.swift; sourceTree = "<group>"; };
 		B796775C088DF86CE5035271 /* InfoPanelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoPanelUITests.swift; sourceTree = "<group>"; };
 		B9F1850C4ACF8338AEB20BFB /* MacImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImport.swift; sourceTree = "<group>"; };
 		BBDE1EF756578312D6F93758 /* MacDuplicatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDuplicatesView.swift; sourceTree = "<group>"; };
+		BC3CE027C6A03DEDA267C34B /* MacViewerPager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViewerPager.swift; sourceTree = "<group>"; };
 		BD8350F00918404C2A0D5D3E /* MacPeopleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPeopleView.swift; sourceTree = "<group>"; };
 		BFE2BCF0B71A5320D0EE96B4 /* Spaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spaces.swift; sourceTree = "<group>"; };
+		C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXIDs.swift; sourceTree = "<group>"; };
+		C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedSmokePathTests.swift; sourceTree = "<group>"; };
 		C2BF8940E9DEBCC98AEE5BC9 /* MacCollectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCollectionsView.swift; sourceTree = "<group>"; };
+		C3A5B35B2CB970AB4F4990AD /* GestureInputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureInputs.swift; sourceTree = "<group>"; };
 		C4809432DCC4D04479898A85 /* MacEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditView.swift; sourceTree = "<group>"; };
 		C489D7BEF9C9328C346F2DFC /* MacStorageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacStorageView.swift; sourceTree = "<group>"; };
 		C56C16B1936C90D10B70F230 /* LiveVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveVideo.swift; sourceTree = "<group>"; };
@@ -311,6 +366,7 @@
 		CABCD8D76B4011545D9D9ED5 /* MacSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettings.swift; sourceTree = "<group>"; };
 		CB20B5E1B6FCEF920E812012 /* ErrorFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorFilter.swift; sourceTree = "<group>"; };
 		CB42CF139FDE95D19202A9F0 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
+		CC3C5DBDA96BB5C31EEA7E15 /* testFixtureThumbnailView.light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testFixtureThumbnailView.light.png; sourceTree = "<group>"; };
 		CDFFAB56653C0830EA539F55 /* ParityGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityGridUITests.swift; sourceTree = "<group>"; };
 		CE5115F92B81617F6FECC405 /* AccountPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPages.swift; sourceTree = "<group>"; };
 		CED843D17D53914CE88AD6A8 /* MacConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacConnectView.swift; sourceTree = "<group>"; };
@@ -408,6 +464,17 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F15322E4C220FF0AC1E4E4D5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				74E1521AB4E36AEC675EF355 /* CoreModel in Frameworks */,
+				0AF901CE3DBF874EADCE6F1C /* LocalStore in Frameworks */,
+				F6EF9F9449CD665C8AF3EBE5 /* Media in Frameworks */,
+				CA4415A089EC56AD0198DC63 /* SnapshotTesting in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F2608525D5F3502F58B81C09 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -471,6 +538,14 @@
 			path = Apps/Shared;
 			sourceTree = "<group>";
 		};
+		2CADA88EE98A4A141C33584E /* Gestures */ = {
+			isa = PBXGroup;
+			children = (
+				C3A5B35B2CB970AB4F4990AD /* GestureInputs.swift */,
+			);
+			path = Gestures;
+			sourceTree = "<group>";
+		};
 		2D44F56C46B7206F8C430FC9 /* Search */ = {
 			isa = PBXGroup;
 			children = (
@@ -482,6 +557,8 @@
 		374EFBFCB4559EDB2A76D05E /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				58B274EE4961F488B9C7A243 /* EditUITests.swift */,
+				1EFA56182389C1BB20CDCA7A /* HeirloomPerfTests.swift */,
 				1268F5A77EF6CA9A153CFEA4 /* MacFunctionalTests.swift */,
 				5418423DA37D1695A127DE89 /* MacSmokeTests.swift */,
 				95132335FBBDA3AAC7856C51 /* MacUITestSupport.swift */,
@@ -517,6 +594,7 @@
 				22467E2D72965EE2650E6009 /* Heirloom-Intents.appex */,
 				8ED7CA215B79373233B77B96 /* Heirloom-iOS-UITests.xctest */,
 				252B49AC8E4F995558D5C3A8 /* Heirloom-iOS.app */,
+				15D4A19C943EBA642A067465 /* Heirloom-macOS-Tests.xctest */,
 				567FC7079366CAC7EAD4BE27 /* Heirloom-macOS-UITests.xctest */,
 				3A7A06636822786D5165150E /* Heirloom-macOS.app */,
 				2DF22B76A8D8B4DEDC7D192E /* Heirloom-PhotoEditing.appex */,
@@ -539,6 +617,7 @@
 				C6A1F880F7852BD5F7F429FC /* GridPrefetchPolicyTests.swift */,
 				B796775C088DF86CE5035271 /* InfoPanelUITests.swift */,
 				8A78E7530695ECC290C4003F /* LibraryChromeUITests.swift */,
+				7BCBD9EAEEF280CCF4D8D902 /* PairCaptureUITests.swift */,
 				05DC4A4509FEA7127C178009 /* ParityCanvasSelfTests.swift */,
 				6FD940D36923946B23596B70 /* ParityChromeUITests.swift */,
 				C58EDC43D9AE8A1595B8AFA4 /* ParityCollectionsUITests.swift */,
@@ -621,6 +700,25 @@
 			path = Apps/iOS/Sources;
 			sourceTree = "<group>";
 		};
+		AA6C1C453E9957AF6B663EE1 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				8BCF33A791F7ADF1FD7A3271 /* AXIDsTests.swift */,
+				12017FE4B692BF84FA761176 /* FixtureSeedTests.swift */,
+				A723E1EC0CE8F83F81CA597F /* FixtureSnapshotTests.swift */,
+				3A6EA950E83F1B64AF41DF9F /* FixtureStubPipelineTests.swift */,
+				1CA119048529A71E42CB383D /* FixtureStubTests.swift */,
+				938939017F03BF2906B018DD /* GestureInputTests.swift */,
+				1A5B8B059C88FF518693735C /* LaunchGateTests.swift */,
+				C27199099EDE954E0B6FCCD1 /* SeedSmokePathTests.swift */,
+				CCAB1BF69EB0A0B9A89A2048 /* __Snapshots__ */,
+				F821A37526B1924D59BF997F /* Support */,
+				FF7F45B7911F71624CC9D7E1 /* Viewer */,
+			);
+			name = Tests;
+			path = Apps/macOS/Tests;
+			sourceTree = "<group>";
+		};
 		AE5AC37478A7488803456FDF /* Library */ = {
 			isa = PBXGroup;
 			children = (
@@ -641,17 +739,21 @@
 		B2AD9C9B7AA82AF81D508879 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				C01C0F895C0C8E92BF7CCB6F /* AXIDs.swift */,
 				4D11D9052E6205D135807468 /* FixtureSeed.swift */,
 				14131A6D7F58E899A3F0DF12 /* HeirloomMacOSApp.swift */,
+				1C981A57DF264DA0D15F38A1 /* LaunchGate.swift */,
 				A41BC245D0CDDE0C3E262E59 /* MacAgentLoginItem.swift */,
 				087CC5923156A206E813BA60 /* MacAllAlbumsView.swift */,
 				0DCB8DBDC4ACB6E8F052C452 /* MacAppState.swift */,
+				572EA499AB2F21B1FFD0792A /* MacAssetActions.swift */,
 				5EF112E6B8F6ED46F7ED33BA /* MacAssetChangeCenter.swift */,
 				08A09E511D9CCCB3B5C08CE6 /* MacCollectionGridView.swift */,
 				C2BF8940E9DEBCC98AEE5BC9 /* MacCollectionsView.swift */,
 				CED843D17D53914CE88AD6A8 /* MacConnectView.swift */,
 				6C18F4A1EDCE0128E1F49674 /* MacDragDrop.swift */,
 				BBDE1EF756578312D6F93758 /* MacDuplicatesView.swift */,
+				90C54FDC36CAF23BEC495F00 /* MacEditModeView.swift */,
 				C4809432DCC4D04479898A85 /* MacEditView.swift */,
 				634006C4823CC8F38A3B0D85 /* MacGridCell.swift */,
 				794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */,
@@ -659,7 +761,6 @@
 				B9F1850C4ACF8338AEB20BFB /* MacImport.swift */,
 				67E38A2CBCEBD8DEE3685EE3 /* MacInspectorView.swift */,
 				13E0AED925EA706B7015CCDE /* MacLibrarySheets.swift */,
-				B59EB2B7AEF1472EDB5C59B3 /* MacLiveText.swift */,
 				6B8F7461D95B1F590610423C /* MacLiveVideo.swift */,
 				E6086603C26DEA57A022404B /* MacMainWindow.swift */,
 				992CA42FB885FED500B3D213 /* MacMapPlacesView.swift */,
@@ -677,6 +778,11 @@
 				C489D7BEF9C9328C346F2DFC /* MacStorageView.swift */,
 				488287F582CF2DB28F7C2A0F /* MacTimelineLayout.swift */,
 				8D2F60BB9D91D70D4CD487A0 /* MacViewer.swift */,
+				BC3CE027C6A03DEDA267C34B /* MacViewerPager.swift */,
+				2B22E3E2F8EF1C74C16EDA12 /* MacViewerPagerModel.swift */,
+				3C2BD8A99C98B7C6FA689A31 /* MacViewerPages.swift */,
+				643081FCAE5DD1EFBB9A6382 /* MacViewerTransition.swift */,
+				2CADA88EE98A4A141C33584E /* Gestures */,
 			);
 			name = Sources;
 			path = Apps/macOS/Sources;
@@ -688,6 +794,14 @@
 				9B4300F57541E619B40FBDAA /* HeirloomColors.swift */,
 			);
 			path = Appearance;
+			sourceTree = "<group>";
+		};
+		CCAB1BF69EB0A0B9A89A2048 /* __Snapshots__ */ = {
+			isa = PBXGroup;
+			children = (
+				D3FAF3BFC2FC174366F2162F /* FixtureSnapshotTests */,
+			);
+			path = __Snapshots__;
 			sourceTree = "<group>";
 		};
 		CD88EFC653632EADF09AEE3C /* Account */ = {
@@ -711,6 +825,15 @@
 			path = Viewer;
 			sourceTree = "<group>";
 		};
+		D3FAF3BFC2FC174366F2162F /* FixtureSnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				37C1AA5AFABE263B09FC2BF3 /* testFixtureThumbnailView.dark.png */,
+				CC3C5DBDA96BB5C31EEA7E15 /* testFixtureThumbnailView.light.png */,
+			);
+			path = FixtureSnapshotTests;
+			sourceTree = "<group>";
+		};
 		D8B643938B68CF6D98D144FE = {
 			isa = PBXGroup;
 			children = (
@@ -724,6 +847,7 @@
 				7E34E8F0C1D8F9DD531D2766 /* Sources */,
 				6738676E8FB1512201481A2F /* Sources */,
 				B2AD9C9B7AA82AF81D508879 /* Sources */,
+				AA6C1C453E9957AF6B663EE1 /* Tests */,
 				5C119607EF798797AAA5D881 /* UITests */,
 				374EFBFCB4559EDB2A76D05E /* UITests */,
 				5BB257FBB97C951B5E07EF21 /* Products */,
@@ -746,6 +870,22 @@
 			);
 			name = Sources;
 			path = Apps/iOS/Extensions/Share/Sources;
+			sourceTree = "<group>";
+		};
+		F821A37526B1924D59BF997F /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				6C83BE3CB664D9797E41FF48 /* SyntheticEvents.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		FF7F45B7911F71624CC9D7E1 /* Viewer */ = {
+			isa = PBXGroup;
+			children = (
+				B5DD2ED266D63C403DB32A94 /* ViewerPagerTests.swift */,
+			);
+			path = Viewer;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -918,6 +1058,29 @@
 			productReference = 2E728F2C4FB8AF3679B66C4D /* Heirloom-Widgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		BEFA62EBF592CE1BEC3D2747 /* Heirloom-macOS-Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A84E30A828767F7F43B9FBB4 /* Build configuration list for PBXNativeTarget "Heirloom-macOS-Tests" */;
+			buildPhases = (
+				A22FF1A5DCF9933140F7C95D /* Sources */,
+				7FF3C19F4B80B581FF77FBB9 /* Resources */,
+				F15322E4C220FF0AC1E4E4D5 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Heirloom-macOS-Tests";
+			packageProductDependencies = (
+				6C16597F47DFD5A8BF513C1F /* CoreModel */,
+				023B45EAFF88CF907B67F553 /* LocalStore */,
+				FB44705C9EC4DD84B8297E50 /* Media */,
+				AF33881A04E3437CD1E24522 /* SnapshotTesting */,
+			);
+			productName = "Heirloom-macOS-Tests";
+			productReference = 15D4A19C943EBA642A067465 /* Heirloom-macOS-Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		D84723B5E7BCA06F495A86D2 /* Heirloom-Intents */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D6417F0F3C77D263CC4C0809 /* Build configuration list for PBXNativeTarget "Heirloom-Intents" */;
@@ -1010,6 +1173,10 @@
 						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
+					BEFA62EBF592CE1BEC3D2747 = {
+						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
+						ProvisioningStyle = Automatic;
+					};
 					D84723B5E7BCA06F495A86D2 = {
 						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
@@ -1030,6 +1197,7 @@
 			mainGroup = D8B643938B68CF6D98D144FE;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A263A7BA86AF36ACA158C371 /* XCRemoteSwiftPackageReference "swift-snapshot-testing" */,
 				F965425022A3238086617EE1 /* XCLocalSwiftPackageReference "PhotosCore" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1041,6 +1209,7 @@
 				22A3362055562D724946234D /* Heirloom-iOS-UITests */,
 				E6E2BF7C79DF5ABC1FF5CACA /* Heirloom-macOS */,
 				1687D3DFBCC71FF95AB63C24 /* Heirloom-macOS-UITests */,
+				BEFA62EBF592CE1BEC3D2747 /* Heirloom-macOS-Tests */,
 				9B35EFA422FCFD3E02A23CCE /* Heirloom-BackgroundUpload */,
 				684DE8B8868C09C81C09DDF0 /* Heirloom-PhotoEditing */,
 				0D85D641350A0972877BA40F /* Heirloom-Share */,
@@ -1052,6 +1221,15 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		7FF3C19F4B80B581FF77FBB9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1C9836F65D14AA874521CB5C /* testFixtureThumbnailView.dark.png in Resources */,
+				8C6C50D67AB3541D47564244 /* testFixtureThumbnailView.light.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9A49AAA03F71CEA6EF4E1C01 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1076,6 +1254,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7AF8FD6C21A05AC1931A6977 /* EditUITests.swift in Sources */,
+				6FF2BDB2A4E5F0541011EB25 /* HeirloomPerfTests.swift in Sources */,
 				8B59DC27BC9FF684488186A3 /* MacFunctionalTests.swift in Sources */,
 				1A928DD22CF697C8B5937F13 /* MacSmokeTests.swift in Sources */,
 				6B5016E8CF28C4A9CBA15068 /* MacUITestSupport.swift in Sources */,
@@ -1106,6 +1286,7 @@
 				20D55EAF420401A19B9AECB1 /* GridPrefetchPolicyTests.swift in Sources */,
 				61343E2590E7623A978A85E2 /* InfoPanelUITests.swift in Sources */,
 				6A46C8A4B3FAA6E9F8F9599E /* LibraryChromeUITests.swift in Sources */,
+				5BFFD48CFCA9D5C53968CDAF /* PairCaptureUITests.swift in Sources */,
 				105FEC7964FFA5BCF58C7677 /* ParityCanvasSelfTests.swift in Sources */,
 				8E5A79ECCBC2B3A9BFB68177 /* ParityChromeUITests.swift in Sources */,
 				3567ED64A126E668E21A08BC /* ParityCollectionsUITests.swift in Sources */,
@@ -1140,19 +1321,24 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				255CFEE364CE5BDABF5C70B7 /* AXIDs.swift in Sources */,
 				A2AB5BC56AA8FB528F73B9ED /* ConnectView.swift in Sources */,
 				F383DF5E160D7FFF3C0D423D /* FixtureSeed.swift in Sources */,
+				49785A0D9B8F7EB859A6DADE /* GestureInputs.swift in Sources */,
 				CFEE33158BF0E7C74F7C24EF /* HeirloomMacOSApp.swift in Sources */,
+				24550AB8E5710572ADF4B323 /* LaunchGate.swift in Sources */,
 				E41CE7E89CE02CE15849BDC8 /* LockedMediaAuthentication.swift in Sources */,
 				2CFC71F750FE62CC4BFC6F03 /* MacAgentLoginItem.swift in Sources */,
 				C01CDF31C9D4498BC443A056 /* MacAllAlbumsView.swift in Sources */,
 				D13CEF731F5AB2220794AD97 /* MacAppState.swift in Sources */,
+				B92D98B71ABB69479C45D15B /* MacAssetActions.swift in Sources */,
 				0AE9582F7581541809B965A0 /* MacAssetChangeCenter.swift in Sources */,
 				73022DBDB05E3926EA5B5854 /* MacCollectionGridView.swift in Sources */,
 				8B12F14B5A70457DAEC6FF7E /* MacCollectionsView.swift in Sources */,
 				29ABBE27D7DCD7F5BFF9DC17 /* MacConnectView.swift in Sources */,
 				5A9070AF65B0D801A0589A4F /* MacDragDrop.swift in Sources */,
 				2DD17A66FDED537AEB8EB606 /* MacDuplicatesView.swift in Sources */,
+				E7452E55E2E7B0F05481AAB6 /* MacEditModeView.swift in Sources */,
 				E229A8BE2B9D90937CDD28A0 /* MacEditView.swift in Sources */,
 				520CFEFB5E92457F7FCB43EC /* MacGridCell.swift in Sources */,
 				C85E293F9688512B7D0D9064 /* MacGridHeaderView.swift in Sources */,
@@ -1160,7 +1346,6 @@
 				FA558A030BADAA2AD8D6D1A8 /* MacImport.swift in Sources */,
 				5A62438551EB236DB75D97F6 /* MacInspectorView.swift in Sources */,
 				719853286CF03DAFF32BBD5D /* MacLibrarySheets.swift in Sources */,
-				4E9B4B0407B784944C1E5F3A /* MacLiveText.swift in Sources */,
 				9F7AC18787019882D13028A2 /* MacLiveVideo.swift in Sources */,
 				7E22ACEF69BE6E6DFDD0E56F /* MacMainWindow.swift in Sources */,
 				9CBAB20D449F637D5932D77E /* MacMapPlacesView.swift in Sources */,
@@ -1178,6 +1363,10 @@
 				C750B6CD502A1F9848EED59C /* MacStorageView.swift in Sources */,
 				AD13E92873E276DFAF7170A7 /* MacTimelineLayout.swift in Sources */,
 				562C90132FF6F001D66BA495 /* MacViewer.swift in Sources */,
+				BE74A5358746355253B2B6B5 /* MacViewerPager.swift in Sources */,
+				08E23EC91F84062E4EFB40FB /* MacViewerPagerModel.swift in Sources */,
+				A5B2723B4D36829024D1EE91 /* MacViewerPages.swift in Sources */,
+				0BB4CAE289FCDFAD8898EBDE /* MacViewerTransition.swift in Sources */,
 				BB8AFB92998483F7105D6AE1 /* SharedContainer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1187,6 +1376,28 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB034DACF8D205272A697724 /* HeirloomAgent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A22FF1A5DCF9933140F7C95D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EA64C89B75E0DAD8936A9AC /* AXIDs.swift in Sources */,
+				9CE67CD025AE2E787FA58CCE /* AXIDsTests.swift in Sources */,
+				34DDFA8781AD4E3B04D7D580 /* FixtureSeed.swift in Sources */,
+				D63F46604F97EDF38565AD21 /* FixtureSeedTests.swift in Sources */,
+				D4DE43231D232DE374D62929 /* FixtureSnapshotTests.swift in Sources */,
+				885815C713AF400DAF97A06D /* FixtureStubPipelineTests.swift in Sources */,
+				12AF7E15015BE8A9DFEAA02D /* FixtureStubTests.swift in Sources */,
+				D201E688DF00302A733FDC25 /* GestureInputTests.swift in Sources */,
+				F7B1EBB04F2816C02BA5DE41 /* GestureInputs.swift in Sources */,
+				79D89EF062DDFD2CE8B71701 /* LaunchGate.swift in Sources */,
+				8D371D998273E8F8D81F5981 /* LaunchGateTests.swift in Sources */,
+				00E4F3C7C8BDACC7870EDD5D /* MacViewerPagerModel.swift in Sources */,
+				1728134BDAC57250D594772C /* SeedSmokePathTests.swift in Sources */,
+				7B20DEECFEAD303A8949BC9D /* SyntheticEvents.swift in Sources */,
+				AD9793791D275FCDB98F59EF /* ViewerPagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1377,7 +1588,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1438,7 +1649,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1573,6 +1784,21 @@
 				TEST_TARGET_NAME = "Heirloom-iOS";
 			};
 			name = Debug;
+		};
+		6364E0419B7A7CFB70032ED7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.immich.heirloom.macos.tests;
+				SDKROOT = macosx;
+			};
+			name = Release;
 		};
 		68F56EB7CBF5D0EB7C072891 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -1750,6 +1976,21 @@
 			};
 			name = Release;
 		};
+		EA8A34C29A2D003D33C09370 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.immich.heirloom.macos.tests;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 		EEA544C9B560E0F20A7F8EDC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1833,6 +2074,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		A84E30A828767F7F43B9FBB4 /* Build configuration list for PBXNativeTarget "Heirloom-macOS-Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EA8A34C29A2D003D33C09370 /* Debug */,
+				6364E0419B7A7CFB70032ED7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		B14FF00FDD3C1BCD3FBDC8BA /* Build configuration list for PBXNativeTarget "Heirloom-iOS-UITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1878,7 +2128,22 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A263A7BA86AF36ACA158C371 /* XCRemoteSwiftPackageReference "swift-snapshot-testing" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-snapshot-testing";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.19.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		023B45EAFF88CF907B67F553 /* LocalStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LocalStore;
+		};
 		05C0846ED22321DA94E3FA7F /* Rules */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Rules;
@@ -1931,6 +2196,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = SyncEngine;
 		};
+		6C16597F47DFD5A8BF513C1F /* CoreModel */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CoreModel;
+		};
 		717CA62560EF348291F0CF65 /* Editing */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Editing;
@@ -1962,6 +2231,11 @@
 		ACEAEBD2D2F23F355BD5277F /* SyncEngine */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SyncEngine;
+		};
+		AF33881A04E3437CD1E24522 /* SnapshotTesting */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A263A7BA86AF36ACA158C371 /* XCRemoteSwiftPackageReference "swift-snapshot-testing" */;
+			productName = SnapshotTesting;
 		};
 		BC486B6BFF09FF221C419EDC /* CoreModel */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -2014,6 +2288,10 @@
 		F3101F290E1881BD053B8B6F /* SyncEngine */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SyncEngine;
+		};
+		FB44705C9EC4DD84B8297E50 /* Media */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Media;
 		};
 		FD89CE95EA5D4BC7BBC28DD3 /* Search */ = {
 			isa = XCSwiftPackageProductDependency;

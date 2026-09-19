@@ -12,7 +12,7 @@ import SwiftUI
 ///
 /// Same decoupling as iOS `EditView`: the caller supplies the preview image and the source
 /// loader; Done persists through `EditPersistence` (upstream `/edits` + recipe KV +
-/// rendered upload as a NEW asset). Markup here is our own vector model (`MacMarkupCanvas`
+/// full-res render PUT as the asset's rendition). Markup here is our own vector model (`MacMarkupCanvas`
 /// + `MacMarkupElement`), so it round-trips through the recipe — unlike iOS PencilKit ink,
 /// which only flattens into the render.
 public struct MacEditView: View {
@@ -37,6 +37,7 @@ public struct MacEditView: View {
   @State private var markupText = "Caption"
   @State private var elements: [MacMarkupElement] = []
   @State private var hasLoadedRecipe = false
+  @State private var showDiscardConfirm = false
   @Environment(\.dismiss) private var dismiss
 
   private let renderer = EditRenderer()
@@ -67,7 +68,9 @@ public struct MacEditView: View {
     }
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }.disabled(saving).keyboardShortcut(.cancelAction)
+        // WP-E E1: Escape = Cancel, with a discard confirm when dirty.
+        Button("Cancel") { history.isDirty ? showDiscardConfirm = true : dismiss() }
+          .disabled(saving).keyboardShortcut(.cancelAction)
       }
       ToolbarItemGroup {
         Button { history.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
@@ -93,6 +96,12 @@ public struct MacEditView: View {
       Button("OK") { saveError = nil }
     } message: {
       Text(saveError ?? "")
+    }
+    .alert("Discard changes?", isPresented: $showDiscardConfirm) {
+      Button("Discard", role: .destructive) { dismiss() }
+      Button("Keep editing", role: .cancel) {}
+    } message: {
+      Text("Your edits have not been saved.")
     }
     .task { await initialLoad() }
     .onChange(of: history.current) { _, _ in rerenderPreview() }
@@ -483,6 +492,9 @@ public struct MacEditView: View {
         ForEach(MacMarkupTool.allCases, id: \.self) { t in Text(t.title).tag(t) }
       }
       .pickerStyle(.segmented)
+      // WP-E E1 clip fix: keep intrinsic sizes in the 280–340 pt panel at 1280×800.
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(minWidth: 260)
       HStack {
         Text("Color").font(.caption)
         ForEach(["#FFCC00", "#FF3B30", "#0A84FF", "#30D158", "#FFFFFF", "#000000"], id: \.self) { hex in
@@ -495,11 +507,13 @@ public struct MacEditView: View {
           .buttonStyle(.plain)
         }
       }
+      .frame(minWidth: 260)
       HStack {
         Text("Width").font(.caption)
         Slider(value: $markupWidth, in: 1...20)
         Text("\(Int(markupWidth))").font(.caption).monospacedDigit()
       }
+      .frame(minWidth: 260)
       if markupTool == .text {
         TextField("Caption", text: $markupText)
           .textFieldStyle(.roundedBorder)
@@ -702,7 +716,6 @@ public struct MacEditView: View {
     let size = srcCI.extent.size
     let split = try EditSplitter.split(recipe, imageSize: size)
     try await persistence.applyUpstreamEdits(assetId: asset.id, items: split.upstream)
-    var renderedId: String?
     if split.needsClientRender {
       let overlay = renderMarkupOverlay(elements, pixelSize: size)
       let report = try renderer.export(
@@ -716,12 +729,13 @@ public struct MacEditView: View {
         contentType: isHeic ? "image/heic" : "image/jpeg",
         fileCreatedAt: asset.fileCreatedAt ?? Date(), fileModifiedAt: asset.fileModifiedAt ?? Date(),
         spaceId: asset.spaceId)
-      renderedId = try await persistence.uploadRendered(
-        sourceAssetId: asset.id, upload: upload, recipe: recipe)
+      // E1: the render lands as the asset's rendition (same asset, one timeline item).
+      try await persistence.uploadRendition(assetId: asset.id, upload: upload)
     }
+    // E1: no separate rendered asset exists, so renderedAssetId stays nil.
     try await persistence.saveRecipe(EditPersistencePayload(
-      sourceAssetId: asset.id, recipe: recipe, renderedAssetId: renderedId))
-    return renderedId
+      sourceAssetId: asset.id, recipe: recipe, renderedAssetId: nil))
+    return nil
   }
 
   private func macExportFormat(for filename: String) -> EditRenderer.ExportFormat {
@@ -745,11 +759,12 @@ public struct MacEditView: View {
       contentType: "video/mp4",
       fileCreatedAt: asset.fileCreatedAt ?? Date(), fileModifiedAt: asset.fileModifiedAt ?? Date(),
       spaceId: asset.spaceId, durationMs: Int(result.durationSeconds * 1000))
-    let newId = try await persistence.uploadRendered(
-      sourceAssetId: asset.id, upload: upload, recipe: full)
+    // E1: the export lands as the asset's rendition (same asset, one timeline item).
+    try await persistence.uploadRendition(assetId: asset.id, upload: upload)
+    // E1: no separate rendered asset exists, so renderedAssetId stays nil.
     try await persistence.saveRecipe(EditPersistencePayload(
-      sourceAssetId: asset.id, recipe: full, renderedAssetId: newId))
-    return newId
+      sourceAssetId: asset.id, recipe: full, renderedAssetId: nil))
+    return nil
   }
 }
 

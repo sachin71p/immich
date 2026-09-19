@@ -103,16 +103,21 @@ extension PhotosLocalStore {
 
   /// Album timeline: the same `TimelineRow` projection as every other grid (see `rowSelectSQL` in
   /// `LocalStore+Timeline`), restricted to the album's assets, newest first.
+  /// WP-F F4: an equi-JOIN (not an `IN` subquery) so the planner seeks
+  /// `albumAsset_on_albumId` and never materializes a member-id list at 102k scale
+  /// (`albumAsset`'s PK starts with `albumId`, so the join is duplicate-free).
   public func albumAssets(albumId: String, limit: Int = 200, offset: Int = 0) async throws -> [TimelineRow] {
     let sql = """
       \(Self.rowSelectSQL)
+      JOIN albumAsset ON albumAsset.assetId = asset.id AND albumAsset.albumId = ?
       WHERE asset.deletedAt IS NULL
-        AND asset.id IN (SELECT assetId FROM albumAsset WHERE albumId = ?)
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
-      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs([albumId], [limit, offset])).map(Self.row)
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
+        try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs([albumId], [limit, offset])).map(Self.row)
+      }
     }
   }
 
@@ -178,9 +183,11 @@ extension PhotosLocalStore {
       ORDER BY asset.localDateTime DESC
       LIMIT ? OFFSET ?
       """
-    return try await dbQueue.read { db in
-      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs([visibility.rawValue], args, [limit, offset]))
-        .map(Self.row)
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
+        try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs([visibility.rawValue], args, [limit, offset]))
+          .map(Self.row)
+      }
     }
   }
 
@@ -207,8 +214,10 @@ extension PhotosLocalStore {
       ORDER BY asset.localDateTime DESC
       LIMIT ?
       """
-    return try await dbQueue.read { db in
-      try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit])).map(Self.row)
+    return try await HeirloomSignpost.interval(HeirloomSignpost.timelineQuery) {
+      try await dbQueue.read { db in
+        try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args, [limit])).map(Self.row)
+      }
     }
   }
 

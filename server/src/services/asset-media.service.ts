@@ -23,6 +23,7 @@ import {
   AssetMediaSize,
   UploadFieldName,
 } from 'src/dtos/asset-media.dto.js';
+import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
@@ -30,6 +31,7 @@ import {
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
+  ImageFormat,
   JobName,
   Permission,
   StorageFolder,
@@ -273,6 +275,80 @@ export class AssetMediaService extends BaseService {
       this.logger.error(`Error uploading file ${error}`, error?.stack);
       throw error;
     }
+  }
+
+  async uploadRendition(auth: AuthDto, id: string, file: UploadFile): Promise<AssetResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
+
+    const filename = file.originalName;
+    if (!mimeTypes.isAsset(filename)) {
+      throw new BadRequestException(`Unsupported file type ${filename}`);
+    }
+
+    const asset = await this.assetRepository.getById(id, { files: true });
+    if (!asset) {
+      throw new BadRequestException('Asset not found');
+    }
+
+    const extension = getFilenameExtension(filename).replace('.', '').toLowerCase();
+    const format = (extension === 'jpg' ? ImageFormat.Jpeg : extension) as ImageFormat;
+    const renditionPath = StorageCore.getImagePath(asset, {
+      fileType: AssetFileType.FullSize,
+      format,
+      isEdited: true,
+    });
+
+    const previous = (asset.files ?? []).find((item) => item.type === AssetFileType.FullSize && item.isEdited);
+
+    this.storageCore.ensureFolders(renditionPath);
+    await this.storageRepository.rename(file.originalPath, renditionPath);
+    await this.assetRepository.upsertFile({
+      assetId: id,
+      path: renditionPath,
+      type: AssetFileType.FullSize,
+      isEdited: true,
+    });
+
+    if (previous && previous.path !== renditionPath) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [previous.path] } });
+    }
+
+    // thumbnails and previews re-derive from the rendition; server edits apply on top of it
+    await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
+
+    const updated = await this.assetRepository.getById(id, {
+      exifInfo: true,
+      owner: true,
+      faces: { person: true, viewingUserId: auth.user.id },
+      stack: { assets: true },
+      edits: true,
+      tags: true,
+    });
+
+    if (!updated) {
+      throw new BadRequestException('Asset not found');
+    }
+
+    return mapAsset(updated, { withStack: true, auth });
+  }
+
+  async removeRendition(auth: AuthDto, id: string): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditDelete, ids: [id] });
+
+    const asset = await this.assetRepository.getById(id, { files: true });
+    if (!asset) {
+      throw new BadRequestException('Asset not found');
+    }
+
+    const rendition = (asset.files ?? []).find((item) => item.type === AssetFileType.FullSize && item.isEdited);
+    if (!rendition) {
+      return;
+    }
+
+    await this.assetRepository.deleteFile({ assetId: id, type: AssetFileType.FullSize, edited: true });
+    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [rendition.path] } });
+    // thumbnails fall back to the original (or to server-edit derivations of it)
+    await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
   }
 
   async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {

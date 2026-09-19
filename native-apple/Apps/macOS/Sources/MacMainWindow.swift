@@ -85,6 +85,9 @@ struct MacLibraryBrowser: View {
   @State private var isSelecting = false
   @State private var didRequestInitialSync = false
   @State private var loader = MacGridLoader()
+  /// Timeline version at the last load: seed/sync bump it when the store moves
+  /// outside the change center, which no loader cache entry can observe.
+  @State private var lastDataVersion = -1
   @State private var presentationTask: Task<Void, Never>?
   @State private var selectionModel = GridSelectionModel()
   @State private var toast: String?
@@ -96,25 +99,34 @@ struct MacLibraryBrowser: View {
   @State private var pendingDropMove: (ids: [String], target: MoveTarget)?
   @State private var viewingAssetId: String?
   @State private var sharingInProgress = false
+  /// WP-E E2: edit mode collapses the sidebar (restored on exit).
+  @State private var editModeActive = false
   @Environment(\.openWindow) private var openWindow
   @SceneStorage("MacSidebar.selection") private var restoredSelection: String?
 
-  var body: some View {
-    NavigationSplitView {
-      MacSidebarView(
-        state: state,
-        selection: Binding(
-          get: { selection },
-          set: {
-            selectDestination($0)
-          }
-        ),
-        onDropAssets: handleSidebarDrop,
-        onNewSpace: { showingNewSpace = true },
-        onNewAlbum: { showingNewAlbum = true }
-      )
-      .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-    } detail: {
+  // WP-E E2: sidebar/detail extracted so the body expression stays within the
+  // inference budget.
+  private var mainSidebar: some View {
+    MacSidebarView(
+      state: state,
+      selection: Binding(
+        get: { selection },
+        set: {
+          selectDestination($0)
+        }
+      ),
+      onDropAssets: handleSidebarDrop,
+      onNewSpace: { showingNewSpace = true },
+      onNewAlbum: { showingNewAlbum = true }
+    )
+    // WP-E E2: full-window edit mode collapses the sidebar (restored on exit).
+    .navigationSplitViewColumnWidth(
+      min: editModeActive ? 0 : 200, ideal: editModeActive ? 0 : 240,
+      max: editModeActive ? 0 : 320)
+  }
+
+  private var mainDetail: some View {
+    Group {
       // A plain click/double-click opens the asset in the detail pane, sidebar still visible —
       // matching native Photos. `File > New Viewer Window` still opens a real second NSWindow
       // via `MacWindow.viewer(id)` for anyone who explicitly wants a standalone window.
@@ -127,9 +139,23 @@ struct MacLibraryBrowser: View {
       } else {
         detailView
           .navigationTitle(resolvedTitle)
-        .toolbar { toolbarContent }
+          .toolbar { toolbarContent }
           .onDrop(of: [.fileURL], isTargeted: nil, perform: handleFileDrop)
+          .onReceive(NotificationCenter.default.publisher(for: .macDismissSheetsForQuit)) { _ in
+            dismissSheetsForQuit()
+          }
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .heirloomEditModeActive)) { note in
+      editModeActive = note.userInfo?["active"] as? Bool ?? false
+    }
+  }
+
+  var body: some View {
+    NavigationSplitView {
+      mainSidebar
+    } detail: {
+      mainDetail
     }
     .focusedValue(\.macAssetActions, gridActions)
     .onReceive(NotificationCenter.default.publisher(for: .macSyncNow)) { _ in
@@ -149,6 +175,7 @@ struct MacLibraryBrowser: View {
     .onReceive(NotificationCenter.default.publisher(for: .macImportCamera)) { _ in
       state.showingCameraImport = true
     }
+
     .task(id: reloadKey) { await reload() }
     .task(id: selection?.restorableID ?? "library") {
       // The loader subscribes to the change center in a view-owned task; resubscribing
@@ -295,12 +322,22 @@ struct MacLibraryBrowser: View {
   }
 
   /// Compact footer twin for the empty state (same counts + sync line as the pane footer).
+  /// WP-F F3: while the first snapshot is still loading the footer shows a spinner
+  /// (or cached counts) — never "0 Photos".
   private var emptyFooter: some View {
     let photos = loader.snapshot.photoCount
     let videos = loader.snapshot.videoCount
     return VStack(spacing: 3) {
-      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
-        .font(.headline)
+      if let counts = LaunchGate.footerCountsText(
+        photos: photos, videos: videos, phaseIsLoading: loader.phase == .loading,
+        hasRows: !loader.snapshot.rows.isEmpty)
+      {
+        Text(counts)
+          .font(.headline)
+      } else {
+        ProgressView()
+          .accessibilityIdentifier("library-loading")
+      }
       Text(syncStatusText)
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -622,6 +659,18 @@ struct MacLibraryBrowser: View {
     return "Sync has not completed yet"
   }
 
+  /// Quit path (HeirloomAppDelegate): sheets carry no unsaved data, so drop every
+  /// binding — ended AppKit sheets must not re-present while terminating.
+  private func dismissSheetsForQuit() {
+    moveSheetIds = nil
+    addToAlbumIds = nil
+    showingNewSpace = false
+    showingNewAlbum = false
+    managingSpace = nil
+    state.showingCameraImport = false
+    state.showingImportChooser = false
+  }
+
   private func selectDestination(_ destination: SidebarDestination?) {
     guard let destination else { selection = nil; restoredSelection = nil; return }
     if destination == .locked {
@@ -641,6 +690,14 @@ struct MacLibraryBrowser: View {
 
   private func reload() async {
     guard let userId = state.userId, let selection else { return }
+    // The store moved under the loader (seed batch landed, sync delta applied)
+    // since the last load: cached snapshots predate it, so force revalidation.
+    // Stale entries still render synchronously inside `load`; only the clean-hit
+    // early return is skipped. Navigations without a bump keep full F1 caching.
+    if state.timelineVersion != lastDataVersion {
+      lastDataVersion = state.timelineVersion
+      loader.markSnapshotsDirty()
+    }
     loader.pipeline = state.pipeline
     // Sync the presentation before the fetch so `load` freezes the current order,
     // filters and userId. Unchanged input is a no-op inside `setPresentation`.
@@ -793,8 +850,7 @@ struct MacLibraryBrowser: View {
   /// world on) have no server, so favorite/trash apply straight to the local store.
   /// Production path unchanged.
   private var isFixtureSeeded: Bool {
-    let args = CommandLine.arguments
-    return args.contains("-fixture-seed") || args.contains("--fixture-seed")
+    HeirloomLaunchFlag.isPresent("-fixture-seed", legacy: "--fixture-seed")
   }
 
   private func toggleFavorite(ids: [String]) {
@@ -1106,8 +1162,17 @@ struct MacTimelineGridPane: View {
     let photos = loader.snapshot.photoCount
     let videos = loader.snapshot.videoCount
     return VStack(spacing: 3) {
-      Text("\(photos) Photo\(photos == 1 ? "" : "s"), \(videos) Video\(videos == 1 ? "" : "s")")
-        .font(.headline)
+      // WP-F F3: never "0 Photos" while loading — spinner until the first rows land.
+      if let counts = LaunchGate.footerCountsText(
+        photos: photos, videos: videos, phaseIsLoading: loader.phase == .loading,
+        hasRows: !loader.snapshot.rows.isEmpty)
+      {
+        Text(counts)
+          .font(.headline)
+      } else {
+        ProgressView()
+          .accessibilityIdentifier("library-loading")
+      }
       Text(syncStatusText)
         .font(.caption)
         .foregroundStyle(.secondary)

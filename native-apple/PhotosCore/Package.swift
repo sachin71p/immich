@@ -3,7 +3,8 @@ import PackageDescription
 
 let package = Package(
   name: "PhotosCore",
-  platforms: [.iOS("27.0"), .macOS("27.0")],
+  // 26.6 floor matches project.yml (Tart VM fleet); see note there.
+  platforms: [.iOS("27.0"), .macOS("26.6")],
   products: [
     .library(name: "ImmichAPI", targets: ["ImmichAPI"]),
     .library(name: "CoreModel", targets: ["CoreModel"]),

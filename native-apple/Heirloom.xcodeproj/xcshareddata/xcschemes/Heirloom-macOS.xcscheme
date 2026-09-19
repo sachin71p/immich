@@ -44,6 +44,17 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "BEFA62EBF592CE1BEC3D2747"
+               BuildableName = "Heirloom-macOS-Tests.xctest"
+               BlueprintName = "Heirloom-macOS-Tests"
+               ReferencedContainer = "container:Heirloom.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "1687D3DFBCC71FF95AB63C24"
                BuildableName = "Heirloom-macOS-UITests.xctest"
                BlueprintName = "Heirloom-macOS-UITests"

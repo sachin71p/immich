@@ -35,9 +35,9 @@ help:
 	@echo "  make build-macos-debug  Build the macOS app in Debug (developer iteration)"
 	@echo "  make install-macos      Build and install the macOS app to /Applications"
 	@echo "  make test-core          Run the PhotosCore SwiftPM test suite"
-	@echo "  make test-ios-ui        Run the iOS UI tests (Heirloom-iOS-UITests, Simulator)"
-	@echo "  make test-ios-ui-remote Run the iOS UI tests in the bridged VM (same TEST_FILTER)"
-	@echo "  make test-macos-ui      Run the macOS UI tests (Heirloom-macOS-UITests)"
+	@echo "  make test-ios-ui        Run the iOS UI tests in the bridged VM (RUN_ON_HOST=1 for host)"
+	@echo "  make test-ios-ui-remote Run the iOS UI tests in the bridged VM (explicit guest, TEST_FILTER scope)"
+	@echo "  make test-macos-ui      Run the macOS UI tests in a Tart VM (RUN_ON_HOST=1 for host)"
 	@echo "  make mock-server        Start the local Heirloom server via Docker (built from source)"
 	@echo "  make mock-server-down   Stop the local Docker server"
 	@echo "  make mock-server-logs   Tail the local server's logs"
@@ -158,31 +158,21 @@ install-macos: build-macos
 test-core:
 	swift test --package-path $(NATIVE_DIR)/PhotosCore
 
-# WP-T (TEST-PLAN): the iOS parity harness target. Runs the Heirloom-iOS-UITests
-# bundle on the Simulator. Perf/budget tests skip on the Simulator by design
-# (Release-on-physical-device-only); pass TEST_FILTER to run a narrow slice,
-# e.g. `make test-ios-ui TEST_FILTER=ParityViewerUITests`. Perf numbers are
-# only valid from a Release build on a physical device (see F6/WP-B).
-test-ios-ui: xcodegen
-	@mkdir -p $(MODULE_CACHE)
-	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild test \
-		-project Heirloom.xcodeproj \
-		-scheme Heirloom-iOS \
-		-configuration $(CONFIGURATION) \
-		-destination 'platform=iOS Simulator,name=$(SIMULATOR_NAME)' \
-		-derivedDataPath .build/DerivedData \
-		-skipPackagePluginValidation \
-		-allowProvisioningUpdates \
-		-only-testing:Heirloom-iOS-UITests$(if $(TEST_FILTER),/$(TEST_FILTER))
-
-# Remote-VM variant of test-ios-ui (from shared-libraries bd501a8da, retargeted
-# so this branch's local TEST_FILTER workflow keeps working). Same scope
-# conventions: TEST_FILTER narrows (e.g. ParityViewerUITests), SIMULATOR_NAME
-# picks the guest simulator. Perf budgets stay gated on host/device (guest sim
-# graphics are software-rendered).
+# iOS UI remote explicit-guest form: keeps the TEST_FILTER scope convention
+# (e.g. `make test-ios-ui-remote TEST_FILTER=ParityViewerUITests`) against the
+# unified VM-first `test-ios-ui` below. Perf budgets stay gated on host/device
+# (guest sim graphics are software-rendered).
 test-ios-ui-remote:
 	cd $(NATIVE_DIR) && SIMULATOR_NAME="$(SIMULATOR_NAME)" ONLY_TESTING="Heirloom-iOS-UITests$(if $(TEST_FILTER),/$(TEST_FILTER))" ./scripts/run-ios-ui-tests.sh $(if $(GUEST),--guest $(GUEST))
 
+# macOS UI tests run isolated in a disposable Tart VM by default so the host
+# desktop is never interrupted (see native-apple/scripts/run-macos-ui-tests.sh).
+# RUN_ON_HOST=1 restores the legacy on-host xcodebuild run. ONLY_TESTING narrows
+# the scope (space-separated); CONFIGURATION defaults to Debug in the runner.
+# REMOTE=user@macbook2 builds here, tests in that Mac's Tart VM (same checkout path).
+# GUEST defaults in the runner to the reserved-IP bridged VM (admin@192.168.4.58);
+# override per-run with GUEST= / REMOTE=, opt out to a local disposable clone with TART_GUEST=.
+ifeq ($(RUN_ON_HOST),1)
 test-macos-ui: xcodegen
 	@mkdir -p $(MODULE_CACHE)
 	cd $(NATIVE_DIR) && CLANG_MODULE_CACHE_PATH="$$PWD/.build/clang-module-cache" xcodebuild test \
@@ -194,6 +184,26 @@ test-macos-ui: xcodegen
 		-skipPackagePluginValidation \
 		-allowProvisioningUpdates \
 		-only-testing:Heirloom-macOS-UITests
+else
+test-macos-ui:
+	cd $(NATIVE_DIR) && ./scripts/run-macos-ui-tests.sh $(if $(REMOTE),--remote $(REMOTE)) $(if $(GUEST),--guest $(GUEST)) $(if $(FULL_DERIVED_DATA),--full-derived-data)
+endif
+
+# iOS UI tests run in the bridged Tart guest VM by default so sim runs stop
+# competing with the host's desktop, device installs, and the macOS suite
+# (see native-apple/scripts/run-ios-ui-tests.sh). RUN_ON_HOST=1 restores a
+# local xcodebuild run. ONLY_TESTING narrows the scope (space-separated);
+# CONFIGURATION defaults to Debug in the runner; SIMULATOR_NAME defaults to
+# iPhone 17e. GUEST defaults in the runner to the reserved-IP bridged VM
+# (admin@192.168.4.58); override per-run with GUEST=.
+ifeq ($(RUN_ON_HOST),1)
+test-ios-ui: xcodegen
+	@mkdir -p $(MODULE_CACHE)
+	cd $(NATIVE_DIR) && ./scripts/run-ios-ui-tests.sh --host
+else
+test-ios-ui:
+	cd $(NATIVE_DIR) && ./scripts/run-ios-ui-tests.sh $(if $(GUEST),--guest $(GUEST)) $(if $(FULL_DERIVED_DATA),--full-derived-data)
+endif
 
 $(DOCKER_DIR)/.env:
 	cp $(DOCKER_DIR)/example.env $(DOCKER_DIR)/.env

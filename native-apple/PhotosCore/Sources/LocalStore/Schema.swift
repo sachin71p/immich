@@ -321,6 +321,91 @@ enum Schema {
           """)
     }
 
+    // WP-F F2: the grid projection no longer joins `assetExif` (the join forced a
+    // per-row lookup on every timeline/filter query). The one grid-consumed exif field —
+    // `projectionType` for the panorama classifier — is denormalized onto `asset`,
+    // backfilled here, and mirrored on every `.assetExif` apply (LocalStore+Apply).
+    //
+    // Covering/partial indexes match each query's WHERE + ORDER BY so EXPLAIN QUERY PLAN
+    // serves timeline and filter pages from `asset_timeline*` with no bare `SCAN asset`:
+    // `asset_timeline` leads with `localDateTime` (every grid ORDER BY) and carries the
+    // whole projection, so the hot path never touches the heap; the lean variants give
+    // selective seeks their equality prefix. Verified against EXPLAIN QUERY PLAN on a 5k
+    // fixture (see TimelineQueryPlanTests): the pre-existing narrow
+    // `asset_on_localDateTime` provably hijacked every grid ORDER BY into a non-covering
+    // index scan with one heap fetch per row, so v5 retires it — data-preserving
+    // (indexes only) and idempotent (`IF EXISTS` + migrator tracking), the one
+    // deliberate exception to "migrations only add".
+    migrator.registerMigration("v5_timeline_perf") { db in
+      let existingColumns: [String] = try Row.fetchAll(db, sql: "PRAGMA table_info(asset)").map {
+        $0["name"]
+      }
+      if !existingColumns.contains("projectionType") {
+        try db.alter(table: "asset") { t in
+          t.add(column: "projectionType", .text)
+        }
+      }
+      // Partial-schema DBs (and the DurationFixTests hand-built v1 shape) may lack
+      // `assetExif` — the backfill is a no-op there instead of a failed migration.
+      let hasExifTable =
+        try String.fetchOne(
+          db, sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assetExif'")
+        != nil
+      if hasExifTable {
+        try db.execute(sql: """
+          UPDATE asset SET projectionType = (
+            SELECT assetExif.projectionType FROM assetExif WHERE assetExif.assetId = asset.id
+          ) WHERE projectionType IS NULL
+          """)
+      }
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline
+        ON asset(localDateTime DESC, id, visibility, ownerId, spaceId, libraryId, thumbhash,
+          width, height, isFavorite, isEdited, durationSeconds, originalFileName, type, projectionType)
+        WHERE deletedAt IS NULL AND visibility != 'locked'
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_space
+        ON asset(spaceId, visibility, localDateTime DESC) WHERE deletedAt IS NULL
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_library
+        ON asset(libraryId, visibility, localDateTime DESC) WHERE deletedAt IS NULL
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_owner
+        ON asset(ownerId, visibility, localDateTime DESC) WHERE deletedAt IS NULL
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_type
+        ON asset(type, visibility, localDateTime DESC) WHERE deletedAt IS NULL
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_favorite
+        ON asset(isFavorite, visibility, localDateTime DESC) WHERE deletedAt IS NULL
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_created
+        ON asset(createdAt DESC) WHERE deletedAt IS NULL AND visibility != 'locked'
+        """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS asset_timeline_deleted
+        ON asset(deletedAt DESC)
+        """)
+      // Same partial-schema guard as the backfill above: only index tables that
+      // exist (the DurationFixTests hand-built v1 shape has neither).
+      let hasAlbumAsset =
+        try String.fetchOne(
+          db, sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'albumAsset'")
+        != nil
+      if hasAlbumAsset {
+        try db.execute(sql: """
+          CREATE INDEX IF NOT EXISTS albumAsset_on_albumId ON albumAsset(albumId)
+          """)
+      }
+      try db.execute(sql: "DROP INDEX IF EXISTS asset_on_localDateTime")
+    }
+
     return migrator
   }
 }

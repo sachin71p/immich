@@ -13,12 +13,23 @@ struct MacMoveSheet: View {
   var assetIds: [String]
   var onDone: (_ results: [MoveResult]) -> Void
 
+  /// Tagged List rows so currents and targets never share a `ForEach` identity,
+  /// even when the cross-group union offers another group's current container.
+  enum SheetRow: Hashable {
+    case current(MoveTarget)
+    case target(MoveTarget)
+  }
+
   @State private var targets: [MoveTarget] = []
   @State private var currentContainers: [MoveTarget] = []
   @State private var selected: MoveTarget?
   @State private var pendingConfirm: MoveTarget?
   @State private var error: String?
   @State private var isWorking = false
+
+  private var sheetRows: [SheetRow] {
+    currentContainers.map(SheetRow.current) + targets.map(SheetRow.target)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -34,31 +45,36 @@ struct MacMoveSheet: View {
           .accessibilityIdentifier("move-sheet-empty")
       } else {
         List {
-          ForEach(currentContainers, id: \.self) { current in
-            HStack {
-              Label(Self.title(for: current, state: state), systemImage: Self.icon(for: current))
-              Spacer()
-              Text("Current").font(.caption).foregroundStyle(.secondary)
-            }
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("move-current-\(Self.key(for: current))")
-          }
-          .disabled(true)
-          ForEach(targets, id: \.self) { target in
-            Button {
-              selected = target
-            } label: {
+          // One ForEach over tagged rows: a target can equal another group's current
+          // container (union across groups), and two sibling `ForEach(..., id: \.self)`
+          // would hand SwiftUI duplicate identities — rows duplicate and targets vanish.
+          ForEach(sheetRows, id: \.self) { row in
+            switch row {
+            case .current(let current):
               HStack {
-                Label(Self.title(for: target, state: state), systemImage: Self.icon(for: target))
+                Label(Self.title(for: current, state: state), systemImage: Self.icon(for: current))
                 Spacer()
-                if selected == target {
-                  Image(systemName: "checkmark")
+                Text("Current").font(.caption).foregroundStyle(.secondary)
+              }
+              .foregroundStyle(.secondary)
+              .disabled(true)
+              .accessibilityIdentifier("move-current-\(Self.key(for: current))")
+            case .target(let target):
+              Button {
+                selected = target
+              } label: {
+                HStack {
+                  Label(Self.title(for: target, state: state), systemImage: Self.icon(for: target))
+                  Spacer()
+                  if selected == target {
+                    Image(systemName: "checkmark")
+                  }
                 }
               }
+              .buttonStyle(.plain)
+              .disabled(isWorking)
+              .accessibilityIdentifier("move-target-\(Self.key(for: target))")
             }
-            .buttonStyle(.plain)
-            .disabled(isWorking)
-            .accessibilityIdentifier("move-target-\(Self.key(for: target))")
           }
         }
         .frame(minHeight: 160)
