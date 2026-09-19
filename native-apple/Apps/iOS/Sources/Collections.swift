@@ -251,16 +251,9 @@ struct CollectionsView: View {
       NavigationLink {
         PlacesView().environmentObject(session)
       } label: {
-        ZStack(alignment: .bottomLeading) {
-          RoundedRectangle(cornerRadius: 16).fill(.gray.opacity(0.25))
-          Image(systemName: "map.fill")
-            .font(.largeTitle).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-          Text("Map").font(.subheadline).fontWeight(.medium).foregroundStyle(.white)
-            .padding(10)
-            .shadow(color: .black.opacity(0.6), radius: 4)
-        }
-        .aspectRatio(1, contentMode: .fit)
+        MapSnapshotTile(subtitle: "Map")
+          .environmentObject(session)
+          .aspectRatio(1, contentMode: .fit)
       }
       .buttonStyle(.plain)
       .frame(width: 160)
@@ -574,17 +567,10 @@ struct CollectionsView: View {
       NavigationLink {
         PlacesView().environmentObject(session)
       } label: {
-        ZStack(alignment: .bottomLeading) {
-          RoundedRectangle(cornerRadius: 16).fill(.gray.opacity(0.25))
-            .frame(height: 120)
-          Image(systemName: "map.fill")
-            .font(.largeTitle).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-          Text(loader.counts.map { "\($0.located) places" } ?? "Map")
-            .font(.subheadline).fontWeight(.medium).foregroundStyle(.white)
-            .padding(10)
-            .shadow(color: .black.opacity(0.6), radius: 4)
-        }
+        MapSnapshotTile(
+          subtitle: loader.counts.map { "\($0.located) places" } ?? "Map")
+          .environmentObject(session)
+          .frame(height: 120)
       }
       .buttonStyle(.plain)
       .padding(.horizontal)

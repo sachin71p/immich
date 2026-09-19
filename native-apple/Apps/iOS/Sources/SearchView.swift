@@ -209,7 +209,9 @@ struct SearchView: View {
             .buttonStyle(.bordered)
           }
         }
+        .accessibilityIdentifier("search-chip-row-fade")
       }
+      .chipRowFade()
     }
     .accessibilityIdentifier("search-nl-suggestions")
   }
@@ -287,7 +289,9 @@ struct SearchView: View {
               .buttonStyle(.plain)
             }
           }
+          .accessibilityIdentifier("search-chip-row-fade")
         }
+        .chipRowFade()
         .accessibilityIdentifier("search-recents-thumbnails")
       }
     }
@@ -326,7 +330,9 @@ struct SearchView: View {
             .buttonStyle(.bordered)
           }
         }
+        .accessibilityIdentifier("search-chip-row-fade")
       }
+      .chipRowFade()
     }
     .accessibilityIdentifier("search-suggestions")
   }
@@ -343,7 +349,9 @@ struct SearchView: View {
                   .buttonStyle(.bordered)
               }
             }
+            .accessibilityIdentifier("search-chip-row-fade")
           }
+          .chipRowFade()
         }
       }
     }
@@ -685,5 +693,35 @@ extension AppSession {
   func searchTokenProvider() -> @Sendable () async -> String? {
     let tokenStore = connection?.tokenStore
     return { @Sendable in await tokenStore?.get() }
+  }
+}
+
+// MARK: - chip-row trailing fade (LP6)
+
+// Photos fades the trailing edge of its horizontal suggestion rows to signal
+// overflow. The Search chip rows scrolled full-bleed with a hard clip, so this
+// masks the trailing edge of any horizontal chip ScrollView it is applied to.
+// Purely visual: no layout, hit-testing, or scroll-offset changes.
+private struct ChipRowFade: ViewModifier {
+  var width: CGFloat = 28
+
+  func body(content: Content) -> some View {
+    content.mask(
+      HStack(spacing: 0) {
+        Rectangle().fill(.white)
+        LinearGradient(
+          colors: [.white, .clear],
+          startPoint: .leading, endPoint: .trailing
+        )
+        .frame(width: width)
+      }
+    )
+  }
+}
+
+extension View {
+  /// Trailing-edge overflow fade for horizontal chip rows (LP6).
+  fileprivate func chipRowFade(width: CGFloat = 28) -> some View {
+    modifier(ChipRowFade(width: width))
   }
 }

@@ -47,6 +47,13 @@ final class PhotoGridViewController: UIViewController {
   /// diffing, scrubbing and the visible range.
   var showsHeaders = true
 
+  /// LP1: maximum pinched-out column density. Apple Photos shows ~15–20
+  /// columns fully zoomed out; the base cap of 13 stops short of that range.
+  /// Single source of truth — the SwiftUI stepper (LibraryView) and the pinch
+  /// steps below both derive from this. Prefetch/windowing stay consistent:
+  /// they operate on id windows, never on column counts (parity-f).
+  static let maxColumns = 18
+
   private(set) var currentSnapshot = GridSnapshot.empty
   private var appliedGeneration = -1
   private var currentColumns = 5
@@ -113,7 +120,7 @@ final class PhotoGridViewController: UIViewController {
   /// Rebuilds the fixed square layout only when the column count changed, keeping the
   /// pinch anchor item at its viewport position.
   func setColumns(_ columns: Int, animated: Bool = true) {
-    let clamped = min(13, max(1, columns))
+    let clamped = min(Self.maxColumns, max(1, columns))
     guard clamped != currentColumns else { return }
     let anchor = anchorId()
     let anchorTop = anchor.flatMap { anchorTopOffset(for: $0) }
@@ -518,7 +525,7 @@ final class PhotoGridViewController: UIViewController {
     // WP-G G7: running past an extreme fires onPinchEdge instead of clamping
     // silently — the parent couples density to the time level (All ↔ Months ↔
     // Years) so the zoom pills move with the pinch.
-    let steps = [1, 3, 5, 9, 13]
+    let steps = [1, 3, 5, 9, 13, Self.maxColumns]
     let current = currentColumns
     if gesture.scale > 1.3 {
       if let next = steps.last(where: { $0 < current }) {

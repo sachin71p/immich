@@ -101,17 +101,17 @@ final class ParityGridUITests: XCTestCase {
     XCTAssertTrue(grid.waitForExistence(timeout: 60))
     // Column density persists across runs (a leftover 1-column grid realizes
     // only a couple of cells), so pin the grid to max density through the
-    // View Options stepper — twelve Zoom Ins from any state land on 13
-    // columns. The stepper touches columns only, never the time level, so
-    // this is safe on both sides of the G7 continuum (a pinch past the edge
-    // would not be).
+    // View Options stepper — twenty Zoom Ins from any state land on max
+    // density (LP1: 18 columns). The stepper touches columns only, never the
+    // time level, so this is safe on both sides of the G7 continuum (a pinch
+    // past the edge would not be).
     // Drilled-in submenu leaves lose their identifiers on iOS 27 (verified by
     // AX dump — see LibraryChromeUITests.submenuItemLabel), so the leaf is
     // located by its visible label, reopening the menu each round since menu
     // taps dismiss.
     let zoomInLeaf = app.descendants(matching: .button).matching(
       NSPredicate(format: "label == %@", "Zoom In"))
-    for _ in 0..<12 {
+    for _ in 0..<20 {
       if zoomInLeaf.firstMatch.waitForExistence(timeout: 2) {
         zoomInLeaf.firstMatch.tap()
         continue
@@ -170,6 +170,73 @@ final class ParityGridUITests: XCTestCase {
     grid.pinch(withScale: 2.0, velocity: 1.0)
     grid.swipeUp(velocity: .fast)
     Parity.require("grid-floating-date-badge", in: app, gap: "G5", owner: "WP-G")
+  }
+
+  func test_gridMaxDensity_reachesPhotosRange() throws {
+    let app = Parity.launch()
+    // LP1: Apple Photos shows ~15–20 columns fully zoomed out; the base cap
+    // of 13 stops short. Drive the View Options stepper to saturation from
+    // any persisted density, then read the grid-columns mirror. The stepper
+    // touches columns only, never the time level, so this is safe on both
+    // sides of the G7 continuum.
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 60))
+    let zoomInLeaf = app.descendants(matching: .button).matching(
+      NSPredicate(format: "label == %@", "Zoom In"))
+    for _ in 0..<20 {
+      if zoomInLeaf.firstMatch.waitForExistence(timeout: 2) {
+        zoomInLeaf.firstMatch.tap()
+        continue
+      }
+      let menu = app.descendants(matching: .any)["library-filter-menu"]
+      guard menu.waitForExistence(timeout: 10) else {
+        XCTFail("LP1: filter menu did not open while driving density to max")
+        return
+      }
+      menu.tap()
+      let submenu = app.descendants(matching: .any)["submenu-view-options"]
+      guard submenu.waitForExistence(timeout: 10) else {
+        XCTFail("LP1: View Options submenu missing while driving density to max")
+        return
+      }
+      submenu.tap()
+      guard zoomInLeaf.firstMatch.waitForExistence(timeout: 10) else {
+        XCTFail("LP1: Zoom In leaf missing while driving density to max")
+        return
+      }
+      zoomInLeaf.firstMatch.tap()
+    }
+    let mirror = app.descendants(matching: .any)["grid-columns"]
+    XCTAssertTrue(
+      mirror.waitForExistence(timeout: 5),
+      "LP1: expected accessibilityIdentifier \"grid-columns\"")
+    let density = Int(mirror.label) ?? 0
+    XCTAssertGreaterThanOrEqual(
+      density, 15,
+      "LP1: max grid density should reach the Photos range (15–20 columns), found \(density)")
+    XCTAssertGreaterThan(
+      grid.cells.count, 0,
+      "LP1: max-density grid must stay populated")
+    // Suite hygiene (@AppStorage persists columns): leave the grid near the
+    // default density for whatever test launches next. The LP1 assertions
+    // above already ran; this only restores shared state, the same way
+    // testViewOptions restores its toggles.
+    let zoomOutLeaf = app.descendants(matching: .button).matching(
+      NSPredicate(format: "label == %@", "Zoom Out"))
+    for _ in 0..<14 {
+      if zoomOutLeaf.firstMatch.waitForExistence(timeout: 2) {
+        zoomOutLeaf.firstMatch.tap()
+        continue
+      }
+      let menu = app.descendants(matching: .any)["library-filter-menu"]
+      guard menu.waitForExistence(timeout: 10) else { return }
+      menu.tap()
+      let submenu = app.descendants(matching: .any)["submenu-view-options"]
+      guard submenu.waitForExistence(timeout: 10) else { return }
+      submenu.tap()
+      guard zoomOutLeaf.firstMatch.waitForExistence(timeout: 10) else { return }
+      zoomOutLeaf.firstMatch.tap()
+    }
   }
 
   func test_gridPinch_couplesColumnDensityToTimeLevel() throws {

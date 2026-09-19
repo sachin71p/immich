@@ -146,4 +146,23 @@ final class ViewerUITests: XCTestCase {
     XCTAssertTrue(favorite.isHittable, "Favorite button should be hittable")
     favorite.tap()
   }
+
+  /// LP3/Track-B (pair 04): the centre date pill is compact like Photos — the
+  /// detail line carries weekday + time only and never repeats the date — and
+  /// the filmstrip uses Photos-scale thumbs, not the oversized 44x52 cells.
+  func testViewerTitlePill_isCompactWeekdayTimeWithSmallFilmstrip() throws {
+    let app = XCUIApplication()
+    openViewer(app)
+    let detail = app.staticTexts["viewer-title-weekday"]
+    XCTAssertTrue(
+      detail.waitForExistence(timeout: 10), "LP3: title detail line should exist")
+    XCTAssertNil(
+      detail.label.range(of: "\\d{4}", options: .regularExpression),
+      "LP3: detail line must not repeat the date (Photos shows weekday + time only): \(detail.label)")
+    let strip = app.descendants(matching: .any)["viewer-filmstrip"]
+    XCTAssertTrue(strip.waitForExistence(timeout: 10), "LP3: filmstrip should exist")
+    XCTAssertLessThanOrEqual(
+      strip.frame.height, 44,
+      "LP3: filmstrip should use Photos-scale thumbs (was 52pt tall)")
+  }
 }

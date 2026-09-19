@@ -31,6 +31,29 @@ final class ContextMenuUITests: XCTestCase {
       "G4: a grid long-press must present the context menu, not open the viewer")
   }
 
+  func test_grid_longPress_showsIconHeaderRow() throws {
+    // LP8/Track C: Photos' grid long-press menu carries an icon header row
+    // (Copy/Hide/Share/Favorite shortcuts above the list,
+    // photos/05-grid-longpress-menu.png). Duplicate stays OUT (no backend);
+    // Delete stays list-only behind its confirmation, never auto-tapped.
+    let app = Parity.launch()
+    let firstCell = app.collectionViews.cells.firstMatch
+    XCTAssertTrue(firstCell.waitForExistence(timeout: 30))
+    firstCell.press(forDuration: 0.8)
+    Parity.require("grid-context-menu", in: app, gap: "LP8", owner: "Track C")
+    Parity.require("grid-context-header", in: app, gap: "LP8", owner: "Track C")
+    for header in [
+      "grid-context-header-copy", "grid-context-header-hide",
+      "grid-context-header-share", "grid-context-header-favorite",
+    ] {
+      Parity.require(header, in: app, gap: "LP8", owner: "Track C")
+    }
+    XCTAssertFalse(
+      app.descendants(matching: .any)["grid-context-header-duplicate"]
+        .waitForExistence(timeout: 3),
+      "LP8: Duplicate must stay out of the menu (no duplicate backend)")
+  }
+
   func test_viewerLongPress_opensContextMenu() throws {
     let app = Parity.launch()
     Parity.openViewer(app)

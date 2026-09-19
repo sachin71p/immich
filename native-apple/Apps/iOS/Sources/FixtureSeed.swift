@@ -148,6 +148,23 @@ enum FixtureSeed {
     var changes: [SyncChange] = assets.map { .asset($0) }
     changes += [
       .assetExif(AssetExif(assetId: "fx000004", latitude: 37.7749, longitude: -122.4194, city: "San Francisco", make: "Apple")),
+      // LP4/Track-B: camera EXIF on the newest assets (whichever scope the grid
+      // opens, the first cell's info panel shows real exposure cells, not the
+      // "No exposure details" fallback). Exposure-only on purpose: no lat/lon or
+      // city, so Places/Trips pin sets are untouched. Values mirror pair 05's
+      // Photos side (ISO 80 · 24 mm · ƒ1.78 · 1/95 s).
+      .assetExif(
+        AssetExif(
+          assetId: "fx000012", make: "Apple", model: "iPhone 17 Pro Max", lensModel: "Main Camera",
+          fNumber: 1.78, focalLength: 24, iso: 80, exposureTime: "1/95")),
+      .assetExif(
+        AssetExif(
+          assetId: "fx000011", make: "Apple", model: "iPhone 17 Pro Max", lensModel: "Main Camera",
+          fNumber: 1.78, focalLength: 24, iso: 80, exposureTime: "1/95")),
+      .assetExif(
+        AssetExif(
+          assetId: "fx000010", make: "Apple", model: "iPhone 17 Pro Max", lensModel: "Main Camera",
+          fNumber: 1.78, focalLength: 24, iso: 80, exposureTime: "1/95")),
       .albumAsset(albumId: "al1", assetId: "fx000001"),
       .albumAsset(albumId: "al1", assetId: "fx000002"),
       // WP-P P5/P7 evidence: one saved memory (renders a real card through the

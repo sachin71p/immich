@@ -33,4 +33,28 @@ final class CollectionsPerfUITests: XCTestCase {
     print("collections-people-tile-ms=\(Int(peopleMs))")
     XCTAssertTrue(bob, "people stage should fill (fixture person Bob)")
   }
+
+  /// LP7: both Places entry points render the native map-snapshot tile, not
+  /// the gray `map.fill` placeholder. The snapshot needs map-tile network, so
+  /// the offline/empty fallback (explicit gray tile with its own identifier)
+  /// also satisfies this test — either way the new tile code ran. Fails red
+  /// on base, where neither identifier exists.
+  func test_placesTile_rendersSnapshotOrExplicitFallback() throws {
+    let app = Parity.launch()
+    app.tabBars.buttons["Collections"].tap()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["collections"].waitForExistence(timeout: 30),
+      "LP7: Collections should render")
+    var found = app.descendants(matching: .any)["places-tile"].exists
+    for _ in 0..<15 where !found {
+      app.swipeUp()
+      found = app.descendants(matching: .any)["places-tile"].exists
+    }
+    XCTAssertTrue(found, "LP7: the wide Places tile should exist in Collections")
+    let snapshot = app.descendants(matching: .any)["places-tile-snapshot"]
+    if snapshot.waitForExistence(timeout: 15) { return }
+    XCTAssertTrue(
+      app.descendants(matching: .any)["places-tile-map-fallback"].exists,
+      "LP7: Places tile should render a native map snapshot or the explicit fallback")
+  }
 }
