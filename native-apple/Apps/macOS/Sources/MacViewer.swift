@@ -720,13 +720,34 @@ struct MacViewerView: View {
     editLibraryIds = Set(libs.map { $0.id })
   }
 
+  /// Original-download failure with the HTTP status and body size attached, so
+  /// edit mode can report *why* the canvas never sharpened instead of falling
+  /// back to the proxy blur in silence.
+  enum EditDownloadError: Error, LocalizedError {
+    case http(status: Int, bytes: Int)
+
+    var errorDescription: String? {
+      switch self {
+      case .http(let status, let bytes):
+        return "original download failed (HTTP \(status), \(bytes) bytes)"
+      }
+    }
+  }
+
   private func downloadOriginal(_ asset: Asset) async throws -> Data {
     var request = URLRequest(
       url: MediaEndpoint(serverURL: state.serverURL, assetID: asset.id).originalURL())
     if let token = await state.connection.tokenStore.get() {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
-    let (data, _) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await URLSession.shared.data(for: request)
+    // A non-2xx body (JSON error, login page) is not image data: surfacing it
+    // here beats a silent blur later (NSImage decodes it to nil and the canvas
+    // falls back to the proxy with no alert).
+    let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+    guard (200..<300).contains(status) else {
+      throw EditDownloadError.http(status: status, bytes: data.count)
+    }
     return data
   }
 

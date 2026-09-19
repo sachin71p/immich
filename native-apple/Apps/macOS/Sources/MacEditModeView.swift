@@ -1837,9 +1837,16 @@ extension MacEditModeView {
 
   private func promoteOriginal() {
     // Once the original arrives, re-render the canvas from it (spec E2).
-    guard loader.state == .ready, let data = loader.originalData,
-      let image = NSImage(data: data)
-    else { return }
+    // Every exit is loud: a silent return here strands the canvas on the proxy
+    // blur with sliders live and no alert, which is indistinguishable from hang.
+    guard loader.state == .ready, let data = loader.originalData else { return }
+    guard let image = NSImage(data: data) else {
+      loader.fail()
+      originalPhase = loader.state
+      saveError =
+        "The original downloaded (\(data.count) bytes) but could not be decoded as an image. Editing the preview; Done is disabled."
+      return
+    }
     canvasSource = image
     rerenderPreview()
   }
