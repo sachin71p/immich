@@ -314,12 +314,12 @@ public struct CameraModel: Sendable, Hashable, Identifiable {
     if ["dji", "skydio", "parrot", "autel"].contains(where: fingerprint.contains) { return "Drone" }
     if ["iphone", "pixel", "galaxy", "samsung", "oneplus", "xiaomi", "huawei"].contains(where: fingerprint.contains) { return "Phone" }
     if ["canon", "nikon", "sony", "fujifilm", "leica", "olympus", "pentax", "panasonic"].contains(where: fingerprint.contains) { return "DSLR" }
-    return "Camera"
+    return "Others"
   }
 }
 
 /// A user-facing device class. EXIF model names stay in `models` for the query, while the shell
-/// presents only broad Photos-style groups such as Phone, DSLR, Drone, and Action Camera.
+/// presents only broad Photos-style groups such as Phone, DSLR, Drone, Action Camera, and Others.
 public struct CameraCategory: Sendable, Hashable, Identifiable {
   public var name: String
   public var models: [String]
@@ -335,7 +335,7 @@ public struct CameraCategory: Sendable, Hashable, Identifiable {
 
   public static func grouped(_ cameras: [CameraModel]) -> [CameraCategory] {
     let grouped = Dictionary(grouping: cameras, by: \.category)
-    let order = ["Phone", "DSLR", "Drone", "Action Camera", "Camera"]
+    let order = ["Phone", "DSLR", "Drone", "Action Camera", "Others"]
     return grouped.map { name, models in
       CameraCategory(
         name: name,
