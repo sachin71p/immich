@@ -64,11 +64,14 @@ extension PhotosLocalStore {
       AND asset.id NOT IN (SELECT livePhotoVideoId FROM asset WHERE livePhotoVideoId IS NOT NULL)
     """
 
-  /// The compact index: one SQL query ordered by date desc. Flags arrive as integers so
-  /// Swift decodes 100k+ rows without per-row string parsing (julianday parses the stored
-  /// wall-time-as-UTC text in C, same trick as the row projection).
-  public func timelineIndex(scope: ContainerScope) async throws -> TimelineIndex {
+  /// The compact index: one SQL query ordered by date desc by default. Flags arrive
+  /// as integers so Swift decodes 100k+ rows without per-row string parsing
+  /// (julianday parses the stored wall-time-as-UTC text in C, same trick as the
+  /// row projection). `ascending` serves the Library All grid (Photos parity:
+  /// oldest at top); every other caller keeps the default desc order.
+  public func timelineIndex(scope: ContainerScope, ascending: Bool = false) async throws -> TimelineIndex {
     let (whereSQL, args) = Self.scopeWhere(scope)
+    let direction = ascending ? "ASC" : "DESC"
     let sql = """
       SELECT asset.id AS id, julianday(asset.localDateTime) AS localDateTime,
         (asset.type = 'VIDEO') AS isVideo,
@@ -80,7 +83,7 @@ extension PhotosLocalStore {
         asset.durationSeconds AS durationSeconds
       FROM asset
       WHERE \(Self.indexWhereSQL) AND \(whereSQL)
-      ORDER BY asset.localDateTime DESC
+      ORDER BY asset.localDateTime \(direction)
       """
     let entries: [TimelineIndexEntry] = try await dbQueue.read { db in
       try Row.fetchAll(db, sql: sql, arguments: Self.sqlArgs(args)).map(Self.indexEntry(from:))

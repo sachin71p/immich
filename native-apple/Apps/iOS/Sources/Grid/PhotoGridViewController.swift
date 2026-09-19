@@ -19,6 +19,10 @@ final class PhotoGridViewController: UIViewController {
   /// WP-G G6: scroll-activity signal for the Library header subtitle (item count
   /// at rest, visible date range while scrolling).
   var onScrollActive: ((Bool) -> Void)?
+  /// TRACK G: scroll-position signal for the bottom-chrome two states
+  /// (scroll-at-top tab switcher vs scrolled zoom pill). Fires only on flips
+  /// across a small threshold past the resting offset.
+  var onAtTopChange: ((Bool) -> Void)?
   /// WP-G G3: current user for the selective people badge. Nil keeps the
   /// flags-only fallback.
   var currentUserId: String?
@@ -61,6 +65,8 @@ final class PhotoGridViewController: UIViewController {
   private var currentEditMode = false
   private var selectedIds = Set<String>()
   private var lastFiredRange: String = ""
+  /// TRACK G: last scroll-at-top value sent to `onAtTopChange` (fires on flip only).
+  private var lastAtTop = true
   private var lastScrubSection = -1
   /// Last ids forwarded to `onPrefetch`, in priority order (F5): scroll-event
   /// cancellation keeps these plus the visible window, so look-ahead prefetch
@@ -113,6 +119,10 @@ final class PhotoGridViewController: UIViewController {
     if !firstPaintFired, !snapshot.isEmpty {
       firstPaintFired = true
       onFirstPaint?()
+      if openAtBottom, !didOpenAtBottom {
+        didOpenAtBottom = true
+        scrollToBottom(animated: false)
+      }
     }
     updatePerfSummary(force: true)
   }
@@ -208,6 +218,22 @@ final class PhotoGridViewController: UIViewController {
     }
     collectionView.scrollToItem(
       at: IndexPath(item: 0, section: section), at: .top, animated: animated)
+  }
+
+  /// Photos parity (Library All): open scrolled to the newest (bottom).
+  /// VC-lifetime once-flag — tab returns, filter changes and sync bumps reuse
+  /// the VC and must keep position. Set from the bridge; default false.
+  var openAtBottom = false
+  private var didOpenAtBottom = false
+
+  private func scrollToBottom(animated: Bool = false) {
+    collectionView.layoutIfNeeded()
+    let lastSection = collectionView.numberOfSections - 1
+    guard lastSection >= 0 else { return }
+    let lastItem = collectionView.numberOfItems(inSection: lastSection) - 1
+    guard lastItem >= 0 else { return }
+    collectionView.scrollToItem(
+      at: IndexPath(item: lastItem, section: lastSection), at: .bottom, animated: animated)
   }
 
   func scrollToId(_ id: String, animated: Bool = false) {
@@ -361,6 +387,9 @@ final class PhotoGridViewController: UIViewController {
 
   private func configure(_ cell: PhotoGridCell, id: String) {
     monitor?.currentPhase = "configure"
+    // Stable per-asset identifier for UI tests (order/position pins); the
+    // VoiceOver label is untouched.
+    cell.accessibilityIdentifier = "grid-cell-\(id)"
     let row = rowProvider?(id)
     let flags = flagsProvider?(id) ?? []
     cell.configureBadges(row: row, flags: flags, currentUserId: currentUserId)
@@ -648,6 +677,14 @@ extension PhotoGridViewController: UICollectionViewDelegate {
     // inside one runloop turn and never be observed across the bridge.
     if collectionView.isDragging || collectionView.isDecelerating {
       onScrollActive?(true)
+    }
+    // TRACK G: scroll-at-top flips drive the bottom-chrome two states. The
+    // resting offset sits below zero (refresh control + adjusted insets), so
+    // the threshold is relative to it, not to zero.
+    let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 8
+    if atTop != lastAtTop {
+      lastAtTop = atTop
+      onAtTopChange?(atTop)
     }
     updatePerfSummary()
     // Keep prefetch work to the visible window plus the last forwarded look-ahead

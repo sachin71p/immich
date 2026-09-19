@@ -65,7 +65,11 @@ enum LibrarySource: Hashable {
 /// the caller's order (search results). Small and value-typed — SwiftUI passes these, never
 /// a hydrated model.
 enum GridDataRequest: Sendable, Hashable {
-  case timeline(scope: ContainerScope, granularity: PhotosLocalStore.Granularity)
+  /// `ascending` serves the Library All grid (Photos parity: oldest at top,
+  /// opens at the bottom). Default desc preserves every other surface; existing
+  /// two-element patterns keep matching (extra associated values are ignored).
+  case timeline(
+    scope: ContainerScope, granularity: PhotosLocalStore.Granularity, ascending: Bool = false)
   case ids([String])
 }
 
@@ -223,8 +227,8 @@ final class LibraryGridLoader: ObservableObject {
     )
     let work: @Sendable () async -> GridProduct = {
       switch req {
-      case .timeline(let scope, let granularity):
-        guard let index = try? await store.timelineIndex(scope: scope),
+      case .timeline(let scope, let granularity, let ascending):
+        guard let index = try? await store.timelineIndex(scope: scope, ascending: ascending),
           !Task.isCancelled
         else {
           return (GridSnapshot.empty, [], 0)
@@ -264,7 +268,15 @@ final class LibraryGridLoader: ObservableObject {
       self.snapshot = snapshot
     }
     // Page the first window for badges/placeholders even when the snapshot was unchanged.
-    await ensureRows(ids: Array(snapshot.allIds.prefix(300)), store: store)
+    // Ascending grids open at the bottom (Photos parity): page the last window first so
+    // the visible newest tiles fill immediately. Visible-window prefetch covers the rest.
+    let firstIds: [String]
+    if case .timeline(_, _, true) = req {
+      firstIds = Array(snapshot.allIds.suffix(300))
+    } else {
+      firstIds = Array(snapshot.allIds.prefix(300))
+    }
+    await ensureRows(ids: firstIds, store: store)
     // Refresh the retained product (F4) so the next fresh instance replays what is
     // on screen now. Timelines only; later row pages stay instance-local (the
     // pipeline caches serve their thumbnails after a return).

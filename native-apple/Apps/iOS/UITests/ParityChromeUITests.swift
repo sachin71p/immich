@@ -6,6 +6,11 @@ import XCTest
 final class ParityChromeUITests: XCTestCase {
   func test_chrome_isSingleFloatingBar() throws {
     let app = Parity.launch()
+    // Two-state chrome: at scroll-top the bar holds the tab switcher (Photos
+    // behavior) — scroll once to reveal the zoom pill, then assert.
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 10), "grid should exist")
+    grid.swipeUp()
     // C1/WP-C: library/segmented-control/search render in one bar element —
     // not a pills row above a separate tab bar.
     let bar = Parity.require("chrome-floating-bar", in: app, gap: "C1", owner: "WP-C")
@@ -20,6 +25,10 @@ final class ParityChromeUITests: XCTestCase {
 
   func test_chrome_allSegmentLabel_isAll() throws {
     let app = Parity.launch()
+    // Two-state chrome: scroll once to reveal the zoom pill (see above).
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 10), "grid should exist")
+    grid.swipeUp()
     // C2/WP-C: the segment label reads exactly "All", not "All Photos".
     // (The A3 smoke test taps a button labelled "All Photos" today — red.)
     let all = app.buttons["All"]
@@ -28,17 +37,24 @@ final class ParityChromeUITests: XCTestCase {
       "C2/WP-C: expected a segment labelled exactly \"All\"")
   }
 
-  func test_tabBar_persistentNotCollapsed() throws {
+  func test_chrome_switcherPersistentNotCollapsed() throws {
     let app = Parity.launch()
-    // C3/WP-C: Library/Collections tabs visible without a prior tap, plus a
-    // separate search circle. (Tab-bar buttons expose labels, not
-    // identifiers, per the A9 comment — assert labels.)
+    // C3/WP-C, superseded by the owner-ordered two-state chrome (was
+    // test_tabBar_persistentNotCollapsed): Library retired its tab bar, so
+    // the same reachability contract now pins the floating switcher —
+    // Library/Collections offered without a prior tap, plus a separate
+    // search circle. (Tab-bar buttons expose labels, not identifiers, per
+    // the A9 comment — assert labels on the switcher segments.)
+    XCTAssertFalse(
+      app.tabBars.firstMatch.waitForExistence(timeout: 3),
+      "C3/WP-C: Library tab bar should stay hidden under two-state chrome")
+    let switcher = Parity.require("chrome-tab-switcher", in: app, gap: "C3", owner: "WP-C")
     XCTAssertTrue(
-      app.tabBars.buttons["Library"].waitForExistence(timeout: 10),
-      "C3/WP-C: Library tab should be visible without a prior tap")
+      switcher.buttons["Library"].waitForExistence(timeout: 10),
+      "C3/WP-C: switcher should offer Library without a prior tap")
     XCTAssertTrue(
-      app.tabBars.buttons["Collections"].waitForExistence(timeout: 10),
-      "C3/WP-C: Collections tab should be visible without a prior tap")
+      switcher.buttons["Collections"].waitForExistence(timeout: 10),
+      "C3/WP-C: switcher should offer Collections without a prior tap")
     Parity.require("chrome-search-circle", in: app, gap: "C3", owner: "WP-C")
   }
 

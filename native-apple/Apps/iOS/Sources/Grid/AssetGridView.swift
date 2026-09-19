@@ -44,6 +44,15 @@ struct AssetGridView: View {
   var currentUserId: String? = nil
   var onPinchEdge: ((Bool) -> Void)? = nil
   var onScrollActive: ((Bool) -> Void)? = nil
+  /// TRACK G: scroll-at-top flips for the bottom-chrome two states. Defaulted
+  /// nil like its siblings so existing callers are untouched.
+  var onAtTopChange: ((Bool) -> Void)? = nil
+  /// Photos parity (Library All): oldest-first order + open scrolled to the
+  /// bottom. Defaulted false so Spaces/search/albums keep newest-first.
+  var timelineAscending = false
+  /// Photos parity (Library All): scroll to the newest (bottom) on first
+  /// paint. Defaulted false; VC-lifetime once-flag, never re-fires.
+  var openAtBottom = false
   /// WP-M (G4): menu owner for the grid long-press provider. Optional so
   /// callers without a session keep tap-to-open untouched.
   var session: AppSession? = nil
@@ -67,6 +76,9 @@ struct AssetGridView: View {
     currentUserId: String? = nil,
     onPinchEdge: ((Bool) -> Void)? = nil,
     onScrollActive: ((Bool) -> Void)? = nil,
+    onAtTopChange: ((Bool) -> Void)? = nil,
+    timelineAscending: Bool = false,
+    openAtBottom: Bool = false,
     session: AppSession? = nil
   ) {
     self.source = source
@@ -86,6 +98,9 @@ struct AssetGridView: View {
     self.currentUserId = currentUserId
     self.onPinchEdge = onPinchEdge
     self.onScrollActive = onScrollActive
+    self.onAtTopChange = onAtTopChange
+    self.timelineAscending = timelineAscending
+    self.openAtBottom = openAtBottom
     self.session = session
   }
 
@@ -106,6 +121,8 @@ struct AssetGridView: View {
         currentUserId: currentUserId,
         onPinchEdge: onPinchEdge,
         onScrollActive: onScrollActive,
+        onAtTopChange: onAtTopChange,
+        openAtBottom: openAtBottom,
         session: session
       )
       .ignoresSafeArea(edges: .bottom)
@@ -132,7 +149,7 @@ struct AssetGridView: View {
   private func request() async -> GridDataRequest? {
     switch source {
     case .timeline(let scope, let granularity):
-      return .timeline(scope: scope, granularity: granularity)
+      return .timeline(scope: scope, granularity: granularity, ascending: timelineAscending)
     case .ids(let ids):
       return .ids(ids)
     case .query(let produce):
@@ -176,6 +193,8 @@ private struct GridBridge: UIViewControllerRepresentable {
   var currentUserId: String?
   var onPinchEdge: ((Bool) -> Void)?
   var onScrollActive: ((Bool) -> Void)?
+  var onAtTopChange: ((Bool) -> Void)?
+  var openAtBottom = false
   var session: AppSession? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator() }
@@ -240,6 +259,7 @@ private struct GridBridge: UIViewControllerRepresentable {
     vc.onRefresh = onRefresh
     vc.onPinchEdge = onPinchEdge
     vc.onScrollActive = onScrollActive
+    vc.onAtTopChange = onAtTopChange
     vc.pipeline = pipeline
     vc.showsHeaders = showsSectionHeaders
     vc.onNeedRows = { [weak loader, weak store] ids in
@@ -260,11 +280,13 @@ private struct GridBridge: UIViewControllerRepresentable {
     vc.currentUserId = currentUserId
     vc.onPinchEdge = onPinchEdge
     vc.onScrollActive = onScrollActive
+    vc.onAtTopChange = onAtTopChange
     vc.onRefresh = onRefresh
     vc.rowProvider = { [weak loader] in loader?.row(for: $0) }
     vc.flagsProvider = { [weak loader] in loader?.flags(for: $0) ?? [] }
     vc.dateProvider = { [weak loader] in loader?.row(for: $0)?.localDateTime }
     vc.setShowsHeaders(showsSectionHeaders)
+    vc.openAtBottom = openAtBottom
     vc.setAspectFit(aspectFit)
     vc.setColumns(columns, animated: false)
     vc.setEditMode(selection.isSelecting)

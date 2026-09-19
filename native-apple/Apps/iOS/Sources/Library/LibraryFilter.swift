@@ -98,8 +98,9 @@ func resolveLibraryGrid(
 
   // Filtered path: one index fetch for flags/dates, plus row fetches only for the
   // dimensions the index lacks (owner for Captured-by-Me, mediaKind for panoramas,
-  // createdAt order for Added sort).
-  let index = try await store.timelineIndex(scope: scope)
+  // createdAt order for Added sort). Ascending like the fast path: the Library
+  // surface is oldest-first throughout (Photos parity).
+  let index = try await store.timelineIndex(scope: scope, ascending: true)
   var flagsById: [String: PhotosLocalStore.TimelineIndexFlags] = [:]
   flagsById.reserveCapacity(index.entries.count)
   for entry in index.entries { flagsById[entry.id] = entry.flags }
@@ -128,10 +129,11 @@ func resolveLibraryGrid(
     albumIds = (try? await store.assetIdsInAnyAlbum(userId: userId)) ?? []
   }
 
-  // Base order: Added sort follows createdAt desc (recentAssets page order);
-  // otherwise the index's capture-date-desc order.
+  // Base order: oldest first (Photos parity). Added sort follows createdAt
+  // ascending (recentAssets pages desc, reversed); otherwise the index's
+  // capture-date-ascending order.
   let baseIds: [String] =
-    sort == .added ? addedRows.map(\.id) : index.entries.map(\.id)
+    sort == .added ? Array(addedRows.map(\.id).reversed()) : index.entries.map(\.id)
 
   var kept: [String] = []
   kept.reserveCapacity(baseIds.count)

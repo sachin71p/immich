@@ -65,6 +65,7 @@
 		55EA6326D3B44271859354A3 /* Search in Frameworks */ = {isa = PBXBuildFile; productRef = FD89CE95EA5D4BC7BBC28DD3 /* Search */; };
 		55FA327A4303C3CEC5E30968 /* Upload in Frameworks */ = {isa = PBXBuildFile; productRef = 0FF424320DB390216552FCB4 /* Upload */; };
 		562C90132FF6F001D66BA495 /* MacViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D2F60BB9D91D70D4CD487A0 /* MacViewer.swift */; };
+		569ACE04DF41348C1089C6F6 /* BottomChromeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75277982B40590B98AFEB991 /* BottomChromeUITests.swift */; };
 		56ABB8722262A613B915AAFF /* FixtureArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 638FDDBA042A300BFF971B53 /* FixtureArtwork.swift */; };
 		582D395829F5C2315FA1F75E /* BucketHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BC2B330D0AB7D07343EBF7B /* BucketHeaderView.swift */; };
 		58B1AA572035C457EE931702 /* CoreModel in Frameworks */ = {isa = PBXBuildFile; productRef = BE0D510CE5E532CCFC1F7E8E /* CoreModel */; };
@@ -76,6 +77,7 @@
 		5BE18CB034A8FA6B41344FBD /* GridStallMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B3F9CDD693B51C183EBDE8 /* GridStallMonitor.swift */; };
 		5BFFD48CFCA9D5C53968CDAF /* PairCaptureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BCBD9EAEEF280CCF4D8D902 /* PairCaptureUITests.swift */; };
 		5D62B6B3F920991B560ED1BE /* ViewerInfoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A79F5EE788A54FD0A7363A85 /* ViewerInfoPanel.swift */; };
+		5DB79727D954D1A08EA004B2 /* GridOrderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309F944F93EDD1678B73A0B3 /* GridOrderUITests.swift */; };
 		60B4AF936251E3716C5E102A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E3E22E15AF847EB8E62EE01 /* README.md */; };
 		61343E2590E7623A978A85E2 /* InfoPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B796775C088DF86CE5035271 /* InfoPanelUITests.swift */; };
 		618DFB1CCA18F10289E6EE43 /* CollectionsPerfUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0A82C8B3A74F4B5F6F1A23 /* CollectionsPerfUITests.swift */; };
@@ -264,6 +266,7 @@
 		2DF22B76A8D8B4DEDC7D192E /* Heirloom-PhotoEditing.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-PhotoEditing.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2E728F2C4FB8AF3679B66C4D /* Heirloom-Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "Heirloom-Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F4055DBB1FA5FBDB97972C9 /* ContextMenuUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuUITests.swift; sourceTree = "<group>"; };
+		309F944F93EDD1678B73A0B3 /* GridOrderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOrderUITests.swift; sourceTree = "<group>"; };
 		317A308C324F67538E064057 /* A9ExtrasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A9ExtrasUITests.swift; sourceTree = "<group>"; };
 		33177EE3B7C28F1376AB609A /* LibraryFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilter.swift; sourceTree = "<group>"; };
 		36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPerfUITests.swift; sourceTree = "<group>"; };
@@ -314,6 +317,7 @@
 		71AE2ECC214496244BF961D9 /* ParityViewerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityViewerUITests.swift; sourceTree = "<group>"; };
 		74077CE90EAE9F5866310905 /* GridPrefetchPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPrefetchPolicy.swift; sourceTree = "<group>"; };
 		750C8B9A3ACE145BE464F6C0 /* CollectionTiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionTiles.swift; sourceTree = "<group>"; };
+		75277982B40590B98AFEB991 /* BottomChromeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomChromeUITests.swift; sourceTree = "<group>"; };
 		7693E3EBED27AAB932409E4E /* MacMemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMemoriesView.swift; sourceTree = "<group>"; };
 		794145B846DA2837CA513FE9 /* MacGridHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGridHeaderView.swift; sourceTree = "<group>"; };
 		7BCBD9EAEEF280CCF4D8D902 /* PairCaptureUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairCaptureUITests.swift; sourceTree = "<group>"; };
@@ -610,9 +614,11 @@
 				3D88FC9B140FBFB014F232CE /* A3SmokeUITests.swift */,
 				317A308C324F67538E064057 /* A9ExtrasUITests.swift */,
 				8EB3423F7182EE3D21FE5149 /* AppearanceUITests.swift */,
+				75277982B40590B98AFEB991 /* BottomChromeUITests.swift */,
 				4E0A82C8B3A74F4B5F6F1A23 /* CollectionsPerfUITests.swift */,
 				2F4055DBB1FA5FBDB97972C9 /* ContextMenuUITests.swift */,
 				6BDAB6FF9FD9FE202BF68BEB /* EditorUITests.swift */,
+				309F944F93EDD1678B73A0B3 /* GridOrderUITests.swift */,
 				36AE7E335333BBD10A76E452 /* GridPerfUITests.swift */,
 				C6A1F880F7852BD5F7F429FC /* GridPrefetchPolicyTests.swift */,
 				B796775C088DF86CE5035271 /* InfoPanelUITests.swift */,
@@ -1278,9 +1284,11 @@
 				8094A44964D5F3C4BC5B7E23 /* A3SmokeUITests.swift in Sources */,
 				593799F9CE380A58B326FA1B /* A9ExtrasUITests.swift in Sources */,
 				0D1AAA3C3B29869B077E8506 /* AppearanceUITests.swift in Sources */,
+				569ACE04DF41348C1089C6F6 /* BottomChromeUITests.swift in Sources */,
 				618DFB1CCA18F10289E6EE43 /* CollectionsPerfUITests.swift in Sources */,
 				53CC6118ADBC7C6C36AAEBE4 /* ContextMenuUITests.swift in Sources */,
 				5B913F49488BCF88490E327B /* EditorUITests.swift in Sources */,
+				5DB79727D954D1A08EA004B2 /* GridOrderUITests.swift in Sources */,
 				C959FE40D592B0F2D6380C2D /* GridPerfUITests.swift in Sources */,
 				AF7D28916704CC5133FD8D95 /* GridPrefetchPolicy.swift in Sources */,
 				20D55EAF420401A19B9AECB1 /* GridPrefetchPolicyTests.swift in Sources */,

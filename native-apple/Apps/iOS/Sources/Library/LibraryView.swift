@@ -43,6 +43,10 @@ struct LibraryView: View {
   /// WP-G G6: true while the All grid is being dragged or decelerating — the
   /// header subtitle swaps between the item count (rest) and date range.
   @State private var isGridScrolling = false
+  /// TRACK G: scroll-at-top drives the bottom-chrome two states — the
+  /// [Library|Collections] switcher at top, the zoom pill once scrolled.
+  /// Non-All levels always show the pill (it is the only way back to All).
+  @State private var isGridAtTop = true
   /// Dwell that keeps the range up briefly after the grid settles (cancels on
   /// new activity).
   @State private var scrollDwellTask: Task<Void, Never>?
@@ -52,6 +56,10 @@ struct LibraryView: View {
   @State private var showSourcesSheet = false
   @State private var monthsScrollYear: String?
   @State private var actionError: String?
+  /// EF: true once the first grid resolve completes (success or store-backed
+  /// error). Cold launch sits false while `session.store` is nil / the resolve
+  /// is pending — that window is the loading state, UI-layer only.
+  @State private var gridDidResolve = false
 
   /// Shared subtitle formatter — built once (the per-call `DateFormatter` here was
   /// 13.8% of main-thread time in the baseline trace).
@@ -133,18 +141,16 @@ struct LibraryView: View {
         } else {
           // C4: the item count lives in the header, not as a persistent line
           // under the bottom pills (the `library-count` element is gone).
+          // EF: the trailing filter + Select live in the top-trailing glass
+          // capsules overlay below, NOT in the toolbar — trailing toolbar
+          // items do not render under the large title on this SDK (owner-
+          // verified: no visible top-right buttons), and the title scrim
+          // overlay above would bury them regardless.
           ToolbarItem(placement: .topBarLeading) {
             Text(countLabel)
               .font(.caption)
               .foregroundStyle(.secondary)
               .accessibilityIdentifier("chrome-header-count")
-          }
-          ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: 10) {
-              filterMenu
-              Button("Select") { selection.isSelecting = true }
-                .accessibilityIdentifier("select-toggle")
-            }
           }
         }
       }
@@ -161,12 +167,42 @@ struct LibraryView: View {
             onError: { if !$0.isCancellationMessage { actionError = $0 } }
           )
           .background(.thinMaterial)
-        } else {
-          // C1: one floating bar — [library] [Years │ Months │ All] [search] —
-          // instead of a pills row above the tab bar. C3: the search slot is
-          // the separate search circle. The `library-zoom` identifier is kept
-          // for the existing zoom tests; the select-mode branch above is
-          // WP-M's and is untouched.
+        } else if zoom == .all && isGridAtTop && !isLoadingLibrary {
+          // TRACK G (a) scroll-at-top: ONE floating glass bar
+          // [Library|Collections] + a separate search circle (Photos bottom
+          // chrome; replaces the zoom pill while at the top). The switcher
+          // drives the WP5 `requestedTab` contract; the circle is icon-only.
+          HStack(spacing: 12) {
+            Picker("Library or Collections", selection: tabBinding) {
+              Text("Library").tag("library")
+              Text("Collections").tag("collections")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("chrome-tab-switcher")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.thinMaterial, in: Capsule())
+            Button {
+              session.requestedTab = "search"
+            } label: {
+              Image(systemName: "magnifyingglass")
+            }
+            .accessibilityIdentifier("chrome-search-circle")
+            .padding(12)
+            .background(.thinMaterial, in: Circle())
+          }
+          .padding(.horizontal)
+          .accessibilityElement(children: .contain)
+          .accessibilityIdentifier("chrome-floating-bar")
+        } else if !isLoadingLibrary {
+          // TRACK G (b) scrolled (or a non-All level, where the pill is the
+          // only way back): the single floating segmented pill
+          // [icon|Years|Months|All|magnifier]. Unchanged from the C1 bar —
+          // identifiers kept for the existing zoom tests; the select-mode
+          // branch above is WP-M's and is untouched.
+          // EF: gated on !isLoadingLibrary — while the first sync is in
+          // flight the grid area is empty and a bottom-anchored bar strands
+          // mid-screen (owner-verified ugly state).
           HStack(spacing: 12) {
             Button {
               zoomRaw = LibraryZoomLevel.all.rawValue
@@ -197,11 +233,18 @@ struct LibraryView: View {
           // collapses the subtree into one element and hides the children).
           .accessibilityElement(children: .contain)
           .accessibilityIdentifier("chrome-floating-bar")
+        } else {
+          // EF: loading window (see above) — nothing bottom-anchored until
+          // the library resolves.
+          EmptyView()
         }
       }
       .tabBarMinimizeBehavior(.onScrollDown)
-      // Select mode replaces the tab bar with the bottom toolbar above.
-      .toolbar(selection.isSelecting ? .hidden : .visible, for: .tabBar)
+      // Two-state chrome replaces the tab bar in every Library state
+      // (switcher at top, zoom pill scrolled, nothing while loading) —
+      // Photos-exact, owner-ordered. Select mode already hid it; the
+      // visible branch only ever showed the stale double chrome.
+      .toolbar(.hidden, for: .tabBar)
       .safeAreaInset(edge: .top) {
         if let banner = realError {
           HStack {
@@ -227,6 +270,9 @@ struct LibraryView: View {
           .accessibilityIdentifier("sync-error-banner")
         }
       }
+      // TRACK G: a fresh time level starts at the top — re-arm the
+      // scroll-at-top chrome (the rebuilt grid below reports flips itself).
+      .onChange(of: zoomRaw) { _, _ in isGridAtTop = true }
       .task(id: filterTaskKey) {
         await resolveGrid()
       }
@@ -301,6 +347,37 @@ struct LibraryView: View {
         .opacity(0.01)
       }
     }
+    .overlay(alignment: .topTrailing) {
+      // EF top capsules (Photos parity, pair 01): glass filter-funnel capsule
+      // + glass "Select" capsule, top-right in dark appearance. These live in
+      // an overlay — NOT the trailing toolbar, which does not render under
+      // the large title on this SDK (see toolbar comment above). Hidden in
+      // select mode, where the toolbar's Done/xmark + "…" + bottom
+      // SelectionActionBar take over (existing select-mode behavior kept).
+      if !selection.isSelecting {
+        HStack(spacing: 10) {
+          filterMenu
+            .labelStyle(.iconOnly)
+            .font(.body.weight(.medium))
+            .foregroundStyle(HeirloomAppearance.chromePrimaryText)
+            .frame(minWidth: 44, minHeight: 44)
+            .glassEffect(
+              .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .circle)
+          Button("Select") { selection.isSelecting = true }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(HeirloomAppearance.chromePrimaryText)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .glassEffect(
+              .regular.tint(HeirloomAppearance.chromeTintBase.opacity(0.35)), in: .capsule)
+            .accessibilityIdentifier("select-toggle")
+        }
+        .padding(.top, 60)
+        .padding(.trailing, 16)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("library-top-capsules")
+      }
+    }
   }
 
   // MARK: - pieces
@@ -320,9 +397,32 @@ struct LibraryView: View {
     )
   }
 
+  /// EF: cold-launch loading window — no resolved grid yet and zero items.
+  /// True while `session.store` is nil / the first resolve is pending, so the
+  /// screen never claims "No Photos" before the first sync has had a chance.
+  /// UI-layer only: reads `session.store`/`isSyncing`, never mutates them.
+  /// `-forceLibraryLoading` pins it on for the deterministic UI test.
+  private var isLoadingLibrary: Bool {
+    if ProcessInfo.processInfo.arguments.contains("-forceLibraryLoading") { return true }
+    return !gridDidResolve && itemCount == 0
+  }
+
   private var allGrid: some View {
     Group {
-      if let gridSource {
+      if isLoadingLibrary {
+        // EF loading treatment: neutral grid area — spinner + syncing copy,
+        // no "No Photos" text, no stranded pills (the bottom inset is empty
+        // while loading). Keeps the `library-grid` id so existing grid waits
+        // still settle; `library-loading` is the new observable.
+        VStack(spacing: 12) {
+          ProgressView()
+          Text("Syncing your library…")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("library-loading")
+      } else if let gridSource {
         AssetGridView(
           source: gridSource,
           store: session.store,
@@ -358,8 +458,26 @@ struct LibraryView: View {
               }
             }
           },
+          // TRACK G: scroll-at-top flips drive the bottom-chrome two states.
+          onAtTopChange: { isGridAtTop = $0 },
+          timelineAscending: true,
+          openAtBottom: true,
           session: session
         )
+        .accessibilityIdentifier("library-grid")
+      } else if itemCount == 0 {
+        // EF genuine zero-items state: resolved, synced, truly empty —
+        // distinct from the loading treatment above (spinner + syncing
+        // copy). Pull-to-refresh still available via the grid's refresh.
+        VStack(spacing: 8) {
+          Text("No Photos")
+            .font(.headline)
+            .accessibilityIdentifier("library-empty")
+          Text("Pull down to sync")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("library-grid")
       } else {
         ProgressView()
@@ -374,6 +492,9 @@ struct LibraryView: View {
   /// grid, so before it lands the count stands in — never "No Photos" while
   /// the count says otherwise.
   private var librarySubtitle: String {
+    // EF: never "No Photos" before the first resolve — the store may still be
+    // nil with sync idle between launch and first sync start.
+    if isLoadingLibrary { return "Syncing…" }
     if session.isSyncing, let first = visibleFirst, let last = visibleLast {
       return "\(rangeString(first: first, last: last)) · Syncing…"
     }
@@ -463,6 +584,7 @@ struct LibraryView: View {
         guard !Task.isCancelled else { return }
         gridSource = resolved.source
         itemCount = resolved.count
+        gridDidResolve = true
         Self.cacheGrid(key: key, source: resolved.source, count: resolved.count)
       } else {
         // Years/Months views fetch their own buckets; the count still comes from
@@ -470,11 +592,15 @@ struct LibraryView: View {
         let index = try await store.timelineIndex(scope: scope)
         guard !Task.isCancelled else { return }
         itemCount = index.entries.count
+        gridDidResolve = true
         Self.cacheGrid(key: key, source: nil, count: index.entries.count)
       }
     } catch {
       // L2: `.task(id:)` restarts cancel in-flight loads — cancellation is not an error.
       if !error.isCancellation { session.lastError = error.localizedDescription }
+      // EF: a store-backed failure still ends the loading window (the error
+      // banner carries it); only the store-nil early return above stays loading.
+      if !Task.isCancelled { gridDidResolve = true }
     }
   }
 
@@ -531,6 +657,15 @@ struct LibraryView: View {
     Binding(
       get: { zoom },
       set: { zoomRaw = $0.rawValue })
+  }
+
+  /// TRACK G: the [Library|Collections] switcher over the WP5 `requestedTab`
+  /// contract. A deep-linked "search" value has no segment; it reads back as
+  /// Library (the visible tab once returned to).
+  private var tabBinding: Binding<String> {
+    Binding(
+      get: { session.requestedTab == "collections" ? "collections" : "library" },
+      set: { session.requestedTab = $0 })
   }
 
   // MARK: - source persistence

@@ -78,6 +78,19 @@ struct TimelineIndexTests {
     #expect(shared.flags == [.sharedContainer])
   }
 
+  @Test("ascending index returns oldest first for the Library grid")
+  func indexEntriesAscending() async throws {
+    let store = try PhotosLocalStore(inMemory: true)
+    try await Self.seed(into: store)
+    let index = try await store.timelineIndex(scope: Self.scope(), ascending: true)
+    #expect(index.entries.count == 5)
+    #expect(
+      index.entries.map(\.id) == ["a-space-photo", "a-shot", "a-photo", "a-video", "a-live"])
+    for (offset, entry) in index.entries.enumerated() {
+      #expect(index.indexById[entry.id] == offset)
+    }
+  }
+
   @Test("bucket summaries count, prefer favorites as key assets, and carry date ranges")
   func bucketSummaries() async throws {
     let store = try PhotosLocalStore(inMemory: true)
