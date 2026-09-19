@@ -299,4 +299,45 @@ final class LibraryChromeUITests: XCTestCase {
       "cancelling trash should stay in select mode (nothing deleted)")
     tap(app.descendants(matching: .any)["select-exit"])
   }
+
+  // MARK: - LP2 chrome parity (pair 01 / pair 02)
+
+  func test_chromeFloatingBar_persistsWhileScrolling() throws {
+    // LP2 pill-minimize parity: Photos (pair 02 left, assets/photos/
+    // 04-library-pills-visible) keeps the [photo | Years Months All |
+    // magnifier] pill floating over the grid while the tab bar minimizes on
+    // scroll down. Heirloom's bar lives in a bottom safeAreaInset (not the
+    // tab-bar accessory), so it must survive a scroll-down itself.
+    let bar = app.descendants(matching: .any)["chrome-floating-bar"]
+    XCTAssertTrue(bar.waitForExistence(timeout: 10), "floating pill bar should exist at rest")
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 10))
+    grid.swipeUp()
+    grid.swipeUp()
+    XCTAssertTrue(
+      bar.waitForExistence(timeout: 10),
+      "LP2: floating Years/Months/All pill bar should persist while scrolled (Photos keeps it up)")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["library-zoom"].waitForExistence(timeout: 10),
+      "LP2: Years/Months/All segments should stay reachable while scrolled")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["chrome-search-circle"].waitForExistence(timeout: 10),
+      "LP2: search circle should stay reachable while scrolled")
+  }
+
+  func test_tabBar_searchEntryIsIconOnly() throws {
+    // LP2 tab-bar parity: Photos (pair 01 left, assets/photos/
+    // 01-library-all-photos) shows Library + Collections with labels in the
+    // floating tab pill and search as a separate label-less magnifier
+    // circle. A "Search" text label inside the tab bar breaks that parity.
+    // MainTabs is WP5-owned (HeirloomIOSApp.swift) — if this goes red the
+    // fix belongs to that track; this test pins the requirement.
+    let tabBar = app.tabBars.firstMatch
+    XCTAssertTrue(tabBar.waitForExistence(timeout: 10), "tab bar should exist")
+    let labeledSearch = tabBar.buttons.matching(
+      NSPredicate(format: "label CONTAINS %@", "Search"))
+    XCTAssertEqual(
+      labeledSearch.count, 0,
+      "LP2: tab bar should not show a labeled Search entry (Photos uses an icon-only search circle)")
+  }
 }

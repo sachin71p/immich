@@ -44,7 +44,8 @@ with `cancelPrefetch(keeping:)` as the window moves.
 
 - `AssetGridView.swift` — the component + `AssetGridSource` + the representable bridge.
 - `PhotoGridViewController.swift` — setters, fixed square layout (1 pt gaps, no
-  estimates), pinch steps `[1, 3, 5, 9, 13]` with anchor preservation, drag-select,
+  estimates), pinch steps `[1, 3, 5, 9, 13, maxColumns]` (LP1: 18, Photos range
+  15–20) with anchor preservation, drag-select,
   pull-to-refresh, `FastScroller` wiring, `grid-perf-summary` hook.
 - `PhotoGridCell.swift` — manual `layoutSubviews`, neutral fill → thumbhash →
   thumbnail stack, SF Symbol badges (`heart.fill` bottom-left, duration bottom-right

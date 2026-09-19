@@ -292,6 +292,10 @@ struct LibraryView: View {
           Text(zoom.rawValue)
             .accessibilityIdentifier("grid-time-level")
             .accessibilityValue(zoom.rawValue)
+          // LP1: current column density for the max-density parity test.
+          Text("\(columns)")
+            .accessibilityIdentifier("grid-columns")
+            .accessibilityValue("\(columns)")
         }
         .frame(width: 1, height: 1)
         .opacity(0.01)
@@ -310,7 +314,7 @@ struct LibraryView: View {
       aspectFit: $aspectFit,
       hideScreenshots: $hideScreenshots,
       hideSharedWithYou: $hideSharedWithYou,
-      onZoomIn: { columns = min(13, columns + 1) },
+      onZoomIn: { columns = min(PhotoGridViewController.maxColumns, columns + 1) },
       onZoomOut: { columns = max(1, columns - 1) },
       onShowSources: { showSourcesSheet = true }
     )
