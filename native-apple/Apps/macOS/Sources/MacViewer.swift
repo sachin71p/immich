@@ -735,6 +735,14 @@ struct MacViewerView: View {
   }
 
   private func downloadOriginal(_ asset: Asset) async throws -> Data {
+    // Cache-first: originals are immutable in practice (edits land as separate
+    // renditions), so a disk-cache hit skips the multi-MB download on every
+    // Edit open. Miss downloads below and stores verbatim (256 MB LRU tier).
+    if let cached = await state.diskCache.retrieve(assetID: asset.id, tier: .original),
+      !cached.isEmpty
+    {
+      return cached
+    }
     var request = URLRequest(
       url: MediaEndpoint(serverURL: state.serverURL, assetID: asset.id).originalURL())
     if let token = await state.connection.tokenStore.get() {
@@ -749,6 +757,8 @@ struct MacViewerView: View {
     guard (200..<300).contains(status) else {
       throw EditDownloadError.http(status: status, bytes: data.count)
     }
+    // Seed the original tier so the next Edit open is a cache hit.
+    try? await state.diskCache.store(data, assetID: asset.id, tier: .original)
     return data
   }
 
