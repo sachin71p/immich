@@ -401,20 +401,18 @@ final class LibraryChromeUITests: XCTestCase {
   }
 
   func test_tabBar_searchEntryIsIconOnly() throws {
-    // LP2 tab-bar parity: Photos (pair 01 left, assets/photos/
-    // 01-library-all-photos) shows Library + Collections with labels in the
-    // floating tab pill and search as a separate label-less magnifier
-    // circle. A "Search" text label inside the tab bar breaks that parity.
-    // MainTabs is WP5-owned (HeirloomIOSApp.swift) — verified RED in the
-    // Tart guest VM (1 labeled Search button). Skipped until the WP5 MainTabs
-    // fix lands; un-skip then. See layout-parity PR notes.
-    try XCTSkipIf(true, "WP5-owned: MainTabs still shows a labeled Search entry")
+    // LP2 tab-bar parity, superseded by the owner-ordered two-state chrome:
+    // Library no longer shows a tab bar at all (switcher at top, zoom pill
+    // scrolled) — hence no labeled Search entry anywhere. Previously
+    // XCTSkipIf(true) while MainTabs showed one; un-skipped with the chrome.
     let tabBar = app.tabBars.firstMatch
-    XCTAssertTrue(tabBar.waitForExistence(timeout: 10), "tab bar should exist")
-    let labeledSearch = tabBar.buttons.matching(
+    XCTAssertFalse(
+      tabBar.waitForExistence(timeout: 3),
+      "two-state chrome: Library tab bar should stay hidden")
+    let labeledSearch = app.buttons.matching(
       NSPredicate(format: "label CONTAINS %@", "Search"))
     XCTAssertEqual(
       labeledSearch.count, 0,
-      "LP2: tab bar should not show a labeled Search entry (Photos uses an icon-only search circle)")
+      "LP2: no labeled Search entry anywhere (Photos uses an icon-only search circle)")
   }
 }

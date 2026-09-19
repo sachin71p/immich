@@ -240,8 +240,11 @@ struct LibraryView: View {
         }
       }
       .tabBarMinimizeBehavior(.onScrollDown)
-      // Select mode replaces the tab bar with the bottom toolbar above.
-      .toolbar(selection.isSelecting ? .hidden : .visible, for: .tabBar)
+      // Two-state chrome replaces the tab bar in every Library state
+      // (switcher at top, zoom pill scrolled, nothing while loading) —
+      // Photos-exact, owner-ordered. Select mode already hid it; the
+      // visible branch only ever showed the stale double chrome.
+      .toolbar(.hidden, for: .tabBar)
       .safeAreaInset(edge: .top) {
         if let banner = realError {
           HStack {

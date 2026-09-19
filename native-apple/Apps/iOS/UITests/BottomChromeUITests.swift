@@ -72,6 +72,9 @@ final class BottomChromeUITests: XCTestCase {
     XCTAssertTrue(
       isAbsentInBar("library-zoom"),
       "G(a): Years/Months/All pill should be hidden at scroll-top")
+    XCTAssertFalse(
+      app.tabBars.firstMatch.waitForExistence(timeout: 3),
+      "G(a): system tab bar should stay hidden under the floating switcher")
   }
 
   // MARK: - (b) scrolled: zoom pill
@@ -93,6 +96,9 @@ final class BottomChromeUITests: XCTestCase {
     XCTAssertTrue(
       isAbsentInBar("chrome-tab-switcher"),
       "G(b): [Library|Collections] switcher should hide while scrolled")
+    XCTAssertFalse(
+      app.tabBars.firstMatch.waitForExistence(timeout: 3),
+      "G(b): system tab bar should stay hidden under the zoom pill")
   }
 
   // MARK: - transition follows scroll position
