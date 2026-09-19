@@ -234,6 +234,11 @@ final class LibraryChromeUITests: XCTestCase {
   // MARK: - zoom switches + drill-down
 
   func testZoomDrillDown() throws {
+    // Two-state chrome: at scroll-top the zoom pill is replaced by the tab
+    // switcher (Photos behavior) — scroll once to reveal it, then drill down.
+    let grid = app.collectionViews.firstMatch
+    XCTAssertTrue(grid.waitForExistence(timeout: 10), "grid should exist")
+    grid.swipeUp()
     XCTAssertTrue(tap(app.buttons["Years"]), "zoom control should offer Years")
     XCTAssertTrue(
       app.descendants(matching: .any)["years-view"].waitForExistence(timeout: 10),
